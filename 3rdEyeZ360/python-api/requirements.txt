@@ -1,0 +1,14 @@
+fastapi==0.111.0
+uvicorn==0.30.0
+python-multipart==0.0.9
+opencv-python==4.13.0.92
+mediapipe==0.10.30
+ultralytics==8.4.63
+cvzone==1.6.1
+# PyAudio removed — sounddevice is pulled in by mediapipe and works without a compiler
+librosa==0.10.2
+psutil==7.2.2
+screeninfo==0.8.1
+numpy==2.4.6
+Pillow==12.2.0
+python-dotenv==1.0.1

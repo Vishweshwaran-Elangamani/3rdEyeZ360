@@ -1,0 +1,2139 @@
+Your Current State
+text
+D:\3rdEyez360V2\
+└── 3rdEyeZ360\
+    ├── docker\
+    ├── .gitignore
+    └── docker-compose.yml
+STEP 1 — Start Docker First
+Open PowerShell, go to your project:
+
+powershell
+cd D:\3rdEyez360V2\3rdEyeZ360
+docker-compose up -d
+Wait 90 seconds. Then verify all 3 are running:
+
+powershell
+docker ps
+You should see 3 containers:
+
+text
+samp_mongodb    → Up
+samp_minio      → Up
+samp_keycloak   → Up
+STEP 2 — Keycloak Setup (Exact Step by Step)
+Open browser → http://localhost:8080
+
+2.1 — Login to Keycloak Admin
+You will see a page that says "Keycloak" with a Welcome screen.
+
+Click → "Administration Console"
+
+Login with:
+
+text
+Username: admin
+Password: admin123
+2.2 — Create New Realm
+After login you land on the master realm dashboard.
+
+Look at the top-left corner — you will see a dropdown that says "master" with a small arrow next to it.
+
+Click that dropdown → Click "Create realm"
+
+You will see a form:
+
+text
+Realm name:   3rdEyeZ360
+Enabled:      ON (toggle is blue)
+Click "Create" button.
+
+You will now be inside the 3rdEyeZ360 realm. The top-left dropdown now shows "3rdEyeZ360".
+
+2.3 — Create Roles
+In the left sidebar, scroll down and click "Realm roles"
+
+You will see a table. Click "Create role" button (top right of table).
+
+Role 1:
+
+text
+Role name:    Admin
+Description:  System administrator
+Click Save.
+
+Click "Realm roles" in sidebar again → "Create role"
+
+Role 2:
+
+text
+Role name:    Examiner
+Description:  Assessment supervisor
+Click Save.
+
+Click "Realm roles" in sidebar again → "Create role"
+
+Role 3:
+
+text
+Role name:    Candidate
+Description:  Assessment participant
+Click Save.
+
+Now go back to Realm roles — you should see all 3 listed:
+
+text
+Admin
+Candidate
+Examiner
+2.4 — Create Client
+In the left sidebar click "Clients"
+
+Click "Create client" button (top right).
+
+Page 1 — General Settings:
+
+text
+Client type:    OpenID Connect    ← already selected by default
+Client ID:      3rdeyez360-app
+Name:           3rdEyeZ360 App
+Description:    Desktop proctoring app
+Click "Next"
+
+Page 2 — Capability config:
+
+text
+Client authentication:     ON   ← toggle this ON (turns blue)
+Authorization:             OFF
+Authentication flow:
+  ✅ Standard flow:           OFF (uncheck it)
+  ✅ Direct access grants:    ON  ← this MUST be ON
+Click "Next"
+
+Page 3 — Login settings:
+Leave everything blank/default.
+
+Click "Save"
+
+2.5 — Get Client Secret
+After saving, you land on the client detail page.
+
+Click the "Credentials" tab (you will see tabs: Settings | Roles | Credentials | ...).
+
+You will see:
+
+text
+Client Authenticator:   Client Id and Secret
+Client secret:          xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+Click the copy icon next to the secret. Save this somewhere — you need it in your .env file.
+
+2.6 — Create Test Users in Keycloak
+In left sidebar click "Users" → Click "Create new user" (top right button, not "Add user" — newer Keycloak versions say "Create new user").
+
+Create Admin User:
+
+text
+Username:       samp_admin_user
+Email:          admin@3rdeyez360.com
+First name:     SAMP
+Last name:      Admin
+Email verified: ON
+Enabled:        ON
+Click "Create"
+
+Now click "Credentials" tab on this user:
+
+text
+Click "Set password"
+Password:         Admin@123
+Confirm:          Admin@123
+Temporary:        OFF   ← turn this OFF
+Click "Save" → "Save password" (confirm popup)
+
+Now click "Role mapping" tab:
+
+Click "Assign role"
+
+In the filter dropdown change "Filter by clients" to "Filter by realm roles"
+
+Check "Admin"
+
+Click "Assign"
+
+Create Examiner User:
+
+Go back to "Users" → "Create new user"
+
+text
+Username:       examiner_sarah
+Email:          sarah@3rdeyez360.com
+First name:     Sarah
+Last name:      Examiner
+Email verified: ON
+Enabled:        ON
+Click "Create" → "Credentials" tab:
+
+text
+Password:    Examiner@123
+Temporary:   OFF
+Click "Save" → "Save password"
+
+"Role mapping" tab → "Assign role" → Filter by realm roles → Check "Examiner" → "Assign"
+
+Create Candidate User:
+
+Go back to "Users" → "Create new user"
+
+text
+Username:       candidate_john
+Email:          john@3rdeyez360.com
+First name:     John
+Last name:      Smith
+Email verified: ON
+Enabled:        ON
+Click "Create" → "Credentials" tab:
+
+text
+Password:    Candidate@123
+Temporary:   OFF
+Click "Save" → "Save password"
+
+"Role mapping" tab → "Assign role" → Filter by realm roles → Check "Candidate" → "Assign"
+
+2.7 — Verify Keycloak Works (Test Login via API)
+Open a new PowerShell window and run this (replace YOUR_SECRET with the secret you copied in step 2.5):
+
+powershell
+curl -X POST "http://localhost:8080/realms/3rdEyeZ360/protocol/openid-connect/token" `
+  -H "Content-Type: application/x-www-form-urlencoded" `
+  -d "grant_type=password&client_id=3rdeyez360-app&client_secret=YOUR_SECRET&username=candidate_john&password=Candidate@123"
+You should get back a JSON response with:
+
+json
+{
+  "access_token": "eyJhbGci...",
+  "refresh_token": "eyJhbGci...",
+  "token_type": "Bearer",
+  "expires_in": 300
+}
+If you see this → Keycloak is 100% working. ✅
+
+If you see invalid_client → your client secret is wrong, go back to step 2.5 and re-copy it.
+
+If you see invalid_grant → username or password is wrong, go back and check the user credentials.
+
+STEP 3 — MinIO Bucket Setup
+Open browser → http://localhost:9001
+
+Login:
+
+text
+Username: samp_minio
+Password: samp_minio_pass123
+In left sidebar click "Buckets" → Click "Create Bucket" (top right)
+
+text
+Bucket Name:   assessment-evidence
+Leave everything else default. Click "Create Bucket".
+
+You should see assessment-evidence in the bucket list. ✅
+
+STEP 4 — Create Python Detection API
+Open PowerShell:
+
+powershell
+cd D:\3rdEyez360V2\3rdEyeZ360
+mkdir python-api
+cd python-api
+mkdir routers
+mkdir detectors
+mkdir models
+mkdir schemas
+mkdir utils
+Your structure now:
+
+text
+D:\3rdEyez360V2\3rdEyeZ360\
+├── docker\
+├── python-api\
+│   ├── routers\
+│   ├── detectors\
+│   ├── models\
+│   ├── schemas\
+│   └── utils\
+├── .gitignore
+└── docker-compose.yml
+Create Virtual Environment
+powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\python-api
+python -m venv venv
+venv\Scripts\activate
+Your terminal prompt should now show (venv) at the start.
+
+Create requirements.txt
+Create file at D:\3rdEyez360V2\3rdEyeZ360\python-api\requirements.txt:
+
+text
+fastapi==0.111.0
+uvicorn==0.30.0
+python-multipart==0.0.9
+opencv-python==4.9.0.80
+mediapipe==0.10.14
+ultralytics==8.2.0
+cvzone==1.6.1
+pyaudio==0.2.14
+librosa==0.10.2
+psutil==5.9.8
+screeninfo==0.8.1
+numpy==1.26.4
+Pillow==10.3.0
+python-dotenv==1.0.1
+Install
+powershell
+pip install -r requirements.txt
+⚠️ If pyaudio fails on Windows, run this first:
+
+powershell
+pip install pipwin
+pipwin install pyaudio
+Create .env
+Create file at D:\3rdEyez360V2\3rdEyeZ360\python-api\.env:
+
+text
+PORT=5001
+YOLO_MODEL_PATH=./models/yolov8n.pt
+Create all Python files
+D:\3rdEyez360V2\3rdEyeZ360\python-api\schemas\__init__.py — empty file
+
+D:\3rdEyez360V2\3rdEyeZ360\python-api\schemas\detection_request.py
+
+python
+from pydantic import BaseModel
+
+class FrameRequest(BaseModel):
+    frame: str
+    candidate_id: str
+    exam_id: str
+
+class AudioRequest(BaseModel):
+    audio_chunk: str
+    candidate_id: str
+    exam_id: str
+D:\3rdEyez360V2\3rdEyeZ360\python-api\schemas\detection_response.py
+
+python
+from pydantic import BaseModel
+from typing import Optional
+
+class DetectionResult(BaseModel):
+    type: str
+    detected: bool
+    confidence: float
+    detail: Optional[str] = None
+D:\3rdEyez360V2\3rdEyeZ360\python-api\utils\__init__.py — empty file
+
+D:\3rdEyez360V2\3rdEyeZ360\python-api\utils\frame_utils.py
+
+python
+import base64
+import numpy as np
+import cv2
+
+def decode_frame(base64_string: str) -> np.ndarray:
+    img_bytes = base64.b64decode(base64_string)
+    np_arr = np.frombuffer(img_bytes, np.uint8)
+    frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    return frame
+
+def resize_frame(frame: np.ndarray, width=640) -> np.ndarray:
+    h, w = frame.shape[:2]
+    ratio = width / w
+    return cv2.resize(frame, (width, int(h * ratio)))
+D:\3rdEyez360V2\3rdEyeZ360\python-api\utils\audio_utils.py
+
+python
+import base64
+import numpy as np
+
+def decode_audio(base64_string: str, sr=16000):
+    audio_bytes = base64.b64decode(base64_string)
+    audio_array = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    return audio_array, sr
+
+def get_rms(audio_array) -> float:
+    return float(np.sqrt(np.mean(audio_array**2)))
+
+def has_speech(audio_array, rms_threshold=0.02) -> bool:
+    return get_rms(audio_array) > rms_threshold
+D:\3rdEyez360V2\3rdEyeZ360\python-api\detectors\__init__.py — empty file
+
+D:\3rdEyez360V2\3rdEyeZ360\python-api\detectors\face_detector.py
+
+python
+import mediapipe as mp
+import cv2
+
+mp_face = mp.solutions.face_detection
+detector = mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.6)
+
+def detect_faces(frame):
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = detector.process(rgb)
+    if not results.detections:
+        return {"detected": True, "count": 0, "detail": "face_missing", "confidence": 0.99}
+    count = len(results.detections)
+    if count > 1:
+        return {"detected": True, "count": count, "detail": "multiple_faces", "confidence": 0.95}
+    return {"detected": False, "count": 1, "detail": "ok", "confidence": 1.0}
+D:\3rdEyez360V2\3rdEyeZ360\python-api\detectors\phone_detector.py
+
+python
+from ultralytics import YOLO
+import os
+
+model = None
+
+def load_model():
+    global model
+    model_path = os.getenv("YOLO_MODEL_PATH", "./models/yolov8n.pt")
+    model = YOLO(model_path)
+
+def detect_phone(frame):
+    if model is None:
+        load_model()
+    results = model(frame, verbose=False)[0]
+    for box in results.boxes:
+        cls = int(box.cls[0])
+        conf = float(box.conf[0])
+        if cls == 67 and conf > 0.5:
+            return {"detected": True, "detail": "phone_detected", "confidence": conf}
+    return {"detected": False, "detail": "ok", "confidence": 1.0}
+D:\3rdEyez360V2\3rdEyeZ360\python-api\detectors\pose_detector.py
+
+python
+import mediapipe as mp
+import cv2
+
+mp_face_mesh = mp.solutions.face_mesh
+mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, min_detection_confidence=0.6)
+
+def detect_pose(frame):
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = mesh.process(rgb)
+    if not results.multi_face_landmarks:
+        return {"detected": False, "detail": "no_face", "confidence": 0.0}
+    landmarks = results.multi_face_landmarks[0].landmark
+    nose = landmarks[1]
+    if abs(nose.x - 0.5) > 0.12:
+        direction = "looking_left" if nose.x < 0.5 else "looking_right"
+        return {"detected": True, "detail": direction, "confidence": 0.85}
+    if nose.y > 0.65:
+        return {"detected": True, "detail": "looking_down", "confidence": 0.80}
+    return {"detected": False, "detail": "ok", "confidence": 1.0}
+D:\3rdEyez360V2\3rdEyeZ360\python-api\detectors\audio_detector.py
+
+python
+from utils.audio_utils import decode_audio, has_speech, get_rms
+
+def detect_audio(audio_chunk_b64: str):
+    try:
+        audio, sr = decode_audio(audio_chunk_b64)
+        rms = get_rms(audio)
+        if rms < 0.005:
+            return {"detected": True, "detail": "mic_silent", "confidence": 0.9}
+        if has_speech(audio):
+            if rms > 0.08:
+                return {"detected": True, "detail": "loud_noise", "confidence": 0.85}
+            return {"detected": True, "detail": "background_speech", "confidence": 0.75}
+        return {"detected": False, "detail": "ok", "confidence": 1.0}
+    except Exception:
+        return {"detected": False, "detail": "ok", "confidence": 0.0}
+D:\3rdEyez360V2\3rdEyeZ360\python-api\routers\__init__.py — empty file
+
+D:\3rdEyez360V2\3rdEyeZ360\python-api\routers\face.py
+
+python
+from fastapi import APIRouter
+from schemas.detection_request import FrameRequest
+from schemas.detection_response import DetectionResult
+from detectors.face_detector import detect_faces
+from utils.frame_utils import decode_frame, resize_frame
+
+router = APIRouter()
+
+@router.post("/detect/face", response_model=DetectionResult)
+async def face_detection(req: FrameRequest):
+    frame = decode_frame(req.frame)
+    frame = resize_frame(frame)
+    result = detect_faces(frame)
+    return DetectionResult(type="face", detected=result["detected"],
+                           confidence=result["confidence"], detail=result["detail"])
+D:\3rdEyez360V2\3rdEyeZ360\python-api\routers\phone.py
+
+python
+from fastapi import APIRouter
+from schemas.detection_request import FrameRequest
+from schemas.detection_response import DetectionResult
+from detectors.phone_detector import detect_phone
+from utils.frame_utils import decode_frame, resize_frame
+
+router = APIRouter()
+
+@router.post("/detect/phone", response_model=DetectionResult)
+async def phone_detection(req: FrameRequest):
+    frame = decode_frame(req.frame)
+    frame = resize_frame(frame)
+    result = detect_phone(frame)
+    return DetectionResult(type="phone", detected=result["detected"],
+                           confidence=result["confidence"], detail=result["detail"])
+D:\3rdEyez360V2\3rdEyeZ360\python-api\routers\pose.py
+
+python
+from fastapi import APIRouter
+from schemas.detection_request import FrameRequest
+from schemas.detection_response import DetectionResult
+from detectors.pose_detector import detect_pose
+from utils.frame_utils import decode_frame, resize_frame
+
+router = APIRouter()
+
+@router.post("/detect/pose", response_model=DetectionResult)
+async def pose_detection(req: FrameRequest):
+    frame = decode_frame(req.frame)
+    frame = resize_frame(frame)
+    result = detect_pose(frame)
+    return DetectionResult(type="pose", detected=result["detected"],
+                           confidence=result["confidence"], detail=result["detail"])
+D:\3rdEyez360V2\3rdEyeZ360\python-api\routers\audio.py
+
+python
+from fastapi import APIRouter
+from schemas.detection_request import AudioRequest
+from schemas.detection_response import DetectionResult
+from detectors.audio_detector import detect_audio
+
+router = APIRouter()
+
+@router.post("/detect/audio", response_model=DetectionResult)
+async def audio_detection(req: AudioRequest):
+    result = detect_audio(req.audio_chunk)
+    return DetectionResult(type="audio", detected=result["detected"],
+                           confidence=result["confidence"], detail=result["detail"])
+D:\3rdEyez360V2\3rdEyeZ360\python-api\main.py
+
+python
+from fastapi import FastAPI
+from dotenv import load_dotenv
+from routers import face, phone, pose, audio
+import uvicorn
+import os
+
+load_dotenv()
+
+app = FastAPI(title="3rdEyeZ360 Detection API", version="1.0.0")
+
+app.include_router(face.router)
+app.include_router(phone.router)
+app.include_router(pose.router)
+app.include_router(audio.router)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "3rdEyeZ360 Detection API"}
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=int(os.getenv("PORT", 5001)), reload=False)
+Download YOLO Model
+powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\python-api
+python -c "from ultralytics import YOLO; m=YOLO('yolov8n.pt'); import shutil; shutil.move('yolov8n.pt','models/yolov8n.pt')"
+Test Detection API
+powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\python-api
+uvicorn main:app --host 127.0.0.1 --port 5001
+Open browser → http://127.0.0.1:5001/docs
+
+You will see Swagger UI with 4 endpoints + 1 health check. ✅
+
+Your Complete Folder Structure Now
+text
+D:\3rdEyez360V2\
+└── 3rdEyeZ360\
+    ├── docker\
+    ├── python-api\
+    │   ├── venv\
+    │   ├── routers\
+    │   │   ├── __init__.py
+    │   │   ├── face.py
+    │   │   ├── phone.py
+    │   │   ├── pose.py
+    │   │   └── audio.py
+    │   ├── detectors\
+    │   │   ├── __init__.py
+    │   │   ├── face_detector.py
+    │   │   ├── phone_detector.py
+    │   │   ├── pose_detector.py
+    │   │   └── audio_detector.py
+    │   ├── models\
+    │   │   └── yolov8n.pt
+    │   ├── schemas\
+    │   │   ├── __init__.py
+    │   │   ├── detection_request.py
+    │   │   └── detection_response.py
+    │   ├── utils\
+    │   │   ├── __init__.py
+    │   │   ├── frame_utils.py
+    │   │   └── audio_utils.py
+    │   ├── main.py
+    │   ├── requirements.txt
+    │   └── .env
+    ├── .gitignore
+    └── docker-compose.yml
+✅ Current Status Checklist
+text
+✅ Docker running (MongoDB + MinIO + Keycloak)
+✅ Keycloak: realm created, 3 roles, 1 client, 3 test users
+✅ MinIO: assessment-evidence bucket created
+✅ Python Detection API: all 4 detectors working, Swagger live
+⬜ Backend API (FastAPI)       ← Next
+⬜ Electron App                ← After backend
+## PHASE 5 — Backend API (FastAPI)
+
+### Step 5.1 — Create Folder Structure
+
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360
+mkdir backend
+cd backend
+mkdir config models routes controllers sockets middleware services utils
+```
+
+Your structure now:
+```
+D:\3rdEyez360V2\3rdEyeZ360\
+├── docker\
+├── python-api\
+├── backend\
+│   ├── config\
+│   ├── models\
+│   ├── routes\
+│   ├── controllers\
+│   ├── sockets\
+│   ├── middleware\
+│   ├── services\
+│   └── utils\
+├── .gitignore
+└── docker-compose.yml
+```
+
+### Step 5.2 — Create Virtual Environment
+
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\backend
+python -m venv venv
+venv\Scripts\activate
+```
+
+Prompt should show `(venv)` at start.
+
+### Step 5.3 — Create `requirements.txt`
+
+Create file at `D:\3rdEyez360V2\3rdEyeZ360\backend\requirements.txt`:
+```
+fastapi==0.111.0
+uvicorn==0.30.0
+motor==3.4.0
+pymongo==4.7.2
+python-socketio[asyncio_client]==5.11.2
+python-keycloak==4.1.0
+minio==7.2.7
+python-dotenv==1.0.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+pydantic==2.7.1
+httpx==0.27.0
+python-multipart==0.0.9
+aiofiles==23.2.1
+```
+
+### Step 5.4 — Install
+
+```powershell
+pip install -r requirements.txt
+```
+
+### Step 5.5 — Create `.env`
+
+Create file at `D:\3rdEyez360V2\3rdEyeZ360\backend\.env`:
+```
+MONGO_URL=mongodb://samp_admin:samp_pass123@localhost:27017/samp_db?authSource=admin
+MONGO_DB=samp_db
+
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=samp_minio
+MINIO_SECRET_KEY=samp_minio_pass123
+MINIO_BUCKET=assessment-evidence
+MINIO_SECURE=False
+
+KEYCLOAK_URL=http://localhost:8080
+KEYCLOAK_REALM=3rdEyeZ360
+KEYCLOAK_CLIENT_ID=3rdeyez360-app
+KEYCLOAK_CLIENT_SECRET=PASTE_YOUR_SECRET_HERE
+
+PORT=3000
+DETECTION_API_URL=http://127.0.0.1:5001
+```
+
+***
+
+## Step 5.6 — Config Files
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\config\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\config\database.py`**
+```python
+from motor.motor_asyncio import AsyncIOMotorClient
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+client: AsyncIOMotorClient = None
+db = None
+
+async def connect_db():
+    global client, db
+    client = AsyncIOMotorClient(os.getenv("MONGO_URL"))
+    db = client[os.getenv("MONGO_DB")]
+    # Create indexes
+    await db.users.create_index("keycloak_id", unique=True)
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("user_id", unique=True)
+    await db.exams.create_index("examiner_id")
+    await db.assessments.create_index([("exam_id", 1), ("candidate_id", 1)], unique=True)
+    await db.violations.create_index("assessment_id")
+    await db.warnings.create_index("assessment_id")
+    await db.chats.create_index([("exam_id", 1), ("candidate_id", 1)])
+    await db.audit_logs.create_index("exam_id")
+    print("✅ MongoDB connected and indexes created")
+
+async def close_db():
+    global client
+    if client:
+        client.close()
+
+def get_db():
+    return db
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\config\minio_client.py`**
+```python
+from minio import Minio
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+minio_client: Minio = None
+
+def get_minio():
+    global minio_client
+    if minio_client is None:
+        minio_client = Minio(
+            os.getenv("MINIO_ENDPOINT"),
+            access_key=os.getenv("MINIO_ACCESS_KEY"),
+            secret_key=os.getenv("MINIO_SECRET_KEY"),
+            secure=os.getenv("MINIO_SECURE", "False") == "True"
+        )
+        bucket = os.getenv("MINIO_BUCKET")
+        if not minio_client.bucket_exists(bucket):
+            minio_client.make_bucket(bucket)
+        print("✅ MinIO connected")
+    return minio_client
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\config\keycloak_client.py`**
+```python
+from keycloak import KeycloakOpenID, KeycloakAdmin
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+keycloak_openid = KeycloakOpenID(
+    server_url=os.getenv("KEYCLOAK_URL"),
+    realm_name=os.getenv("KEYCLOAK_REALM"),
+    client_id=os.getenv("KEYCLOAK_CLIENT_ID"),
+    client_secret_key=os.getenv("KEYCLOAK_CLIENT_SECRET")
+)
+
+keycloak_admin = KeycloakAdmin(
+    server_url=os.getenv("KEYCLOAK_URL"),
+    username="admin",
+    password="admin123",
+    realm_name=os.getenv("KEYCLOAK_REALM"),
+    verify=False
+)
+```
+
+***
+
+## Step 5.7 — Utils
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\utils\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\utils\id_generator.py`**
+```python
+import re
+from config.database import get_db
+
+async def generate_user_id(role: str) -> str:
+    db = get_db()
+    prefix_map = {"Admin": "ADMN", "Examiner": "EXAM", "Candidate": "CAND"}
+    prefix = prefix_map.get(role, "USER")
+    count = await db.users.count_documents({"role": role})
+    return f"{prefix}-{str(count + 1).zfill(4)}"
+
+async def generate_exam_id() -> str:
+    db = get_db()
+    count = await db.exams.count_documents({})
+    return f"EXM-{str(count + 1).zfill(4)}"
+
+async def generate_assessment_id() -> str:
+    db = get_db()
+    count = await db.assessments.count_documents({})
+    return f"ASM-{str(count + 1).zfill(4)}"
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\utils\constants.py`**
+```python
+# Assessment statuses
+class AssessmentStatus:
+    ASSIGNED = "ASSIGNED"
+    AVAILABLE = "AVAILABLE"
+    READY = "READY"
+    ACTIVE = "ACTIVE"
+    INTERRUPTED = "INTERRUPTED"
+    LOCKED = "LOCKED"
+    COMPLETED = "COMPLETED"
+    TERMINATED = "TERMINATED"
+
+# Attendance statuses
+class AttendanceStatus:
+    PRESENT = "PRESENT"
+    ABSENT = "ABSENT"
+    LATE_APPROVED = "LATE_APPROVED"
+    LATE_REJECTED = "LATE_REJECTED"
+
+# Violation types
+class ViolationType:
+    FACE_MISSING = "FaceMissing"
+    MULTIPLE_FACES = "MultipleFaces"
+    PHONE_DETECTED = "PhoneDetected"
+    LOOKING_AWAY = "LookingAway"
+    BACKGROUND_SPEECH = "BackgroundSpeech"
+    LOUD_NOISE = "LoudNoise"
+    MIC_SILENT = "MicSilent"
+
+# Request statuses
+class RequestStatus:
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+# User roles
+class UserRole:
+    ADMIN = "Admin"
+    EXAMINER = "Examiner"
+    CANDIDATE = "Candidate"
+
+# Toaster messages mapped to detection details
+TOASTER_MESSAGES = {
+    "face_missing":       ("👁️ Please face your camera — we need to see your face clearly", "warning"),
+    "multiple_faces":     ("👥 Only you should be visible — ensure no one is behind you", "warning"),
+    "looking_left":       ("👀 Keep your eyes on the screen — looking away may be flagged", "info"),
+    "looking_right":      ("👀 Keep your eyes on the screen — looking away may be flagged", "info"),
+    "looking_down":       ("📋 Please look at your screen, not downward", "info"),
+    "phone_detected":     ("📵 A phone was detected — please keep your desk clear", "warning"),
+    "background_speech":  ("🔊 Background voices detected — ensure you are in a quiet room", "warning"),
+    "loud_noise":         ("🔈 Loud noise detected — please maintain a quiet environment", "warning"),
+    "mic_silent":         ("🎙️ Your microphone seems off — please check it is connected", "info"),
+}
+
+# Violation scores for credibility calculation
+VIOLATION_SCORES = {
+    ViolationType.FACE_MISSING:     5,
+    ViolationType.MULTIPLE_FACES:   10,
+    ViolationType.PHONE_DETECTED:   15,
+    ViolationType.LOOKING_AWAY:     3,
+    ViolationType.BACKGROUND_SPEECH: 5,
+    ViolationType.LOUD_NOISE:       5,
+    ViolationType.MIC_SILENT:       2,
+}
+```
+
+***
+
+## Step 5.8 — Models (MongoDB Schemas with Pydantic)
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\user.py`**
+```python
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import datetime
+
+class UserModel(BaseModel):
+    user_id: str
+    keycloak_id: str
+    name: str
+    email: str
+    role: str
+    status: str = "Active"
+    created_at: datetime = None
+    last_login: Optional[datetime] = None
+
+    class Config:
+        arbitrary_types_allowed = True
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\exam.py`**
+```python
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime
+
+class ExamModel(BaseModel):
+    exam_id: str
+    name: str
+    description: Optional[str] = ""
+    examiner_id: str
+    date: str
+    start_time: str
+    end_time: str
+    duration_minutes: int
+    violation_threshold: int = 10
+    allowed_websites: List[str] = []
+    instructions: Optional[str] = ""
+    status: str = "Draft"
+    created_at: datetime = None
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\assessment.py`**
+```python
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class AssessmentModel(BaseModel):
+    assessment_id: str
+    exam_id: str
+    candidate_id: str
+    status: str = "ASSIGNED"
+    attendance_status: Optional[str] = None
+    join_time: Optional[datetime] = None
+    active_time: Optional[datetime] = None
+    exit_time: Optional[datetime] = None
+    violation_count: int = 0
+    warning_count: int = 0
+    risk_score: int = 0
+    credibility_score: int = 100
+    integrity_score: int = 100
+    threshold_reached: bool = False
+    re_entry_count: int = 0
+    final_status: Optional[str] = None
+    created_at: datetime = None
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\violation.py`**
+```python
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class ViolationModel(BaseModel):
+    violation_id: str
+    assessment_id: str
+    candidate_id: str
+    exam_id: str
+    type: str
+    detail: str
+    confidence: float
+    risk_score: int
+    screenshot_path: Optional[str] = None
+    clip_path: Optional[str] = None
+    timestamp: datetime = None
+    reviewed: bool = False
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\warning.py`**
+```python
+from pydantic import BaseModel
+from datetime import datetime
+
+class WarningModel(BaseModel):
+    warning_id: str
+    assessment_id: str
+    candidate_id: str
+    exam_id: str
+    type: str
+    detail: str
+    count: int = 1
+    timestamp: datetime = None
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\chat.py`**
+```python
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class ChatMessage(BaseModel):
+    message_id: str
+    exam_id: str
+    candidate_id: str
+    sender_id: str
+    sender_role: str
+    message: str
+    is_broadcast: bool = False
+    sent_at: datetime = None
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\request.py`**
+```python
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class RequestModel(BaseModel):
+    request_id: str
+    assessment_id: str
+    exam_id: str
+    candidate_id: str
+    type: str
+    reason: str
+    status: str = "PENDING"
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    created_at: datetime = None
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\audit_log.py`**
+```python
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class AuditLogModel(BaseModel):
+    log_id: str
+    exam_id: Optional[str] = None
+    assessment_id: Optional[str] = None
+    user_id: str
+    action: str
+    reason: Optional[str] = None
+    detail: Optional[str] = None
+    timestamp: datetime = None
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\models\notification.py`**
+```python
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class NotificationModel(BaseModel):
+    notification_id: str
+    user_id: str
+    title: str
+    message: str
+    type: str = "Info"
+    read: bool = False
+    created_at: datetime = None
+```
+
+***
+
+## Step 5.9 — Middleware
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\middleware\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\middleware\auth.py`**
+```python
+from fastapi import Request, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from config.keycloak_client import keycloak_openid
+from config.database import get_db
+
+security = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        token_info = keycloak_openid.introspect(token)
+        if not token_info.get("active"):
+            raise HTTPException(status_code=401, detail="Token expired or invalid")
+
+        keycloak_id = token_info.get("sub")
+        db = get_db()
+        user = await db.users.find_one({"keycloak_id": keycloak_id})
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found in system")
+
+        return user
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
+
+def require_role(*roles):
+    async def role_checker(current_user=Depends(get_current_user)):
+        if current_user["role"] not in roles:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return current_user
+    return role_checker
+```
+
+***
+
+## Step 5.10 — Services
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\services\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\services\evidence_service.py`**
+```python
+from config.minio_client import get_minio
+from dotenv import load_dotenv
+import os, io, base64, uuid
+from datetime import datetime
+
+load_dotenv()
+BUCKET = os.getenv("MINIO_BUCKET")
+
+def upload_screenshot(exam_id: str, candidate_id: str, violation_type: str, image_b64: str) -> str:
+    minio = get_minio()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{violation_type}_{timestamp}.jpg"
+    path = f"{exam_id}/{candidate_id}/screenshots/{filename}"
+    image_bytes = base64.b64decode(image_b64)
+    minio.put_object(BUCKET, path, io.BytesIO(image_bytes), len(image_bytes), content_type="image/jpeg")
+    return path
+
+def upload_clip(exam_id: str, candidate_id: str, violation_type: str, video_bytes: bytes) -> str:
+    minio = get_minio()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{violation_type}_{timestamp}.mp4"
+    path = f"{exam_id}/{candidate_id}/clips/{filename}"
+    minio.put_object(BUCKET, path, io.BytesIO(video_bytes), len(video_bytes), content_type="video/mp4")
+    return path
+
+def get_presigned_url(path: str, expires_seconds: int = 3600) -> str:
+    from datetime import timedelta
+    minio = get_minio()
+    url = minio.presigned_get_object(BUCKET, path, expires=timedelta(seconds=expires_seconds))
+    return url
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\services\violation_service.py`**
+```python
+from config.database import get_db
+from utils.constants import VIOLATION_SCORES, ViolationType
+from datetime import datetime
+import uuid
+
+async def log_warning(assessment_id: str, candidate_id: str, exam_id: str, detail: str):
+    db = get_db()
+    existing = await db.warnings.find_one({
+        "assessment_id": assessment_id,
+        "detail": detail
+    })
+    if existing:
+        await db.warnings.update_one(
+            {"_id": existing["_id"]},
+            {"$inc": {"count": 1}, "$set": {"timestamp": datetime.utcnow()}}
+        )
+        return existing["count"] + 1
+    else:
+        warning = {
+            "warning_id": f"WRN-{uuid.uuid4().hex[:8].upper()}",
+            "assessment_id": assessment_id,
+            "candidate_id": candidate_id,
+            "exam_id": exam_id,
+            "type": detail,
+            "detail": detail,
+            "count": 1,
+            "timestamp": datetime.utcnow()
+        }
+        await db.warnings.insert_one(warning)
+        return 1
+
+async def log_violation(assessment_id: str, candidate_id: str, exam_id: str,
+                        vtype: str, detail: str, confidence: float,
+                        screenshot_path: str = None, clip_path: str = None):
+    db = get_db()
+    risk = VIOLATION_SCORES.get(vtype, 5)
+    violation = {
+        "violation_id": f"VIO-{uuid.uuid4().hex[:8].upper()}",
+        "assessment_id": assessment_id,
+        "candidate_id": candidate_id,
+        "exam_id": exam_id,
+        "type": vtype,
+        "detail": detail,
+        "confidence": confidence,
+        "risk_score": risk,
+        "screenshot_path": screenshot_path,
+        "clip_path": clip_path,
+        "timestamp": datetime.utcnow(),
+        "reviewed": False
+    }
+    await db.violations.insert_one(violation)
+
+    # Update assessment counts and credibility
+    credibility_deduction = risk
+    await db.assessments.update_one(
+        {"assessment_id": assessment_id},
+        {
+            "$inc": {
+                "violation_count": 1,
+                "risk_score": risk,
+                "credibility_score": -credibility_deduction
+            }
+        }
+    )
+    # Check threshold
+    assessment = await db.assessments.find_one({"assessment_id": assessment_id})
+    exam = await db.exams.find_one({"exam_id": exam_id})
+    if exam and assessment:
+        if assessment["risk_score"] >= exam["violation_threshold"]:
+            await db.assessments.update_one(
+                {"assessment_id": assessment_id},
+                {"$set": {"status": "LOCKED", "threshold_reached": True}}
+            )
+            return {"locked": True, "violation": violation}
+    return {"locked": False, "violation": violation}
+
+async def get_warning_count(assessment_id: str, detail: str) -> int:
+    db = get_db()
+    result = await db.warnings.find_one({"assessment_id": assessment_id, "detail": detail})
+    return result["count"] if result else 0
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\services\assessment_service.py`**
+```python
+from config.database import get_db
+from utils.constants import AssessmentStatus, AttendanceStatus
+from datetime import datetime
+import uuid
+
+async def take_attendance_snapshot(exam_id: str):
+    db = get_db()
+    assessments = await db.assessments.find({"exam_id": exam_id}).to_list(None)
+    for a in assessments:
+        if a["status"] in [AssessmentStatus.READY, AssessmentStatus.ACTIVE]:
+            status = AttendanceStatus.PRESENT
+        else:
+            status = AttendanceStatus.ABSENT
+        await db.assessments.update_one(
+            {"assessment_id": a["assessment_id"]},
+            {"$set": {"attendance_status": status}}
+        )
+        await db.attendance.insert_one({
+            "attendance_id": f"ATT-{uuid.uuid4().hex[:8].upper()}",
+            "assessment_id": a["assessment_id"],
+            "candidate_id": a["candidate_id"],
+            "exam_id": exam_id,
+            "attendance_status": status,
+            "captured_at": datetime.utcnow()
+        })
+
+async def log_audit(user_id: str, action: str, reason: str = None,
+                    exam_id: str = None, assessment_id: str = None, detail: str = None):
+    db = get_db()
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": user_id,
+        "exam_id": exam_id,
+        "assessment_id": assessment_id,
+        "action": action,
+        "reason": reason,
+        "detail": detail,
+        "timestamp": datetime.utcnow()
+    })
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\services\notification_service.py`**
+```python
+from config.database import get_db
+from datetime import datetime
+import uuid
+
+async def create_notification(user_id: str, title: str, message: str, ntype: str = "Info"):
+    db = get_db()
+    notif = {
+        "notification_id": f"NOT-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": user_id,
+        "title": title,
+        "message": message,
+        "type": ntype,
+        "read": False,
+        "created_at": datetime.utcnow()
+    }
+    await db.notifications.insert_one(notif)
+    return notif
+```
+
+***
+
+## Step 5.11 — Controllers
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\controllers\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\controllers\auth_controller.py`**
+```python
+from config.keycloak_client import keycloak_openid
+from config.database import get_db
+from utils.id_generator import generate_user_id
+from datetime import datetime
+
+async def login(email: str, password: str):
+    token_response = keycloak_openid.token(email, password)
+    token_info = keycloak_openid.introspect(token_response["access_token"])
+    keycloak_id = token_info["sub"]
+    roles = token_info.get("realm_access", {}).get("roles", [])
+    role = next((r for r in ["Admin", "Examiner", "Candidate"] if r in roles), None)
+    if not role:
+        raise Exception("No valid role assigned in Keycloak")
+    db = get_db()
+    user = await db.users.find_one({"keycloak_id": keycloak_id})
+    if not user:
+        user_id = await generate_user_id(role)
+        name = f"{token_info.get('given_name', '')} {token_info.get('family_name', '')}".strip()
+        user = {
+            "user_id": user_id,
+            "keycloak_id": keycloak_id,
+            "name": name or email,
+            "email": email,
+            "role": role,
+            "status": "Active",
+            "created_at": datetime.utcnow(),
+            "last_login": datetime.utcnow()
+        }
+        await db.users.insert_one(user)
+    else:
+        await db.users.update_one(
+            {"keycloak_id": keycloak_id},
+            {"$set": {"last_login": datetime.utcnow()}}
+        )
+        user = await db.users.find_one({"keycloak_id": keycloak_id})
+    return {
+        "access_token": token_response["access_token"],
+        "refresh_token": token_response["refresh_token"],
+        "expires_in": token_response["expires_in"],
+        "user": {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"}
+    }
+
+async def refresh_token(refresh_token: str):
+    return keycloak_openid.refresh_token(refresh_token)
+
+async def logout(refresh_token: str):
+    keycloak_openid.logout(refresh_token)
+    return {"message": "Logged out"}
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\controllers\exam_controller.py`**
+```python
+from config.database import get_db
+from utils.id_generator import generate_exam_id
+from datetime import datetime
+
+async def create_exam(data: dict, examiner_id: str):
+    db = get_db()
+    exam_id = await generate_exam_id()
+    exam = {
+        "exam_id": exam_id,
+        "name": data["name"],
+        "description": data.get("description", ""),
+        "examiner_id": examiner_id,
+        "date": data["date"],
+        "start_time": data["start_time"],
+        "end_time": data["end_time"],
+        "duration_minutes": data["duration_minutes"],
+        "violation_threshold": data.get("violation_threshold", 10),
+        "allowed_websites": data.get("allowed_websites", []),
+        "instructions": data.get("instructions", ""),
+        "status": "Draft",
+        "created_at": datetime.utcnow()
+    }
+    await db.exams.insert_one(exam)
+    return {k: str(v) if k == "_id" else v for k, v in exam.items() if k != "_id"}
+
+async def get_exams_by_examiner(examiner_id: str):
+    db = get_db()
+    exams = await db.exams.find({"examiner_id": examiner_id}).to_list(None)
+    return [{k: str(v) if k == "_id" else v for k, v in e.items() if k != "_id"} for e in exams]
+
+async def get_exam(exam_id: str):
+    db = get_db()
+    exam = await db.exams.find_one({"exam_id": exam_id})
+    if not exam:
+        return None
+    return {k: str(v) if k == "_id" else v for k, v in exam.items() if k != "_id"}
+
+async def assign_candidates(exam_id: str, candidate_ids: list, examiner_id: str):
+    db = get_db()
+    from utils.id_generator import generate_assessment_id
+    results = []
+    for cid in candidate_ids:
+        existing = await db.assessments.find_one({"exam_id": exam_id, "candidate_id": cid})
+        if not existing:
+            aid = await generate_assessment_id()
+            assessment = {
+                "assessment_id": aid,
+                "exam_id": exam_id,
+                "candidate_id": cid,
+                "status": "ASSIGNED",
+                "attendance_status": None,
+                "join_time": None,
+                "active_time": None,
+                "exit_time": None,
+                "violation_count": 0,
+                "warning_count": 0,
+                "risk_score": 0,
+                "credibility_score": 100,
+                "integrity_score": 100,
+                "threshold_reached": False,
+                "re_entry_count": 0,
+                "final_status": None,
+                "created_at": datetime.utcnow()
+            }
+            await db.assessments.insert_one(assessment)
+            results.append(aid)
+    return results
+
+async def publish_exam(exam_id: str):
+    db = get_db()
+    await db.exams.update_one({"exam_id": exam_id}, {"$set": {"status": "Published"}})
+    return {"message": "Exam published"}
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\controllers\assessment_controller.py`**
+```python
+from config.database import get_db
+from services.assessment_service import log_audit
+from services.violation_service import log_warning, log_violation, get_warning_count
+from services.evidence_service import upload_screenshot, upload_clip
+from utils.constants import TOASTER_MESSAGES, ViolationType
+from datetime import datetime
+import uuid
+
+WARNING_BEFORE_VIOLATION = 2
+
+DETAIL_TO_VIOLATION_TYPE = {
+    "face_missing": ViolationType.FACE_MISSING,
+    "multiple_faces": ViolationType.MULTIPLE_FACES,
+    "phone_detected": ViolationType.PHONE_DETECTED,
+    "looking_left": ViolationType.LOOKING_AWAY,
+    "looking_right": ViolationType.LOOKING_AWAY,
+    "looking_down": ViolationType.LOOKING_AWAY,
+    "background_speech": ViolationType.BACKGROUND_SPEECH,
+    "loud_noise": ViolationType.LOUD_NOISE,
+    "mic_silent": ViolationType.MIC_SILENT,
+}
+
+async def process_detection(assessment_id: str, candidate_id: str, exam_id: str,
+                             detection_type: str, detail: str, confidence: float,
+                             screenshot_b64: str = None):
+    if detail == "ok" or detail == "no_face":
+        return {"action": "none"}
+
+    toaster = TOASTER_MESSAGES.get(detail)
+    if not toaster:
+        return {"action": "none"}
+
+    message, level = toaster
+    warning_count = await get_warning_count(assessment_id, detail)
+
+    if warning_count < WARNING_BEFORE_VIOLATION:
+        await log_warning(assessment_id, candidate_id, exam_id, detail)
+        return {
+            "action": "toast",
+            "level": level,
+            "message": message,
+            "warning_count": warning_count + 1
+        }
+    else:
+        vtype = DETAIL_TO_VIOLATION_TYPE.get(detail, detail)
+        screenshot_path = None
+        if screenshot_b64:
+            screenshot_path = upload_screenshot(exam_id, candidate_id, vtype, screenshot_b64)
+
+        result = await log_violation(
+            assessment_id, candidate_id, exam_id,
+            vtype, detail, confidence, screenshot_path
+        )
+        # Reset warning count for this detail
+        db = get_db()
+        await db.warnings.update_one(
+            {"assessment_id": assessment_id, "detail": detail},
+            {"$set": {"count": 0}}
+        )
+        return {
+            "action": "violation",
+            "locked": result.get("locked", False),
+            "message": f"⚠️ Violation recorded: {vtype}",
+            "violation": result.get("violation")
+        }
+
+async def get_candidate_assessment(exam_id: str, candidate_id: str):
+    db = get_db()
+    a = await db.assessments.find_one({"exam_id": exam_id, "candidate_id": candidate_id})
+    if not a:
+        return None
+    return {k: str(v) if k == "_id" else v for k, v in a.items() if k != "_id"}
+
+async def update_assessment_status(assessment_id: str, status: str, extra: dict = None):
+    db = get_db()
+    update = {"status": status}
+    if extra:
+        update.update(extra)
+    await db.assessments.update_one({"assessment_id": assessment_id}, {"$set": update})
+
+async def examiner_action(assessment_id: str, action: str, reason: str, examiner_id: str):
+    db = get_db()
+    status_map = {
+        "pause": "ACTIVE",
+        "resume": "ACTIVE",
+        "terminate": "TERMINATED"
+    }
+    new_status = status_map.get(action)
+    if new_status:
+        update = {"status": new_status}
+        if action == "terminate":
+            update["final_status"] = "TERMINATED"
+            update["exit_time"] = datetime.utcnow()
+        await db.assessments.update_one({"assessment_id": assessment_id}, {"$set": update})
+    await log_audit(examiner_id, action.upper(), reason=reason, assessment_id=assessment_id)
+    return {"message": f"Assessment {action}d"}
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\controllers\user_controller.py`**
+```python
+from config.database import get_db
+from config.keycloak_client import keycloak_admin
+from utils.id_generator import generate_user_id
+from datetime import datetime
+
+async def get_all_users(role: str = None):
+    db = get_db()
+    query = {"role": role} if role else {}
+    users = await db.users.find(query).to_list(None)
+    return [{k: str(v) if k == "_id" else v for k, v in u.items() if k != "_id"} for u in users]
+
+async def get_user_by_id(user_id: str):
+    db = get_db()
+    user = await db.users.find_one({"user_id": user_id})
+    if not user:
+        return None
+    return {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"}
+
+async def create_user_in_keycloak(name: str, email: str, password: str, role: str):
+    db = get_db()
+    # Create in Keycloak
+    kc_user_id = keycloak_admin.create_user({
+        "email": email,
+        "username": email,
+        "firstName": name.split(" ")[0],
+        "lastName": " ".join(name.split(" ")[1:]) if len(name.split(" ")) > 1 else "",
+        "enabled": True,
+        "emailVerified": True,
+        "credentials": [{"type": "password", "value": password, "temporary": False}]
+    })
+    # Assign role in Keycloak
+    role_obj = keycloak_admin.get_realm_role(role)
+    keycloak_admin.assign_realm_roles(kc_user_id, [role_obj])
+    # Create in MongoDB
+    user_id = await generate_user_id(role)
+    user = {
+        "user_id": user_id,
+        "keycloak_id": kc_user_id,
+        "name": name,
+        "email": email,
+        "role": role,
+        "status": "Active",
+        "created_at": datetime.utcnow(),
+        "last_login": None
+    }
+    await db.users.insert_one(user)
+    return {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"}
+
+async def disable_user(user_id: str):
+    db = get_db()
+    user = await db.users.find_one({"user_id": user_id})
+    if user:
+        keycloak_admin.update_user(user["keycloak_id"], {"enabled": False})
+        await db.users.update_one({"user_id": user_id}, {"$set": {"status": "Disabled"}})
+    return {"message": "User disabled"}
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\controllers\chat_controller.py`**
+```python
+from config.database import get_db
+from datetime import datetime
+import uuid
+
+async def get_chat_history(exam_id: str, candidate_id: str):
+    db = get_db()
+    messages = await db.chats.find(
+        {"exam_id": exam_id, "candidate_id": candidate_id}
+    ).sort("sent_at", 1).to_list(None)
+    return [{k: str(v) if k == "_id" else v for k, v in m.items() if k != "_id"} for m in messages]
+
+async def save_message(exam_id: str, candidate_id: str, sender_id: str,
+                       sender_role: str, message: str, is_broadcast: bool = False):
+    db = get_db()
+    msg = {
+        "message_id": f"MSG-{uuid.uuid4().hex[:8].upper()}",
+        "exam_id": exam_id,
+        "candidate_id": candidate_id,
+        "sender_id": sender_id,
+        "sender_role": sender_role,
+        "message": message,
+        "is_broadcast": is_broadcast,
+        "sent_at": datetime.utcnow()
+    }
+    await db.chats.insert_one(msg)
+    return {k: str(v) if k == "_id" else v for k, v in msg.items() if k != "_id"}
+
+async def get_all_candidates_in_exam(exam_id: str):
+    db = get_db()
+    assessments = await db.assessments.find({"exam_id": exam_id}).to_list(None)
+    return [a["candidate_id"] for a in assessments]
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\controllers\request_controller.py`**
+```python
+from config.database import get_db
+from services.assessment_service import log_audit
+from services.notification_service import create_notification
+from datetime import datetime
+import uuid
+
+async def create_request(assessment_id: str, exam_id: str, candidate_id: str,
+                         req_type: str, reason: str):
+    db = get_db()
+    req = {
+        "request_id": f"REQ-{uuid.uuid4().hex[:8].upper()}",
+        "assessment_id": assessment_id,
+        "exam_id": exam_id,
+        "candidate_id": candidate_id,
+        "type": req_type,
+        "reason": reason,
+        "status": "PENDING",
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "created_at": datetime.utcnow()
+    }
+    await db.requests.insert_one(req)
+    # Update assessment status
+    status = "LATE_ENTRY_REQUESTED" if req_type == "LATE_ENTRY" else "REENTRY_REQUESTED"
+    await db.assessments.update_one({"assessment_id": assessment_id}, {"$set": {"status": status}})
+    return {k: str(v) if k == "_id" else v for k, v in req.items() if k != "_id"}
+
+async def review_request(request_id: str, decision: str, examiner_id: str):
+    db = get_db()
+    req = await db.requests.find_one({"request_id": request_id})
+    if not req:
+        return None
+    await db.requests.update_one(
+        {"request_id": request_id},
+        {"$set": {"status": decision, "reviewed_by": examiner_id, "reviewed_at": datetime.utcnow()}}
+    )
+    # Update assessment
+    if decision == "APPROVED":
+        new_status = "LATE_ENTRY_APPROVED" if req["type"] == "LATE_ENTRY" else "REENTRY_APPROVED"
+        await db.assessments.update_one(
+            {"assessment_id": req["assessment_id"]},
+            {"$set": {"status": new_status}}
+        )
+    await log_audit(examiner_id, f"REVIEW_{req['type']}", reason=decision,
+                    assessment_id=req["assessment_id"], exam_id=req["exam_id"])
+    await create_notification(req["candidate_id"],
+                              f"Request {decision}",
+                              f"Your {req['type']} request has been {decision}",
+                              "Approval" if decision == "APPROVED" else "Rejection")
+    return {"message": f"Request {decision}"}
+
+async def get_pending_requests(exam_id: str):
+    db = get_db()
+    reqs = await db.requests.find({"exam_id": exam_id, "status": "PENDING"}).to_list(None)
+    return [{k: str(v) if k == "_id" else v for k, v in r.items() if k != "_id"} for r in reqs]
+```
+
+***
+
+## Step 5.12 — Routes
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\auth_routes.py`**
+```python
+from fastapi import APIRouter
+from pydantic import BaseModel
+from controllers.auth_controller import login, refresh_token, logout
+
+router = APIRouter(prefix="/api/auth", tags=["Auth"])
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+@router.post("/login")
+async def login_route(req: LoginRequest):
+    return await login(req.email, req.password)
+
+@router.post("/refresh")
+async def refresh_route(req: RefreshRequest):
+    return await refresh_token(req.refresh_token)
+
+@router.post("/logout")
+async def logout_route(req: LogoutRequest):
+    return await logout(req.refresh_token)
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\user_routes.py`**
+```python
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from controllers.user_controller import get_all_users, create_user_in_keycloak, disable_user, get_user_by_id
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/users", tags=["Users"])
+
+class CreateUserRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str
+
+@router.get("/")
+async def list_users(role: str = None, current_user=Depends(require_role("Admin"))):
+    return await get_all_users(role)
+
+@router.get("/{user_id}")
+async def get_user(user_id: str, current_user=Depends(require_role("Admin", "Examiner"))):
+    return await get_user_by_id(user_id)
+
+@router.post("/")
+async def create_user(req: CreateUserRequest, current_user=Depends(require_role("Admin"))):
+    return await create_user_in_keycloak(req.name, req.email, req.password, req.role)
+
+@router.patch("/{user_id}/disable")
+async def disable(user_id: str, current_user=Depends(require_role("Admin"))):
+    return await disable_user(user_id)
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\exam_routes.py`**
+```python
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from typing import List, Optional
+from controllers.exam_controller import (create_exam, get_exams_by_examiner,
+                                          get_exam, assign_candidates, publish_exam)
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/exams", tags=["Exams"])
+
+class CreateExamRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    date: str
+    start_time: str
+    end_time: str
+    duration_minutes: int
+    violation_threshold: int = 10
+    allowed_websites: List[str] = []
+    instructions: Optional[str] = ""
+
+class AssignRequest(BaseModel):
+    candidate_ids: List[str]
+
+@router.post("/")
+async def create(req: CreateExamRequest, current_user=Depends(require_role("Examiner"))):
+    return await create_exam(req.dict(), current_user["user_id"])
+
+@router.get("/")
+async def list_exams(current_user=Depends(require_role("Examiner", "Admin"))):
+    return await get_exams_by_examiner(current_user["user_id"])
+
+@router.get("/{exam_id}")
+async def get_one(exam_id: str, current_user=Depends(require_role("Examiner", "Admin", "Candidate"))):
+    return await get_exam(exam_id)
+
+@router.post("/{exam_id}/assign")
+async def assign(exam_id: str, req: AssignRequest, current_user=Depends(require_role("Examiner"))):
+    return await assign_candidates(exam_id, req.candidate_ids, current_user["user_id"])
+
+@router.patch("/{exam_id}/publish")
+async def publish(exam_id: str, current_user=Depends(require_role("Examiner"))):
+    return await publish_exam(exam_id)
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\assessment_routes.py`**
+```python
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from typing import Optional
+from controllers.assessment_controller import (process_detection, get_candidate_assessment,
+                                                update_assessment_status, examiner_action)
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/assessments", tags=["Assessments"])
+
+class DetectionPayload(BaseModel):
+    assessment_id: str
+    candidate_id: str
+    exam_id: str
+    detection_type: str
+    detail: str
+    confidence: float
+    screenshot_b64: Optional[str] = None
+
+class StatusUpdate(BaseModel):
+    status: str
+
+class ExaminerActionRequest(BaseModel):
+    action: str
+    reason: str
+
+@router.get("/{exam_id}/{candidate_id}")
+async def get_assessment(exam_id: str, candidate_id: str,
+                         current_user=Depends(require_role("Examiner", "Candidate", "Admin"))):
+    return await get_candidate_assessment(exam_id, candidate_id)
+
+@router.post("/detect")
+async def handle_detection(payload: DetectionPayload,
+                            current_user=Depends(require_role("Candidate"))):
+    return await process_detection(
+        payload.assessment_id, payload.candidate_id, payload.exam_id,
+        payload.detection_type, payload.detail, payload.confidence,
+        payload.screenshot_b64
+    )
+
+@router.patch("/{assessment_id}/status")
+async def set_status(assessment_id: str, req: StatusUpdate,
+                     current_user=Depends(require_role("Candidate", "Examiner"))):
+    await update_assessment_status(assessment_id, req.status)
+    return {"message": "Status updated"}
+
+@router.post("/{assessment_id}/action")
+async def examiner_act(assessment_id: str, req: ExaminerActionRequest,
+                       current_user=Depends(require_role("Examiner"))):
+    return await examiner_action(assessment_id, req.action, req.reason, current_user["user_id"])
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\chat_routes.py`**
+```python
+from fastapi import APIRouter, Depends
+from controllers.chat_controller import get_chat_history
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/chat", tags=["Chat"])
+
+@router.get("/{exam_id}/{candidate_id}")
+async def history(exam_id: str, candidate_id: str,
+                  current_user=Depends(require_role("Examiner", "Candidate"))):
+    return await get_chat_history(exam_id, candidate_id)
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\request_routes.py`**
+```python
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from controllers.request_controller import create_request, review_request, get_pending_requests
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/requests", tags=["Requests"])
+
+class CreateRequestBody(BaseModel):
+    assessment_id: str
+    exam_id: str
+    candidate_id: str
+    type: str
+    reason: str
+
+class ReviewBody(BaseModel):
+    decision: str
+
+@router.post("/")
+async def submit(req: CreateRequestBody, current_user=Depends(require_role("Candidate"))):
+    return await create_request(req.assessment_id, req.exam_id, req.candidate_id, req.type, req.reason)
+
+@router.patch("/{request_id}/review")
+async def review(request_id: str, req: ReviewBody, current_user=Depends(require_role("Examiner"))):
+    return await review_request(request_id, req.decision, current_user["user_id"])
+
+@router.get("/exam/{exam_id}/pending")
+async def pending(exam_id: str, current_user=Depends(require_role("Examiner"))):
+    return await get_pending_requests(exam_id)
+```
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\routes\notification_routes.py`**
+```python
+from fastapi import APIRouter, Depends
+from config.database import get_db
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
+
+@router.get("/")
+async def get_notifications(current_user=Depends(require_role("Admin", "Examiner", "Candidate"))):
+    db = get_db()
+    notifs = await db.notifications.find(
+        {"user_id": current_user["user_id"]}
+    ).sort("created_at", -1).to_list(50)
+    return [{k: str(v) if k == "_id" else v for k, v in n.items() if k != "_id"} for n in notifs]
+
+@router.patch("/{notification_id}/read")
+async def mark_read(notification_id: str, current_user=Depends(require_role("Admin", "Examiner", "Candidate"))):
+    db = get_db()
+    await db.notifications.update_one({"notification_id": notification_id}, {"$set": {"read": True}})
+    return {"message": "Marked as read"}
+```
+
+***
+
+## Step 5.13 — Socket Handlers
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\sockets\__init__.py`** — empty file
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\sockets\monitoring_socket.py`**
+```python
+import socketio
+from controllers.chat_controller import save_message, get_all_candidates_in_exam
+from config.database import get_db
+
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+
+@sio.event
+async def connect(sid, environ, auth):
+    print(f"Client connected: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    print(f"Client disconnected: {sid}")
+
+# Candidate joins their exam room
+@sio.event
+async def join_exam(sid, data):
+    exam_id = data.get("exam_id")
+    candidate_id = data.get("candidate_id")
+    role = data.get("role")
+    if role == "Examiner":
+        await sio.enter_room(sid, f"exam_{exam_id}_examiners")
+    else:
+        await sio.enter_room(sid, f"exam_{exam_id}_candidate_{candidate_id}")
+        await sio.enter_room(sid, f"exam_{exam_id}_all")
+    print(f"{role} joined exam {exam_id}")
+
+# Candidate sends live status update (every 5 seconds)
+@sio.event
+async def candidate_status(sid, data):
+    exam_id = data.get("exam_id")
+    # Forward to examiner room
+    await sio.emit("candidate_update", data, room=f"exam_{exam_id}_examiners")
+
+# Examiner sends broadcast message to all candidates
+@sio.event
+async def broadcast_message(sid, data):
+    exam_id = data.get("exam_id")
+    examiner_id = data.get("examiner_id")
+    message = data.get("message")
+    candidates = await get_all_candidates_in_exam(exam_id)
+    for cid in candidates:
+        await save_message(exam_id, cid, examiner_id, "Examiner", message, is_broadcast=True)
+    await sio.emit("receive_broadcast", {"message": message, "from": "Examiner"},
+                   room=f"exam_{exam_id}_all")
+
+# Private chat: Examiner to specific candidate
+@sio.event
+async def send_message(sid, data):
+    exam_id = data.get("exam_id")
+    candidate_id = data.get("candidate_id")
+    sender_id = data.get("sender_id")
+    sender_role = data.get("sender_role")
+    message = data.get("message")
+    saved = await save_message(exam_id, candidate_id, sender_id, sender_role, message)
+    # Send to candidate
+    await sio.emit("receive_message", saved, room=f"exam_{exam_id}_candidate_{candidate_id}")
+    # Send back to examiner
+    await sio.emit("receive_message", saved, room=f"exam_{exam_id}_examiners")
+
+# Examiner action: pause/resume/terminate
+@sio.event
+async def examiner_control(sid, data):
+    exam_id = data.get("exam_id")
+    candidate_id = data.get("candidate_id")
+    action = data.get("action")
+    await sio.emit("control_command", {"action": action},
+                   room=f"exam_{exam_id}_candidate_{candidate_id}")
+
+# Violation alert: push to examiner
+async def emit_violation(exam_id: str, candidate_id: str, violation: dict):
+    await sio.emit("violation_alert", {
+        "candidate_id": candidate_id,
+        "violation": violation
+    }, room=f"exam_{exam_id}_examiners")
+
+# Assessment locked alert
+async def emit_locked(exam_id: str, candidate_id: str):
+    await sio.emit("assessment_locked", {"candidate_id": candidate_id},
+                   room=f"exam_{exam_id}_examiners")
+    await sio.emit("you_are_locked", {}, room=f"exam_{exam_id}_candidate_{candidate_id}")
+```
+
+***
+
+## Step 5.14 — Main Server Entry Point
+
+**`D:\3rdEyez360V2\3rdEyeZ360\backend\server.py`**
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import socketio
+from dotenv import load_dotenv
+import os, uvicorn
+
+load_dotenv()
+
+from config.database import connect_db, close_db
+from config.minio_client import get_minio
+from routes.auth_routes import router as auth_router
+from routes.user_routes import router as user_router
+from routes.exam_routes import router as exam_router
+from routes.assessment_routes import router as assessment_router
+from routes.chat_routes import router as chat_router
+from routes.request_routes import router as request_router
+from routes.notification_routes import router as notification_router
+from sockets.monitoring_socket import sio
+
+# FastAPI app
+app = FastAPI(title="3rdEyeZ360 Backend", version="1.0.0")
+
+app.add_middleware(CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+# Mount routers
+app.include_router(auth_router)
+app.include_router(user_router)
+app.include_router(exam_router)
+app.include_router(assessment_router)
+app.include_router(chat_router)
+app.include_router(request_router)
+app.include_router(notification_router)
+
+# Mount Socket.IO
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+
+@app.on_event("startup")
+async def startup():
+    await connect_db()
+    get_minio()
+    print("✅ 3rdEyeZ360 Backend started")
+
+@app.on_event("shutdown")
+async def shutdown():
+    await close_db()
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "3rdEyeZ360 Backend"}
+
+if __name__ == "__main__":
+    uvicorn.run("server:socket_app", host="0.0.0.0",
+                port=int(os.getenv("PORT", 3000)), reload=False)
+```
+
+### Step 5.15 — Start Backend
+
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\backend
+venv\Scripts\activate
+uvicorn server:socket_app --host 0.0.0.0 --port 3000
+```
+
+Open browser → `http://localhost:3000/docs`
+
+You will see all routes in Swagger UI. ✅
+
+### Step 5.16 — Test Login
+
+```powershell
+curl -X POST "http://localhost:3000/api/auth/login" `
+  -H "Content-Type: application/json" `
+  -d "{\"email\":\"john@3rdeyez360.com\",\"password\":\"Candidate@123\"}"
+```
+
+You should get back `access_token`, `refresh_token`, and full user object. ✅
+
+***
+
+## Your Complete Structure Now
+
+```
+D:\3rdEyez360V2\3rdEyeZ360\
+├── docker\
+├── python-api\         ✅ Running on :5001
+├── backend\            ✅ Running on :3000
+│   ├── config\
+│   │   ├── __init__.py
+│   │   ├── database.py
+│   │   ├── minio_client.py
+│   │   └── keycloak_client.py
+│   ├── models\         (all 8 model files)
+│   ├── routes\         (all 7 route files)
+│   ├── controllers\    (all 6 controller files)
+│   ├── sockets\
+│   │   ├── __init__.py
+│   │   └── monitoring_socket.py
+│   ├── middleware\
+│   │   ├── __init__.py
+│   │   └── auth.py
+│   ├── services\       (all 4 service files)
+│   ├── utils\
+│   │   ├── __init__.py
+│   │   ├── constants.py
+│   │   └── id_generator.py
+│   ├── server.py
+│   ├── requirements.txt
+│   └── .env
+├── .gitignore
+└── docker-compose.yml
+```
+
+***
+
+## ✅ Complete Status
+
+```
+✅ Docker:          MongoDB + MinIO + Keycloak running
+✅ Keycloak:        Realm, roles, client, 3 test users
+✅ MinIO:           assessment-evidence bucket
+✅ Python API:      4 detectors on :5001
+✅ Backend API:     All routes, Socket.IO, chat on :3000
+⬜ Electron App:    Next
+```
+
+Reply **"continue"** → I will build the complete **Electron app** — main process, lockdown, locked browser, candidate UI screens, examiner live grid, toaster system, webcam capture loop, all copy-paste ready from `D:\3rdEyez360V2\`.

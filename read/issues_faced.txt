@@ -1,0 +1,1 @@
+The root cause was Zscaler on your corporate machine intercepting and corrupting the SCRAM authentication handshake between Python and MongoDB. Running MongoDB with --noauth removes the handshake entirely, bypassing Zscaler's interference. For production deployment (on a server without Zscaler), you can re-enable auth normally.

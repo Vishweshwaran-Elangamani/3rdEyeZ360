@@ -1,0 +1,2 @@
+pip uninstall bcrypt -y
+pip install bcrypt==4.0.1

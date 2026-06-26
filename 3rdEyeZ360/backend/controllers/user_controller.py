@@ -14,11 +14,34 @@ def _serialize_user(user: dict) -> dict:
     return {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"}
 
 
+def _keycloak_user_exists(keycloak_id: str) -> bool:
+    if not keycloak_id:
+        return False
+
+    try:
+        user = keycloakadmin.get_user(keycloak_id)
+        return bool(user)
+    except Exception:
+        return False
+
+
 async def get_all_users(role: str | None = None):
     db = get_db()
     query = {"role": role} if role else {}
     users = await db.users.find(query).sort("created_at", -1).to_list(None)
-    return [_serialize_user(user) for user in users]
+
+    valid_users = []
+
+    for user in users:
+        keycloak_id = user.get("keycloak_id")
+
+        if keycloak_id and not _keycloak_user_exists(keycloak_id):
+            await db.users.delete_one({"_id": user["_id"]})
+            continue
+
+        valid_users.append(_serialize_user(user))
+
+    return valid_users
 
 
 async def get_user_by_id(user_id: str):
@@ -26,6 +49,12 @@ async def get_user_by_id(user_id: str):
     user = await db.users.find_one({"user_id": user_id})
     if not user:
         return None
+
+    keycloak_id = user.get("keycloak_id")
+    if keycloak_id and not _keycloak_user_exists(keycloak_id):
+        await db.users.delete_one({"_id": user["_id"]})
+        return None
+
     return _serialize_user(user)
 
 
@@ -138,9 +167,14 @@ async def disable_user(user_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    keycloak_id = user.get("keycloak_id")
+    if keycloak_id and not _keycloak_user_exists(keycloak_id):
+        await db.users.delete_one({"_id": user["_id"]})
+        raise HTTPException(status_code=404, detail="User no longer exists in Keycloak")
+
     try:
-        if user.get("keycloak_id"):
-            keycloakadmin.update_user(user["keycloak_id"], {"enabled": False})
+        if keycloak_id:
+            keycloakadmin.update_user(keycloak_id, {"enabled": False})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to disable Keycloak user: {str(e)}")
 
@@ -157,9 +191,14 @@ async def enable_user(user_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    keycloak_id = user.get("keycloak_id")
+    if keycloak_id and not _keycloak_user_exists(keycloak_id):
+        await db.users.delete_one({"_id": user["_id"]})
+        raise HTTPException(status_code=404, detail="User no longer exists in Keycloak")
+
     try:
-        if user.get("keycloak_id"):
-            keycloakadmin.update_user(user["keycloak_id"], {"enabled": True})
+        if keycloak_id:
+            keycloakadmin.update_user(keycloak_id, {"enabled": True})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to enable Keycloak user: {str(e)}")
 

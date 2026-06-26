@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import axios from 'axios'
 import useAuthStore from '../../store/authStore'
 
@@ -66,19 +66,9 @@ export default function AdminPanel() {
     return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   }, [accessToken])
 
-  useEffect(() => {
+  const loadStats = useCallback(async () => {
     if (!accessToken) return
-    loadStats()
-  }, [accessToken])
 
-  useEffect(() => {
-    if (!accessToken) return
-    if (tab === 'Candidates') loadUsers('Candidate')
-    if (tab === 'Examiners') loadUsers('Examiner')
-    if (tab === 'Audit Logs') loadAuditLogs()
-  }, [tab, accessToken])
-
-  const loadStats = async () => {
     try {
       const res = await axios.get(`${API}/api/admin/stats`, { headers })
       setStats(res.data)
@@ -91,19 +81,24 @@ export default function AdminPanel() {
         total_exams: 0,
       })
     }
-  }
+  }, [accessToken, headers])
 
-  const loadUsers = async (role) => {
+  const loadUsers = useCallback(async (role) => {
+    if (!accessToken) return
+
     try {
       const res = await axios.get(`${API}/api/users?role=${role}`, { headers })
       setUsers(res.data || [])
+      await loadStats()
     } catch (e) {
       console.error('Failed to load users', e?.response?.data || e.message)
       setUsers([])
     }
-  }
+  }, [accessToken, headers, loadStats])
 
-  const loadAuditLogs = async () => {
+  const loadAuditLogs = useCallback(async () => {
+    if (!accessToken) return
+
     try {
       const res = await axios.get(`${API}/api/admin/audit-logs`, { headers })
       setAuditLogs(res.data || [])
@@ -111,12 +106,57 @@ export default function AdminPanel() {
       console.error('Failed to load audit logs', e?.response?.data || e.message)
       setAuditLogs([])
     }
-  }
+  }, [accessToken, headers])
+
+  const refreshCurrentTab = useCallback(async () => {
+    if (!accessToken) return
+
+    if (tab === 'Dashboard') {
+      await loadStats()
+      return
+    }
+
+    if (tab === 'Candidates') {
+      await loadUsers('Candidate')
+      return
+    }
+
+    if (tab === 'Examiners') {
+      await loadUsers('Examiner')
+      return
+    }
+
+    if (tab === 'Audit Logs') {
+      await loadAuditLogs()
+      await loadStats()
+    }
+  }, [accessToken, tab, loadStats, loadUsers, loadAuditLogs])
+
+  useEffect(() => {
+    if (!accessToken) return
+    loadStats()
+  }, [accessToken, loadStats])
+
+  useEffect(() => {
+    if (!accessToken) return
+    refreshCurrentTab()
+  }, [tab, accessToken, refreshCurrentTab])
+
+  useEffect(() => {
+    if (!accessToken) return
+
+    const interval = setInterval(() => {
+      refreshCurrentTab()
+    }, 4000)
+
+    return () => clearInterval(interval)
+  }, [accessToken, refreshCurrentTab])
 
   const toggleUserStatus = async (userId, currentStatus) => {
     const action = currentStatus === 'Active' ? 'disable' : 'enable'
     try {
       await axios.post(`${API}/api/users/${userId}/${action}`, {}, { headers })
+
       setUsers(prev =>
         prev.map(u =>
           (u.user_id === userId || u.userid === userId)
@@ -124,6 +164,8 @@ export default function AdminPanel() {
             : u
         )
       )
+
+      await loadStats()
     } catch (e) {
       console.error('Failed to change user status', e?.response?.data || e.message)
     }
@@ -179,10 +221,12 @@ export default function AdminPanel() {
         role: tab === 'Examiners' ? 'Examiner' : 'Candidate',
       })
 
+      await loadStats()
+      await loadUsers(tab === 'Examiners' ? 'Examiner' : 'Candidate')
+
       setTimeout(() => {
         setShowCreate(false)
         setCreateSuccess('')
-        loadUsers(tab === 'Examiners' ? 'Examiner' : 'Candidate')
       }, 1200)
     } catch (e) {
       console.error('Create user failed', e?.response?.data || e.message)

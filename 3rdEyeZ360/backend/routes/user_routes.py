@@ -14,7 +14,8 @@ router = APIRouter(prefix="/api/users", tags=["Users"])
 
 
 class CreateUserRequest(BaseModel):
-    name: str
+    first_name: str
+    last_name: str
     email: EmailStr
     role: str
 
@@ -47,7 +48,12 @@ async def create_user(
     req: CreateUserRequest,
     current_user=Depends(require_role("Admin")),
 ):
-    return await create_user_in_keycloak(req.name, req.email, req.role)
+    return await create_user_in_keycloak(
+        req.first_name,
+        req.last_name,
+        req.email,
+        req.role,
+    )
 
 
 @router.post("/{user_id}/disable")

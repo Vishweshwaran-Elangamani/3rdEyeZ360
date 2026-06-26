@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
@@ -28,15 +29,18 @@ async def get_user_by_id(user_id: str):
     return _serialize_user(user)
 
 
-async def create_user_in_keycloak(name: str, email: str, role: str):
+async def create_user_in_keycloak(first_name: str, last_name: str, email: str, role: str):
     db = get_db()
 
-    clean_name = (name or "").strip()
+    clean_first_name = (first_name or "").strip()
+    clean_last_name = (last_name or "").strip()
     clean_email = (email or "").strip().lower()
     clean_role = (role or "").strip()
 
-    if not clean_name:
-        raise HTTPException(status_code=400, detail="Name is required")
+    if not clean_first_name:
+        raise HTTPException(status_code=400, detail="First name is required")
+    if not clean_last_name:
+        raise HTTPException(status_code=400, detail="Last name is required")
     if not clean_email:
         raise HTTPException(status_code=400, detail="Email is required")
     if clean_role not in VALID_ROLES:
@@ -46,15 +50,13 @@ async def create_user_in_keycloak(name: str, email: str, role: str):
     if existing:
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
 
-    name_parts = clean_name.split()
-    first_name = name_parts[0] if name_parts else ""
-    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    full_name = f"{clean_first_name} {clean_last_name}".strip()
 
     kc_payload = {
         "email": clean_email,
         "username": clean_email,
-        "firstName": first_name,
-        "lastName": last_name,
+        "firstName": clean_first_name,
+        "lastName": clean_last_name,
         "enabled": True,
         "emailVerified": False,
         "requiredActions": ["UPDATE_PASSWORD"],
@@ -90,7 +92,9 @@ async def create_user_in_keycloak(name: str, email: str, role: str):
         user = {
             "user_id": await generate_user_id(clean_role),
             "keycloak_id": keycloak_id,
-            "name": clean_name,
+            "name": full_name,
+            "first_name": clean_first_name,
+            "last_name": clean_last_name,
             "email": clean_email,
             "role": clean_role,
             "status": "Active",
@@ -107,6 +111,7 @@ async def create_user_in_keycloak(name: str, email: str, role: str):
             if invite_sent
             else "User created, but invite email could not be sent from Keycloak."
         )
+
         return result
 
     except DuplicateKeyError as e:
@@ -173,8 +178,8 @@ async def getuserbyid(user_id: str):
     return await get_user_by_id(user_id)
 
 
-async def createuserinkeycloak(name: str, email: str, role: str):
-    return await create_user_in_keycloak(name, email, role)
+async def createuserinkeycloak(first_name: str, last_name: str, email: str, role: str):
+    return await create_user_in_keycloak(first_name, last_name, email, role)
 
 
 async def disableuser(user_id: str):

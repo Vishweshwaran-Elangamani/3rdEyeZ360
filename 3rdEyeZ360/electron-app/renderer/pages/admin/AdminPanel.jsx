@@ -17,7 +17,7 @@ function LogoutButton() {
 
       if (refreshToken) {
         try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
+          await axios.post(`${API}/api/auth/logout`, { refresh_token: refreshToken })
         } catch (e) {
           console.log('Logout API failed, clearing local session anyway', e)
         }
@@ -52,7 +52,12 @@ export default function AdminPanel() {
   const [auditLogs, setAuditLogs] = useState([])
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Candidate' })
+  const [newUser, setNewUser] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    role: 'Candidate',
+  })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
   const [createSuccess, setCreateSuccess] = useState('')
@@ -80,10 +85,10 @@ export default function AdminPanel() {
     } catch (e) {
       console.error('Failed to load stats', e?.response?.data || e.message)
       setStats({
-        totalcandidates: 0,
-        totalexaminers: 0,
-        activeassessments: 0,
-        totalexams: 0,
+        total_candidates: 0,
+        total_examiners: 0,
+        active_assessments: 0,
+        total_exams: 0,
       })
     }
   }
@@ -114,7 +119,7 @@ export default function AdminPanel() {
       await axios.post(`${API}/api/users/${userId}/${action}`, {}, { headers })
       setUsers(prev =>
         prev.map(u =>
-          (u.userid === userId || u.user_id === userId)
+          (u.user_id === userId || u.userid === userId)
             ? { ...u, status: action === 'disable' ? 'Disabled' : 'Active' }
             : u
         )
@@ -135,8 +140,14 @@ export default function AdminPanel() {
       return
     }
 
-    if (!newUser.name.trim()) {
-      setCreateError('Full name is required')
+    if (!newUser.first_name.trim()) {
+      setCreateError('First name is required')
+      setCreating(false)
+      return
+    }
+
+    if (!newUser.last_name.trim()) {
+      setCreateError('Last name is required')
       setCreating(false)
       return
     }
@@ -151,7 +162,8 @@ export default function AdminPanel() {
       const res = await axios.post(
         `${API}/api/users`,
         {
-          name: newUser.name.trim(),
+          first_name: newUser.first_name.trim(),
+          last_name: newUser.last_name.trim(),
           email: newUser.email.trim().toLowerCase(),
           role: newUser.role,
         },
@@ -159,7 +171,13 @@ export default function AdminPanel() {
       )
 
       setCreateSuccess(res.data?.message || 'User created successfully.')
-      setNewUser({ name: '', email: '', role: tab === 'Examiners' ? 'Examiner' : 'Candidate' })
+
+      setNewUser({
+        first_name: '',
+        last_name: '',
+        email: '',
+        role: tab === 'Examiners' ? 'Examiner' : 'Candidate',
+      })
 
       setTimeout(() => {
         setShowCreate(false)
@@ -258,10 +276,10 @@ export default function AdminPanel() {
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>System Overview</h2>
 
             <div style={{ display: 'flex', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
-              <StatCard label="Total Candidates" value={stats.totalcandidates} icon="👤" color="#4f8ef7" />
-              <StatCard label="Total Examiners" value={stats.totalexaminers} icon="🧑‍💼" color="#34c97a" />
-              <StatCard label="Total Exams" value={stats.totalexams} icon="📋" color="#f5a623" />
-              <StatCard label="Active Assessments" value={stats.activeassessments} icon="🔴" color="#f75f5f" />
+              <StatCard label="Total Candidates" value={stats.total_candidates} icon="👤" color="#4f8ef7" />
+              <StatCard label="Total Examiners" value={stats.total_examiners} icon="🧑‍💼" color="#34c97a" />
+              <StatCard label="Total Exams" value={stats.total_exams} icon="📋" color="#f5a623" />
+              <StatCard label="Active Assessments" value={stats.active_assessments} icon="🔴" color="#f75f5f" />
             </div>
 
             <div
@@ -297,7 +315,12 @@ export default function AdminPanel() {
                   setShowCreate(true)
                   setCreateError('')
                   setCreateSuccess('')
-                  setNewUser({ name: '', email: '', role: tab === 'Examiners' ? 'Examiner' : 'Candidate' })
+                  setNewUser({
+                    first_name: '',
+                    last_name: '',
+                    email: '',
+                    role: tab === 'Examiners' ? 'Examiner' : 'Candidate',
+                  })
                 }}
                 className="btn btn-primary"
                 style={{ padding: '8px 18px', fontSize: 13 }}
@@ -339,7 +362,7 @@ export default function AdminPanel() {
                   </h3>
 
                   <div style={{ fontSize: 12, color: '#8b90a0', marginBottom: 18 }}>
-                    User will receive a Keycloak email to set their password.
+                    User will receive an email to set their password.
                   </div>
 
                   {createError && (
@@ -373,7 +396,8 @@ export default function AdminPanel() {
                   )}
 
                   {[
-                    ['Full Name', 'name', 'text', 'John Smith'],
+                    ['First Name', 'first_name', 'text', 'John'],
+                    ['Last Name', 'last_name', 'text', 'Smith'],
                     ['Email', 'email', 'email', 'john@company.com'],
                   ].map(([label, key, type, ph]) => (
                     <div key={key} style={{ marginBottom: 14 }}>
@@ -447,7 +471,7 @@ export default function AdminPanel() {
                 <tbody>
                   {filtered.map((u, i) => (
                     <tr
-                      key={u.userid || u.user_id}
+                      key={u.user_id || u.userid}
                       style={{
                         borderBottom: i < filtered.length - 1 ? '1px solid #2e3347' : 'none',
                         transition: 'background 0.1s',
@@ -469,11 +493,11 @@ export default function AdminPanel() {
                         </span>
                       </td>
                       <td style={{ padding: '13px 16px', fontSize: 12, color: '#8b90a0' }}>
-                        {(u.createdat || u.created_at)?.toString().split('T')[0] || '—'}
+                        {(u.created_at || u.createdat)?.toString().split('T')[0] || '—'}
                       </td>
                       <td style={{ padding: '13px 16px' }}>
                         <button
-                          onClick={() => toggleUserStatus(u.userid || u.user_id, u.status)}
+                          onClick={() => toggleUserStatus(u.user_id || u.userid, u.status)}
                           className="btn btn-ghost"
                           style={{ fontSize: 12, padding: '5px 12px' }}
                         >
@@ -537,7 +561,7 @@ export default function AdminPanel() {
                 <tbody>
                   {auditLogs.map((log, i) => (
                     <tr
-                      key={log.logid || log.audit_id || i}
+                      key={log.log_id || log.audit_id || i}
                       style={{
                         borderBottom: i < auditLogs.length - 1 ? '1px solid #2e3347' : 'none',
                       }}
@@ -545,7 +569,7 @@ export default function AdminPanel() {
                       <td style={{ padding: '12px 16px', fontSize: 12, color: '#8b90a0' }}>
                         {log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}
                       </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13 }}>{log.userid || log.user_id || '—'}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 13 }}>{log.user_id || log.userid || '—'}</td>
                       <td style={{ padding: '12px 16px', fontSize: 13, color: '#4f8ef7' }}>{log.action}</td>
                       <td style={{ padding: '12px 16px', fontSize: 12, color: '#8b90a0' }}>{log.reason || '—'}</td>
                     </tr>

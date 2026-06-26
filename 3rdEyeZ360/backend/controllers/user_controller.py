@@ -109,13 +109,13 @@ async def create_user_in_keycloak(name: str, email: str, role: str):
         )
         return result
 
-    except DuplicateKeyError:
+    except DuplicateKeyError as e:
         if keycloak_id:
             try:
                 keycloakadmin.delete_user(keycloak_id)
             except Exception:
                 pass
-        raise HTTPException(status_code=409, detail="User already exists.")
+        raise HTTPException(status_code=409, detail=f"Duplicate user data: {str(e)}")
     except HTTPException:
         raise
     except Exception as e:

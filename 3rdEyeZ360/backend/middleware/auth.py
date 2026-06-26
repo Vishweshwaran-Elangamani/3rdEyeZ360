@@ -5,10 +5,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
-load_dotenv(override=True)
+from config.database import get_db
 
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
-JWT_ALGORITHM = "HS256"
+load_dotenv(override=True)
 
 security = HTTPBearer(auto_error=False)
 
@@ -24,68 +23,48 @@ def extract_role(roles: list) -> str:
     return "Candidate"
 
 
-def decode_token(token: str) -> dict:
+async def decode_token(token: str) -> dict:
     if not token:
         raise HTTPException(status_code=401, detail="No token provided")
 
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("user_id") or payload.get("userid") or payload.get("sub") or ""
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token subject")
-
-        return {
-            "user_id": user_id,
-            "userid": user_id,
-            "email": payload.get("email") or payload.get("preferred_username", ""),
-            "role": payload.get("role") or extract_role(payload.get("roles", [])),
-            "name": payload.get("name") or payload.get("email") or "",
-        }
-    except HTTPException:
-        raise
-    except JWTError:
-        pass
-
-    try:
-        payload = jwt.decode(
-            token,
-            key="",
-            options={
-                "verify_signature": False,
-                "verify_aud": False,
-                "verify_exp": True,
-            },
-            algorithms=["RS256", "HS256"],
-        )
-
-        email = payload.get("email") or payload.get("preferred_username", "")
-        roles = payload.get("realm_access", {}).get("roles", []) or payload.get("roles", [])
-        role = extract_role(roles)
-        user_id = payload.get("sub", "")
-
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token subject")
-
-        return {
-            "user_id": user_id,
-            "userid": user_id,
-            "email": email,
-            "role": role,
-            "name": payload.get("name", email),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
+        payload = jwt.get_unverified_claims(token)
+    except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+    keycloak_id = payload.get("sub")
+    email = (payload.get("email") or payload.get("preferred_username") or "").strip().lower()
+    roles = payload.get("realm_access", {}).get("roles", []) or payload.get("roles", [])
+    role = payload.get("role") or extract_role(roles)
+    name = payload.get("name") or email or ""
+
+    if not keycloak_id:
+        raise HTTPException(status_code=401, detail="Invalid token subject")
+
+    db = get_db()
+
+    user = await db.users.find_one({"keycloak_id": keycloak_id})
+    if not user and email:
+        user = await db.users.find_one({"email": email})
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found in local database")
+
+    if user.get("status") == "Disabled":
+        raise HTTPException(status_code=403, detail="User is disabled")
+
+    return {
+        "user_id": user["user_id"],
+        "keycloak_id": user.get("keycloak_id"),
+        "email": user.get("email"),
+        "role": user.get("role") or role,
+        "name": user.get("name") or name,
+        "status": user.get("status", "Active"),
+    }
 
 
 def create_access_token(data: dict) -> str:
-    payload = data.copy()
-    if "userid" in payload and "user_id" not in payload:
-        payload["user_id"] = payload["userid"]
-    if "user_id" in payload and "userid" not in payload:
-        payload["userid"] = payload["user_id"]
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    raise RuntimeError("Local JWT creation is disabled. Authentication is managed by Keycloak.")
 
 
 async def get_current_user(
@@ -96,7 +75,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
         )
-    return decode_token(credentials.credentials)
+    return await decode_token(credentials.credentials)
 
 
 def require_role(*roles: str):
@@ -109,7 +88,7 @@ def require_role(*roles: str):
                 detail="Authentication required",
             )
 
-        user = decode_token(credentials.credentials)
+        user = await decode_token(credentials.credentials)
 
         if roles and user.get("role") not in roles:
             raise HTTPException(

@@ -88,6 +88,7 @@ async def create_exam(
         raise HTTPException(status_code=400, detail="Exam name is required")
 
     exam_id = await generate_exam_id()
+    now = datetime.utcnow()
 
     exam = {
         "exam_id": exam_id,
@@ -95,16 +96,16 @@ async def create_exam(
         "name": name,
         "description": (body.get("description") or "").strip(),
         "date": body.get("date", ""),
-        "start_time": body.get("start_time") or body.get("starttime", ""),
-        "end_time": body.get("end_time") or body.get("endtime", ""),
-        "duration_minutes": int(body.get("duration_minutes", body.get("durationminutes", 120))),
-        "violation_threshold": int(body.get("violation_threshold", body.get("violationthreshold", 10))),
+        "start_time": body.get("start_time", ""),
+        "end_time": body.get("end_time", ""),
+        "duration_minutes": int(body.get("duration_minutes", 120)),
+        "violation_threshold": int(body.get("violation_threshold", 10)),
         "instructions": body.get("instructions", ""),
-        "allowed_websites": body.get("allowed_websites", body.get("allowedwebsites", [])) or [],
-        "allowed_applications": body.get("allowed_applications", body.get("allowedapplications", [])) or [],
+        "allowed_websites": body.get("allowed_websites", []) or [],
+        "allowed_applications": body.get("allowed_applications", []) or [],
         "status": body.get("status", "Draft"),
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": now,
+        "updated_at": now,
     }
 
     await db.exams.insert_one(exam)
@@ -115,7 +116,7 @@ async def create_exam(
         "exam_id": exam_id,
         "action": "CreateExam",
         "reason": f"Created exam: {exam['name']}",
-        "timestamp": datetime.utcnow(),
+        "timestamp": now,
     })
 
     return _serialize(exam)
@@ -215,8 +216,7 @@ async def assign_candidate(
     db = get_db()
     await _ensure_exam_access(db, exam_id, current_user)
 
-    candidate_id = body.get("candidate_id") or body.get("candidateid") or ""
-    candidate_id = candidate_id.strip()
+    candidate_id = (body.get("candidate_id") or "").strip()
 
     if not candidate_id:
         raise HTTPException(status_code=400, detail="candidate_id is required")

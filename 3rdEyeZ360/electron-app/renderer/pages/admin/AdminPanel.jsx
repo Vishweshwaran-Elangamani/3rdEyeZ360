@@ -61,6 +61,8 @@ export default function AdminPanel() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
   const [createSuccess, setCreateSuccess] = useState('')
+  const [rowMessage, setRowMessage] = useState('')
+  const [sendingEmailFor, setSendingEmailFor] = useState('')
 
   const headers = useMemo(() => {
     return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
@@ -171,6 +173,24 @@ export default function AdminPanel() {
     }
   }
 
+  const resendPasswordEmail = async (userId) => {
+    if (!userId) return
+
+    setRowMessage('')
+    setSendingEmailFor(userId)
+
+    try {
+      const res = await axios.post(`${API}/api/users/${userId}/send-password-email`, {}, { headers })
+      setRowMessage(res.data?.message || 'Password setup email sent successfully.')
+    } catch (e) {
+      console.error('Failed to resend password email', e?.response?.data || e.message)
+      setRowMessage(e?.response?.data?.detail || 'Failed to send password setup email.')
+    } finally {
+      setSendingEmailFor('')
+      setTimeout(() => setRowMessage(''), 3000)
+    }
+  }
+
   const createUser = async () => {
     setCreating(true)
     setCreateError('')
@@ -201,11 +221,12 @@ export default function AdminPanel() {
     }
 
     try {
+      const fullName = `${newUser.first_name.trim()} ${newUser.last_name.trim()}`.trim()
+
       const res = await axios.post(
         `${API}/api/users`,
         {
-          first_name: newUser.first_name.trim(),
-          last_name: newUser.last_name.trim(),
+          name: fullName,
           email: newUser.email.trim().toLowerCase(),
           role: newUser.role,
         },
@@ -372,6 +393,21 @@ export default function AdminPanel() {
                 + Create {tab === 'Examiners' ? 'Examiner' : 'Candidate'}
               </button>
             </div>
+
+            {rowMessage && (
+              <div
+                style={{
+                  background: '#0f2a1a',
+                  color: '#34c97a',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  fontSize: 13,
+                  marginBottom: 14,
+                }}
+              >
+                {rowMessage}
+              </div>
+            )}
 
             <input
               value={search}
@@ -540,13 +576,29 @@ export default function AdminPanel() {
                         {(u.created_at || u.createdat)?.toString().split('T')[0] || '—'}
                       </td>
                       <td style={{ padding: '13px 16px' }}>
-                        <button
-                          onClick={() => toggleUserStatus(u.user_id || u.userid, u.status)}
-                          className="btn btn-ghost"
-                          style={{ fontSize: 12, padding: '5px 12px' }}
-                        >
-                          {u.status === 'Active' ? 'Disable' : 'Enable'}
-                        </button>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => toggleUserStatus(u.user_id || u.userid, u.status)}
+                            className="btn btn-ghost"
+                            style={{ fontSize: 12, padding: '5px 12px' }}
+                          >
+                            {u.status === 'Active' ? 'Disable' : 'Enable'}
+                          </button>
+
+                          <button
+                            onClick={() => resendPasswordEmail(u.user_id || u.userid)}
+                            disabled={sendingEmailFor === (u.user_id || u.userid)}
+                            className="btn btn-ghost"
+                            style={{
+                              fontSize: 12,
+                              padding: '5px 12px',
+                              border: '1px solid #2e3347',
+                              color: '#4f8ef7',
+                            }}
+                          >
+                            {sendingEmailFor === (u.user_id || u.userid) ? 'Sending...' : 'Email'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

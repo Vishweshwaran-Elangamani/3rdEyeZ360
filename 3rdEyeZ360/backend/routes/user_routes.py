@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 
 from controllers.user_controller import (
     create_user_in_keycloak,
@@ -7,6 +8,7 @@ from controllers.user_controller import (
     enable_user,
     get_all_users,
     get_user_by_id,
+    send_password_setup_email,
 )
 from middleware.auth import require_role
 
@@ -14,10 +16,10 @@ router = APIRouter(prefix="/api/users", tags=["Users"])
 
 
 class CreateUserRequest(BaseModel):
-    first_name: str
-    last_name: str
+    name: str
     email: EmailStr
     role: str
+    password: Optional[str] = None
 
 
 @router.get("")
@@ -48,12 +50,7 @@ async def create_user(
     req: CreateUserRequest,
     current_user=Depends(require_role("Admin")),
 ):
-    return await create_user_in_keycloak(
-        req.first_name,
-        req.last_name,
-        req.email,
-        req.role,
-    )
+    return await create_user_in_keycloak(req.name, req.email, req.role, req.password)
 
 
 @router.post("/{user_id}/disable")
@@ -70,3 +67,11 @@ async def enable_user_route(
     current_user=Depends(require_role("Admin")),
 ):
     return await enable_user(user_id)
+
+
+@router.post("/{user_id}/send-password-email")
+async def send_password_email_route(
+    user_id: str,
+    current_user=Depends(require_role("Admin")),
+):
+    return await send_password_setup_email(user_id)

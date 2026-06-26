@@ -1,11 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import socketio
 from dotenv import load_dotenv
+import socketio
 import os
 import uvicorn
-
-load_dotenv()
 
 from config.database import connect_db, close_db
 from config.minio_client import get_minio
@@ -19,6 +17,8 @@ from routes.notification_routes import router as notification_router
 from routes.violation_routes import router as violation_router
 from routes.admin_routes import router as admin_router
 from sockets.monitoring_socket import sio
+
+load_dotenv()
 
 app = FastAPI(title="3rdEyeZ360 Backend", version="1.0.0")
 

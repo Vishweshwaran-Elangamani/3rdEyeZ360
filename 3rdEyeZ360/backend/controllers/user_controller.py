@@ -1,38 +1,35 @@
 from datetime import datetime
 from fastapi import HTTPException
-from config.database import getdb
+from pymongo.errors import DuplicateKeyError
 
-try:
-    from config.keycloak_client import keycloakadmin
-except ImportError:
-    from config.keycloakclient import keycloakadmin
+from config.database import get_db
+from config.keycloak_client import keycloakadmin
+from utils.id_generator import generate_user_id
 
-try:
-    from utils.id_generator import generateuserid
-except ImportError:
-    from utils.idgenerator import generateuserid
+VALID_ROLES = {"Admin", "Examiner", "Candidate"}
 
 
-async def getallusers(role: str | None = None):
-    db = getdb()
-    query = {"role": role} if role else {}
-    users = await db.users.find(query).to_list(None)
-    return [
-        {k: str(v) if k == "_id" else v for k, v in u.items() if k != "_id"}
-        for u in users
-    ]
-
-
-async def getuserbyid(userid: str):
-    db = getdb()
-    user = await db.users.find_one({"userid": userid})
-    if not user:
-        return None
+def _serialize_user(user: dict) -> dict:
     return {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"}
 
 
-async def createuserinkeycloak(name: str, email: str, role: str):
-    db = getdb()
+async def get_all_users(role: str | None = None):
+    db = get_db()
+    query = {"role": role} if role else {}
+    users = await db.users.find(query).sort("created_at", -1).to_list(None)
+    return [_serialize_user(user) for user in users]
+
+
+async def get_user_by_id(user_id: str):
+    db = get_db()
+    user = await db.users.find_one({"user_id": user_id})
+    if not user:
+        return None
+    return _serialize_user(user)
+
+
+async def create_user_in_keycloak(name: str, email: str, role: str):
+    db = get_db()
 
     clean_name = (name or "").strip()
     clean_email = (email or "").strip().lower()
@@ -42,63 +39,69 @@ async def createuserinkeycloak(name: str, email: str, role: str):
         raise HTTPException(status_code=400, detail="Name is required")
     if not clean_email:
         raise HTTPException(status_code=400, detail="Email is required")
-    if not clean_role:
-        raise HTTPException(status_code=400, detail="Role is required")
-
-    if clean_role not in {"Admin", "Examiner", "Candidate"}:
+    if clean_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
     existing = await db.users.find_one({"email": clean_email})
     if existing:
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
 
+    name_parts = clean_name.split()
+    first_name = name_parts[0] if name_parts else ""
+    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+
+    kc_payload = {
+        "email": clean_email,
+        "username": clean_email,
+        "firstName": first_name,
+        "lastName": last_name,
+        "enabled": True,
+        "emailVerified": False,
+        "requiredActions": ["UPDATE_PASSWORD"],
+        "attributes": {"appRole": [clean_role]},
+    }
+
+    keycloak_id = None
+
     try:
-        name_parts = clean_name.split()
-        first_name = name_parts[0] if name_parts else ""
-        last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+        create_result = keycloakadmin.create_user(kc_payload)
 
-        kc_payload = {
-            "email": clean_email,
-            "username": clean_email,
-            "firstName": first_name,
-            "lastName": last_name,
-            "enabled": True,
-            "emailVerified": False,
-            "requiredActions": ["UPDATE_PASSWORD"],
-            "attributes": {"appRole": clean_role},
-        }
+        if isinstance(create_result, str) and create_result.strip():
+            keycloak_id = create_result.strip()
+        else:
+            keycloak_id = keycloakadmin.get_user_id(clean_email)
 
-        kc_user_id = keycloakadmin.create_user(kc_payload)
+        if not keycloak_id:
+            raise Exception("Keycloak user created but user ID could not be resolved")
+
         role_obj = keycloakadmin.get_realm_role(clean_role)
-        keycloakadmin.assign_realm_roles(user_id=kc_user_id, roles=[role_obj])
+        keycloakadmin.assign_realm_roles(user_id=keycloak_id, roles=[role_obj])
 
         invite_sent = False
         try:
             keycloakadmin.send_update_account(
-                user_id=kc_user_id,
-                payload=["UPDATE_PASSWORD"]
+                user_id=keycloak_id,
+                payload=["UPDATE_PASSWORD"],
             )
             invite_sent = True
         except Exception:
             invite_sent = False
 
-        user_id = await generateuserid(clean_role)
-
         user = {
-            "userid": user_id,
-            "keycloakid": kc_user_id,
+            "user_id": await generate_user_id(clean_role),
+            "keycloak_id": keycloak_id,
             "name": clean_name,
             "email": clean_email,
             "role": clean_role,
             "status": "Active",
-            "createdat": datetime.utcnow(),
-            "lastlogin": None,
+            "created_at": datetime.utcnow(),
+            "last_login": None,
         }
 
         await db.users.insert_one(user)
 
-        result = {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"}
-        result["inviteSent"] = invite_sent
+        result = _serialize_user(user)
+        result["invite_sent"] = invite_sent
         result["message"] = (
             "User created and password setup email sent."
             if invite_sent
@@ -106,72 +109,77 @@ async def createuserinkeycloak(name: str, email: str, role: str):
         )
         return result
 
+    except DuplicateKeyError:
+        if keycloak_id:
+            try:
+                keycloakadmin.delete_user(keycloak_id)
+            except Exception:
+                pass
+        raise HTTPException(status_code=409, detail="User already exists.")
     except HTTPException:
         raise
     except Exception as e:
+        if keycloak_id:
+            try:
+                keycloakadmin.delete_user(keycloak_id)
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Failed to create user in Keycloak: {str(e)}")
 
 
-async def disableuser(userid: str):
-    db = getdb()
-
-    user = await db.users.find_one({"userid": userid})
+async def disable_user(user_id: str):
+    db = get_db()
+    user = await db.users.find_one({"user_id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
-        keycloakid = user.get("keycloakid")
-        if keycloakid:
-            keycloakadmin.update_user(keycloakid, {"enabled": False})
+        if user.get("keycloak_id"):
+            keycloakadmin.update_user(user["keycloak_id"], {"enabled": False})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to disable Keycloak user: {str(e)}")
 
     await db.users.update_one(
-        {"userid": userid},
-        {"$set": {"status": "Disabled"}}
+        {"user_id": user_id},
+        {"$set": {"status": "Disabled"}},
     )
-
     return {"message": "User disabled"}
 
 
-async def enableuser(userid: str):
-    db = getdb()
-
-    user = await db.users.find_one({"userid": userid})
+async def enable_user(user_id: str):
+    db = get_db()
+    user = await db.users.find_one({"user_id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
-        keycloakid = user.get("keycloakid")
-        if keycloakid:
-            keycloakadmin.update_user(keycloakid, {"enabled": True})
+        if user.get("keycloak_id"):
+            keycloakadmin.update_user(user["keycloak_id"], {"enabled": True})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to enable Keycloak user: {str(e)}")
 
     await db.users.update_one(
-        {"userid": userid},
-        {"$set": {"status": "Active"}}
+        {"user_id": user_id},
+        {"$set": {"status": "Active"}},
     )
-
     return {"message": "User enabled"}
 
 
-# Compatibility aliases for snake_case imports
-async def get_all_users(role: str | None = None):
-    return await getallusers(role)
+async def getallusers(role: str | None = None):
+    return await get_all_users(role)
 
 
-async def get_user_by_id(userid: str):
-    return await getuserbyid(userid)
+async def getuserbyid(user_id: str):
+    return await get_user_by_id(user_id)
 
 
-async def create_user_in_keycloak(name: str, email: str, role: str):
-    return await createuserinkeycloak(name, email, role)
+async def createuserinkeycloak(name: str, email: str, role: str):
+    return await create_user_in_keycloak(name, email, role)
 
 
-async def disable_user(userid: str):
-    return await disableuser(userid)
+async def disableuser(user_id: str):
+    return await disable_user(user_id)
 
 
-async def enable_user(userid: str):
-    return await enableuser(userid)
+async def enableuser(user_id: str):
+    return await enable_user(user_id)

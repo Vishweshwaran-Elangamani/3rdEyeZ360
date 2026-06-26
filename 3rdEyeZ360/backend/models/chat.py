@@ -1,6 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, Field
+
 
 class ChatMessage(BaseModel):
     message_id: str
@@ -10,4 +11,8 @@ class ChatMessage(BaseModel):
     sender_role: str
     message: str
     is_broadcast: bool = False
-    sent_at: datetime = None
+    sent_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True

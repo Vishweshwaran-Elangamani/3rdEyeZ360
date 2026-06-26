@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
+
 from controllers.user_controller import (
-    getallusers,
-    getuserbyid,
-    createuserinkeycloak,
-    disableuser,
-    enableuser,
+    create_user_in_keycloak,
+    disable_user,
+    enable_user,
+    get_all_users,
+    get_user_by_id,
 )
-from middleware.auth import requirerole
+from middleware.auth import require_role
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
@@ -19,43 +20,47 @@ class CreateUserRequest(BaseModel):
 
 
 @router.get("")
-async def listusers(
+async def list_users(
     role: str | None = None,
-    currentuser=Depends(requirerole("Admin"))
+    current_user=Depends(require_role("Admin")),
 ):
-    return await getallusers(role)
+    return await get_all_users(role)
 
 
-@router.get("/{userid}")
-async def getuser(
-    userid: str,
-    currentuser=Depends(requirerole("Admin", "Examiner"))
+@router.get("/{user_id}")
+async def get_user(
+    user_id: str,
+    current_user=Depends(require_role("Admin", "Examiner")),
 ):
-    user = await getuserbyid(userid)
+    user = await get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if current_user["role"] == "Examiner" and user.get("role") != "Candidate":
+        raise HTTPException(status_code=403, detail="Access denied")
+
     return user
 
 
 @router.post("")
-async def createuser(
+async def create_user(
     req: CreateUserRequest,
-    currentuser=Depends(requirerole("Admin"))
+    current_user=Depends(require_role("Admin")),
 ):
-    return await createuserinkeycloak(req.name, req.email, req.role)
+    return await create_user_in_keycloak(req.name, req.email, req.role)
 
 
-@router.post("/{userid}/disable")
-async def disableuserroute(
-    userid: str,
-    currentuser=Depends(requirerole("Admin"))
+@router.post("/{user_id}/disable")
+async def disable_user_route(
+    user_id: str,
+    current_user=Depends(require_role("Admin")),
 ):
-    return await disableuser(userid)
+    return await disable_user(user_id)
 
 
-@router.post("/{userid}/enable")
-async def enableuserroute(
-    userid: str,
-    currentuser=Depends(requirerole("Admin"))
+@router.post("/{user_id}/enable")
+async def enable_user_route(
+    user_id: str,
+    current_user=Depends(require_role("Admin")),
 ):
-    return await enableuser(userid)
+    return await enable_user(user_id)

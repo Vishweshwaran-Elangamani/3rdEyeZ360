@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import axios from 'axios'
 import useAuthStore from '../../store/authStore'
 import useExamStore from '../../store/examStore'
 import { useTimer } from '../../hooks/useTimer'
@@ -6,6 +7,46 @@ import { useToaster } from '../../hooks/useToaster'
 import { getSocket } from '../../hooks/useSocket'
 import Toaster from '../../components/common/Toaster'
 import ChatWindow from '../../components/common/ChatWindow'
+
+const API = 'http://localhost:3000'
+
+function LogoutButton() {
+  const [loading, setLoading] = useState(false)
+
+  const handleLogout = async () => {
+    if (loading) return
+    setLoading(true)
+
+    try {
+      const { refreshToken } = useAuthStore.getState()
+
+      if (refreshToken) {
+        try {
+          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
+        } catch (e) {
+          console.log('Logout API failed, clearing local session anyway', e)
+        }
+      }
+    } finally {
+      localStorage.removeItem('app-screen')
+      localStorage.removeItem('auth-storage')
+      localStorage.removeItem('exam-storage')
+      useAuthStore.getState().clearAuth()
+      window.location.reload()
+    }
+  }
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="btn btn-ghost"
+      style={{ padding: '6px 12px', fontSize: 12 }}
+    >
+      {loading ? 'Signing out...' : 'Logout'}
+    </button>
+  )
+}
 
 export default function ActiveExam({ exam, assessment, onComplete }) {
   const { user, accessToken } = useAuthStore()
@@ -23,6 +64,7 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
     window.electronAPI?.enableLockdown()
     window.electronAPI?.setClosable(false)
     window.electronAPI?.openBrowser({ allowedWebsites: exam.allowed_websites })
+
     return () => {
       stopMonitoring()
       window.electronAPI?.disableLockdown()
@@ -37,7 +79,6 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
       streamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
 
-      // Send frame every 4 seconds
       captureIntervalRef.current = setInterval(() => {
         captureAndSendFrame()
       }, 4000)
@@ -47,20 +88,22 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
   }
 
   const captureAndSendFrame = () => {
-  if (!videoRef.current || !window.electronAPI) return
-  const canvas = document.createElement('canvas')
-  canvas.width = 640; canvas.height = 480
-  const ctx = canvas.getContext('2d')
-  ctx.drawImage(videoRef.current, 0, 0, 640, 480)
-  const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
-  window.electronAPI.sendFrame({
-    frame: base64,
-    assessmentId: assessment.assessment_id,
-    candidateId: user.user_id,
-    examId: exam.exam_id,
-    token: accessToken
-  })
-}
+    if (!videoRef.current || !window.electronAPI) return
+    const canvas = document.createElement('canvas')
+    canvas.width = 640
+    canvas.height = 480
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(videoRef.current, 0, 0, 640, 480)
+    const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
+
+    window.electronAPI.sendFrame({
+      frame: base64,
+      assessmentId: assessment.assessment_id,
+      candidateId: user.user_id,
+      examId: exam.exam_id,
+      token: accessToken
+    })
+  }
 
   const stopMonitoring = () => {
     if (captureIntervalRef.current) clearInterval(captureIntervalRef.current)
@@ -68,7 +111,6 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
   }
 
   const setupSocketListeners = () => {
-    // Listen for detection results from main process
     window.electronAPI?.onDetectionResult((result) => {
       if (result.action === 'toast' || result.action === 'violation') {
         addToast(result.message, result.action === 'violation' ? 'error' : 'warning', 6000)
@@ -80,7 +122,6 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
       }
     })
 
-    // Examiner control commands via socket
     const socket = getSocket()
     if (socket) {
       socket.on('control_command', ({ action }) => {
@@ -93,6 +134,7 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
           setTimeout(onComplete, 3000)
         }
       })
+
       socket.on('you_are_locked', () => {
         setLocked(true)
         addToast('🔒 Assessment locked due to violations. Waiting for examiner.', 'error', 0)
@@ -102,8 +144,6 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-
-      {/* Top Bar */}
       <div style={{
         height: 50, background: '#1a1d27', borderBottom: '1px solid #2e3347',
         display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16, flexShrink: 0
@@ -111,8 +151,10 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
         <span style={{ fontWeight: 700, fontSize: 14 }}>👁️ 3rdEyeZ360</span>
         <span style={{ color: '#8b90a0', fontSize: 13 }}>|</span>
         <span style={{ fontSize: 13, fontWeight: 600 }}>{exam.name}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20 }}>
-          {/* Timer */}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <LogoutButton />
+
           <div style={{
             background: '#22263a', padding: '5px 14px', borderRadius: 8,
             fontSize: 15, fontWeight: 700,
@@ -120,7 +162,7 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
           }}>
             ⏱ {formatted()}
           </div>
-          {/* Violations */}
+
           <div style={{
             background: violationCount > 0 ? '#2a1010' : '#22263a',
             padding: '5px 12px', borderRadius: 8, fontSize: 13,
@@ -128,7 +170,7 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
           }}>
             ⚠️ {violationCount} violation{violationCount !== 1 ? 's' : ''}
           </div>
-          {/* Status */}
+
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
             fontSize: 12, color: '#34c97a'
@@ -142,7 +184,6 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
         </div>
       </div>
 
-      {/* Quick links bar */}
       {exam.allowed_websites?.length > 0 && (
         <div style={{
           height: 36, background: '#22263a', borderBottom: '1px solid #2e3347',
@@ -150,18 +191,20 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
         }}>
           <span style={{ fontSize: 11, color: '#8b90a0', marginRight: 4 }}>Allowed:</span>
           {exam.allowed_websites.map((site, i) => (
-            <button key={i} style={{
-              background: '#1a1d27', border: '1px solid #2e3347',
-              borderRadius: 6, padding: '3px 10px', fontSize: 12, color: '#4f8ef7',
-              cursor: 'pointer'
-            }}>
+            <button
+              key={i}
+              style={{
+                background: '#1a1d27', border: '1px solid #2e3347',
+                borderRadius: 6, padding: '3px 10px', fontSize: 12, color: '#4f8ef7',
+                cursor: 'pointer'
+              }}
+            >
               🔗 {site}
             </button>
           ))}
         </div>
       )}
 
-      {/* Browser area — BrowserView is overlaid here by Electron */}
       <div style={{ flex: 1, background: '#0a0c14', position: 'relative' }}>
         {isLocked && (
           <div style={{
@@ -172,14 +215,13 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
             <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
             <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Assessment Locked</h2>
             <p style={{ color: '#8b90a0', fontSize: 14, textAlign: 'center', maxWidth: 320 }}>
-              Your assessment has been locked due to repeated violations.<br/>
+              Your assessment has been locked due to repeated violations.<br />
               Please wait for your examiner to take action.
             </p>
           </div>
         )}
       </div>
 
-      {/* Bottom status bar */}
       <div style={{
         height: 32, background: '#1a1d27', borderTop: '1px solid #2e3347',
         display: 'flex', alignItems: 'center', padding: '0 16px', gap: 20,
@@ -193,13 +235,10 @@ export default function ActiveExam({ exam, assessment, onComplete }) {
         </span>
       </div>
 
-      {/* Hidden webcam for capture */}
       <video ref={videoRef} autoPlay muted style={{ display: 'none' }} />
 
-      {/* Toaster overlay */}
       <Toaster toasts={toasts} onRemove={removeToast} />
 
-      {/* Chat */}
       <ChatWindow
         examId={exam.exam_id}
         candidateId={user.user_id}

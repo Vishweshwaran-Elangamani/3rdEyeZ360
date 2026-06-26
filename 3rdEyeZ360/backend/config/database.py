@@ -4,28 +4,44 @@ import os
 
 load_dotenv(override=True)
 
-client: AsyncIOMotorClient = None
-db = None
+_client = None
+_db = None
+
 
 async def connect_db():
-    global client, db
-    client = AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://127.0.0.1:27017/samp_db"))
-    db = client[os.getenv("MONGO_DB", "samp_db")]
-    await db.users.create_index("keycloak_id", unique=True)
-    await db.users.create_index("email", unique=True)
-    await db.users.create_index("user_id", unique=True)
-    await db.exams.create_index("examiner_id")
-    await db.assessments.create_index([("exam_id", 1), ("candidate_id", 1)], unique=True)
-    await db.violations.create_index("assessment_id")
-    await db.warnings.create_index("assessment_id")
-    await db.chats.create_index([("exam_id", 1), ("candidate_id", 1)])
-    await db.audit_logs.create_index("exam_id")
-    print("✅ MongoDB connected and indexes created")
+    global _client, _db
+    mongo_url = os.getenv("MONGO_URL", os.getenv("MONGODB_URL", "mongodb://127.0.0.1:27017"))
+    db_name = os.getenv("MONGODB_DB", os.getenv("MONGO_DB", "sampdb"))
+
+    _client = AsyncIOMotorClient(mongo_url)
+    _db = _client[db_name]
+
+    await _db.users.create_index("keycloakid", unique=True, sparse=True)
+    await _db.users.create_index("email", unique=True)
+    await _db.users.create_index("userid", unique=True)
+    await _db.exams.create_index("examinerid")
+    await _db.assessments.create_index([("examid", 1), ("candidateid", 1)], unique=True)
+    await _db.violations.create_index("assessmentid")
+    await _db.warnings.create_index("assessmentid")
+    await _db.chats.create_index([("examid", 1), ("candidateid", 1)])
+    await _db.auditlogs.create_index("examid")
+
+    print(f"MongoDB connected — {db_name}")
+
 
 async def close_db():
-    global client
-    if client:
-        client.close()
+    global _client
+    if _client:
+        _client.close()
+
 
 def get_db():
-    return db
+    if _db is None:
+        raise RuntimeError("Database not initialized. Call connect_db() first.")
+    return _db
+
+
+# Legacy aliases — used by files still calling old names
+connectdb = connect_db
+closedb = close_db
+getdb = get_db

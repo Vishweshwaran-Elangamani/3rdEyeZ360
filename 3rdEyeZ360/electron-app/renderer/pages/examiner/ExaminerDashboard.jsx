@@ -9,46 +9,17 @@ import AssignCandidates from './AssignCandidates'
 const API = 'http://localhost:3000'
 
 const STATUS_COLORS = {
-  ACTIVE:      '#34c97a',
-  READY:       '#4f8ef7',
+  ACTIVE: '#34c97a',
+  READY: '#4f8ef7',
   INTERRUPTED: '#f5a623',
-  LOCKED:      '#f75f5f',
-  COMPLETED:   '#8b90a0',
-  TERMINATED:  '#f75f5f',
-  ASSIGNED:    '#555a6e',
-  AVAILABLE:   '#7c5ce7',
-  PAUSED:      '#f5a623',
-}
-const [monitorTab, setMonitorTab]     = useState('grid')  // 'grid' | 'requests'
-const [reentryRequests, setReentryRequests] = useState([])
-
-const loadReentryRequests = async () => {
-  try {
-    const res = await axios.get(
-      `${API}/api/exams/${selectedExam.exam_id}/requests`,
-      { headers }
-    )
-    setReentryRequests(res.data || [])
-  } catch (e) { console.error(e) }
+  LOCKED: '#f75f5f',
+  COMPLETED: '#8b90a0',
+  TERMINATED: '#f75f5f',
+  ASSIGNED: '#555a6e',
+  AVAILABLE: '#7c5ce7',
+  PAUSED: '#f5a623',
 }
 
-const handleReentry = async (assessmentId, requestId, approve) => {
-  const url = `${API}/api/assessments/${assessmentId}/reentry/${requestId}/${approve ? 'approve' : 'reject'}`
-  const body = approve ? {} : { reason: window.prompt('Rejection reason:') || 'Not approved' }
-  await axios.post(url, body, { headers })
-  if (socket) {
-    socket.emit('reentry_decision', {
-      assessment_id: assessmentId,
-      approved: approve,
-      exam_id: selectedExam.exam_id
-    })
-  }
-  loadReentryRequests()
-  setActionMsg(approve ? '✅ Re-entry approved' : '❌ Re-entry rejected')
-  setTimeout(() => setActionMsg(''), 3000)
-}
-
-// ─── tiny reusable stat box ───────────────────────────────────────────────────
 function StatBox({ label, value, color }) {
   return (
     <div style={{ background: '#22263a', borderRadius: 8, padding: '10px 12px' }}>
@@ -58,26 +29,63 @@ function StatBox({ label, value, color }) {
   )
 }
 
-// ─── main component ───────────────────────────────────────────────────────────
+function LogoutButton() {
+  const [loading, setLoading] = useState(false)
+
+  const handleLogout = async () => {
+    if (loading) return
+    setLoading(true)
+
+    try {
+      const { refreshToken } = useAuthStore.getState()
+
+      if (refreshToken) {
+        try {
+          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
+        } catch (e) {
+          console.log('Logout API failed, clearing local session anyway', e)
+        }
+      }
+    } finally {
+      localStorage.removeItem('app-screen')
+      localStorage.removeItem('auth-storage')
+      localStorage.removeItem('exam-storage')
+      useAuthStore.getState().clearAuth()
+      window.location.reload()
+    }
+  }
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="btn btn-ghost"
+      style={{ padding: '7px 14px', fontSize: 13 }}
+    >
+      {loading ? 'Signing out...' : 'Logout'}
+    </button>
+  )
+}
+
 export default function ExaminerDashboard() {
+  const [monitorTab, setMonitorTab] = useState('grid')
+  const [reentryRequests, setReentryRequests] = useState([])
   const { user, accessToken } = useAuthStore()
   const socket = useSocket(accessToken)
 
-  // view: 'list' | 'monitor' | 'create' | 'assign'
-  const [view, setView]                     = useState('list')
-  const [exams, setExams]                   = useState([])
-  const [selectedExam, setSelectedExam]     = useState(null)
-  const [candidates, setCandidates]         = useState([])
-  const [liveData, setLiveData]             = useState({})
+  const [view, setView] = useState('list')
+  const [exams, setExams] = useState([])
+  const [selectedExam, setSelectedExam] = useState(null)
+  const [candidates, setCandidates] = useState([])
+  const [liveData, setLiveData] = useState({})
   const [selectedCandidate, setSelectedCandidate] = useState(null)
-  const [violations, setViolations]         = useState([])
-  const [broadcastMsg, setBroadcastMsg]     = useState('')
-  const [loadingExams, setLoadingExams]     = useState(false)
-  const [actionMsg, setActionMsg]           = useState('')   // inline feedback
+  const [violations, setViolations] = useState([])
+  const [broadcastMsg, setBroadcastMsg] = useState('')
+  const [loadingExams, setLoadingExams] = useState(false)
+  const [actionMsg, setActionMsg] = useState('')
 
   const headers = { Authorization: `Bearer ${accessToken}` }
 
-  // ── data loaders ─────────────────────────────────────────────────────────────
   const loadExams = useCallback(async () => {
     setLoadingExams(true)
     try {
@@ -110,7 +118,6 @@ export default function ExaminerDashboard() {
 
   useEffect(() => { loadExams() }, [loadExams])
 
-  // ── socket listeners (only while on monitor view) ────────────────────────────
   useEffect(() => {
     if (!socket || view !== 'monitor' || !selectedExam) return
 
@@ -129,18 +136,17 @@ export default function ExaminerDashboard() {
       loadCandidates(selectedExam.exam_id)
     }
 
-    socket.on('candidate_update',   onCandidateUpdate)
-    socket.on('violation_alert',    onViolationAlert)
+    socket.on('candidate_update', onCandidateUpdate)
+    socket.on('violation_alert', onViolationAlert)
     socket.on('assessment_updated', onAssessmentUpdate)
 
     return () => {
-      socket.off('candidate_update',   onCandidateUpdate)
-      socket.off('violation_alert',    onViolationAlert)
+      socket.off('candidate_update', onCandidateUpdate)
+      socket.off('violation_alert', onViolationAlert)
       socket.off('assessment_updated', onAssessmentUpdate)
     }
-  }, [socket, view, selectedExam])
+  }, [socket, view, selectedExam, loadCandidates])
 
-  // ── actions ──────────────────────────────────────────────────────────────────
   const openMonitor = (exam) => {
     setSelectedExam(exam)
     setSelectedCandidate(null)
@@ -175,7 +181,7 @@ export default function ExaminerDashboard() {
       )
       if (socket) {
         socket.emit('examiner_control', {
-          exam_id:      selectedExam.exam_id,
+          exam_id: selectedExam.exam_id,
           candidate_id: selectedCandidate?.candidate_id,
           action
         })
@@ -192,9 +198,9 @@ export default function ExaminerDashboard() {
   const sendBroadcast = () => {
     if (!broadcastMsg.trim() || !socket) return
     socket.emit('broadcast_message', {
-      exam_id:     selectedExam.exam_id,
+      exam_id: selectedExam.exam_id,
       examiner_id: user.user_id,
-      message:     broadcastMsg.trim()
+      message: broadcastMsg.trim()
     })
     setBroadcastMsg('')
     setActionMsg('📢 Broadcast sent to all candidates')
@@ -211,7 +217,48 @@ export default function ExaminerDashboard() {
     loadExams()
   }
 
-  // ── route to sub-pages ────────────────────────────────────────────────────────
+  const loadReentryRequests = useCallback(async () => {
+    try {
+      if (!selectedExam?.exam_id) return
+
+      const res = await axios.get(
+        `${API}/api/exams/${selectedExam.exam_id}/requests`,
+        { headers }
+      )
+
+      setReentryRequests(res.data || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }, [selectedExam, accessToken])
+
+  const handleReentry = async (assessmentId, requestId, approve) => {
+    try {
+      const url = `${API}/api/assessments/${assessmentId}/reentry/${requestId}/${approve ? 'approve' : 'reject'}`
+
+      const body = approve ? {} : {
+        reason: window.prompt('Rejection reason:') || 'Not approved'
+      }
+
+      await axios.post(url, body, { headers })
+
+      if (socket) {
+        socket.emit('reentry_decision', {
+          assessment_id: assessmentId,
+          approved: approve,
+          exam_id: selectedExam.exam_id
+        })
+      }
+
+      await loadReentryRequests()
+
+      setActionMsg(approve ? '✅ Re-entry approved' : '❌ Re-entry rejected')
+      setTimeout(() => setActionMsg(''), 3000)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   if (view === 'create') {
     return (
       <CreateExam
@@ -237,12 +284,9 @@ export default function ExaminerDashboard() {
     )
   }
 
-  // ── EXAM LIST ────────────────────────────────────────────────────────────────
   if (view === 'list') {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-
-        {/* Header */}
         <div style={{
           height: 56, background: '#1a1d27', borderBottom: '1px solid #2e3347',
           display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12,
@@ -253,6 +297,7 @@ export default function ExaminerDashboard() {
           <span style={{ fontSize: 12, color: '#8b90a0' }}>— {user?.role} Dashboard</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ fontSize: 13, color: '#8b90a0' }}>{user?.name}</span>
+            <LogoutButton />
             <button
               onClick={() => setView('create')}
               className="btn btn-primary"
@@ -263,7 +308,6 @@ export default function ExaminerDashboard() {
           </div>
         </div>
 
-        {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 28 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Your Exams</h2>
 
@@ -309,7 +353,6 @@ export default function ExaminerDashboard() {
                       ⏱ {exam.duration_minutes} min
                     </span>
                   </div>
-                  {/* Action Buttons */}
                   <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                     <button
                       onClick={() => openMonitor(exam)}
@@ -335,19 +378,15 @@ export default function ExaminerDashboard() {
     )
   }
 
-  // ── LIVE MONITOR ─────────────────────────────────────────────────────────────
   if (view === 'monitor') {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-
-        {/* Header */}
         <div style={{
           height: 52, background: '#1a1d27', borderBottom: '1px solid #2e3347',
           display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12,
           flexShrink: 0, flexWrap: 'wrap'
         }}>
-          <button onClick={goBack} className="btn btn-ghost"
-            style={{ padding: '5px 12px', fontSize: 12 }}>
+          <button onClick={goBack} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }}>
             ← Back
           </button>
           <span style={{ fontWeight: 700, fontSize: 14 }}>{selectedExam?.name}</span>
@@ -355,7 +394,6 @@ export default function ExaminerDashboard() {
             · {candidates.length} candidate{candidates.length !== 1 ? 's' : ''}
           </span>
 
-          {/* Inline feedback */}
           {actionMsg && (
             <span style={{ fontSize: 12, color: '#34c97a', marginLeft: 8 }}>
               {actionMsg}
@@ -363,6 +401,7 @@ export default function ExaminerDashboard() {
           )}
 
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <LogoutButton />
             <input
               value={broadcastMsg}
               onChange={e => setBroadcastMsg(e.target.value)}
@@ -370,48 +409,48 @@ export default function ExaminerDashboard() {
               placeholder="Broadcast to all candidates..."
               style={{ width: 220, padding: '6px 10px', fontSize: 12 }}
             />
-            <button onClick={sendBroadcast} className="btn btn-ghost"
-              style={{ padding: '6px 12px', fontSize: 12 }}>
+            <button onClick={sendBroadcast} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>
               📢 Send
             </button>
-            <button onClick={startExam} className="btn btn-success"
-              style={{ padding: '6px 16px', fontSize: 12 }}>
+            <button onClick={startExam} className="btn btn-success" style={{ padding: '6px 16px', fontSize: 12 }}>
               ▶ Start Exam
             </button>
             <button
               onClick={() => { setSelectedExam(selectedExam); setView('assign') }}
               className="btn btn-ghost"
-              style={{ padding: '6px 12px', fontSize: 12 }}>
+              style={{ padding: '6px 12px', fontSize: 12 }}
+            >
               👥 Assign
             </button>
           </div>
         </div>
-        {/* Sub-tab bar */}
-<div style={{
-  height: 40, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-  display: 'flex', alignItems: 'center', padding: '0 16px', gap: 4, flexShrink: 0
-}}>
-  {[
-    { key: 'grid', label: '🖥 Live Grid' },
-    { key: 'requests', label: `📬 Requests${reentryRequests.filter(r => r.status === 'Pending').length > 0
-        ? ` (${reentryRequests.filter(r => r.status === 'Pending').length})` : ''}` }
-  ].map(t => (
-    <button key={t.key}
-      onClick={() => { setMonitorTab(t.key); if (t.key === 'requests') loadReentryRequests() }}
-      style={{
-        padding: '5px 14px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-        background: monitorTab === t.key ? '#22263a' : 'transparent',
-        color: monitorTab === t.key ? '#e8eaf0' : '#8b90a0',
-        border: monitorTab === t.key ? '1px solid #2e3347' : '1px solid transparent'
-      }}
-    >{t.label}</button>
-  ))}
-</div>
 
-        {/* Body: grid + detail panel */}
+        <div style={{
+          height: 40, background: '#1a1d27', borderBottom: '1px solid #2e3347',
+          display: 'flex', alignItems: 'center', padding: '0 16px', gap: 4, flexShrink: 0
+        }}>
+          {[
+            { key: 'grid', label: '🖥 Live Grid' },
+            {
+              key: 'requests',
+              label: `📬 Requests${reentryRequests.filter(r => r.status === 'Pending').length > 0
+                ? ` (${reentryRequests.filter(r => r.status === 'Pending').length})` : ''}`
+            }
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => { setMonitorTab(t.key); if (t.key === 'requests') loadReentryRequests() }}
+              style={{
+                padding: '5px 14px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                background: monitorTab === t.key ? '#22263a' : 'transparent',
+                color: monitorTab === t.key ? '#e8eaf0' : '#8b90a0',
+                border: monitorTab === t.key ? '1px solid #2e3347' : '1px solid transparent'
+              }}
+            >{t.label}</button>
+          ))}
+        </div>
+
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-
-          {/* Candidate Grid */}
           <div style={{
             flex: 1, overflowY: 'auto', padding: 16,
             display: 'grid',
@@ -434,9 +473,9 @@ export default function ExaminerDashboard() {
             )}
 
             {candidates.map(c => {
-              const live     = liveData[c.candidate_id] || {}
-              const color    = STATUS_COLORS[c.status] || '#555a6e'
-              const isAlert  = !!live.latestViolation
+              const live = liveData[c.candidate_id] || {}
+              const color = STATUS_COLORS[c.status] || '#555a6e'
+              const isAlert = !!live.latestViolation
               const isActive = c.candidate_id === selectedCandidate?.candidate_id
 
               return (
@@ -454,10 +493,11 @@ export default function ExaminerDashboard() {
                     outline: isActive ? '1px solid #4f8ef7' : 'none'
                   }}
                 >
-                  {/* top row */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 10, color: '#555a6e', maxWidth: 120,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{
+                      fontSize: 10, color: '#555a6e', maxWidth: 120,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                    }}>
                       {c.candidate_id}
                     </span>
                     <span style={{
@@ -466,26 +506,23 @@ export default function ExaminerDashboard() {
                     }} />
                   </div>
 
-                  {/* name */}
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 3,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{
+                    fontWeight: 600, fontSize: 13, marginBottom: 3,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                  }}>
                     {c.candidate_name || 'Candidate'}
                   </div>
 
-                  {/* status */}
                   <div style={{ fontSize: 11, color: color, marginBottom: 8, fontWeight: 500 }}>
                     {c.status}
                   </div>
 
-                  {/* stats */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between',
-                    fontSize: 11, color: '#8b90a0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8b90a0' }}>
                     <span>⚠️ {c.violation_count || 0}</span>
                     <span>📊 {c.risk_score || 0}</span>
                     <span>💯 {c.credibility_score ?? 100}</span>
                   </div>
 
-                  {/* violation badge */}
                   {isAlert && (
                     <div style={{
                       marginTop: 8, fontSize: 10, background: '#2a1010',
@@ -499,21 +536,14 @@ export default function ExaminerDashboard() {
               )
             })}
           </div>
-          
-        
 
-          {/* ── Candidate Detail Panel ── */}
           {selectedCandidate && (
             <div style={{
               width: 320, background: '#1a1d27', borderLeft: '1px solid #2e3347',
               display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0
             }}>
-              {/* Panel header */}
-              <div style={{
-                padding: '16px 20px', borderBottom: '1px solid #2e3347', flexShrink: 0
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'flex-start', marginBottom: 12 }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid #2e3347', flexShrink: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>
                       {selectedCandidate.candidate_name || selectedCandidate.candidate_id}
@@ -528,15 +558,13 @@ export default function ExaminerDashboard() {
                   >×</button>
                 </div>
 
-                {/* Stats grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <StatBox label="Violations"  value={selectedCandidate.violation_count  || 0}   color="#f75f5f" />
-                  <StatBox label="Risk Score"  value={selectedCandidate.risk_score       || 0}   color="#f5a623" />
+                  <StatBox label="Violations" value={selectedCandidate.violation_count || 0} color="#f75f5f" />
+                  <StatBox label="Risk Score" value={selectedCandidate.risk_score || 0} color="#f5a623" />
                   <StatBox label="Credibility" value={`${selectedCandidate.credibility_score ?? 100}%`} color="#34c97a" />
-                  <StatBox label="Warnings"    value={selectedCandidate.warning_count    || 0}   color="#8b90a0" />
+                  <StatBox label="Warnings" value={selectedCandidate.warning_count || 0} color="#8b90a0" />
                 </div>
 
-                {/* Examiner action buttons */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
@@ -558,10 +586,7 @@ export default function ExaminerDashboard() {
                 </div>
               </div>
 
-              {/* Scrollable lower section */}
               <div style={{ flex: 1, overflowY: 'auto' }}>
-
-                {/* Violations */}
                 <div style={{ padding: '14px 20px', borderBottom: '1px solid #2e3347' }}>
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
                     Violations ({violations.length})
@@ -579,12 +604,8 @@ export default function ExaminerDashboard() {
                             {v.type}
                           </div>
                           <div style={{ fontSize: 11, color: '#8b90a0' }}>
-                            {v.timestamp
-                              ? new Date(v.timestamp).toLocaleTimeString()
-                              : '—'}
-                            {v.confidence != null
-                              ? ` · ${Math.round(v.confidence * 100)}% confidence`
-                              : ''}
+                            {v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '—'}
+                            {v.confidence != null ? ` · ${Math.round(v.confidence * 100)}% confidence` : ''}
                           </div>
                         </div>
                       ))}
@@ -592,7 +613,6 @@ export default function ExaminerDashboard() {
                   )}
                 </div>
 
-                {/* Chat */}
                 <div style={{ padding: '14px 20px' }}>
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
                     Chat with Candidate

@@ -1,0 +1,5 @@
+
+# docker start issue 
+
+docker:taskkill /F /IM "Docker Desktop.exe" /IM "com.docker.backend.exe" /IM "docker.exe"
+wsl --shutdown

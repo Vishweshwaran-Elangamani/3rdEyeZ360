@@ -4,8 +4,9 @@ const { setupLockdown, removeLockdown } = require('./lockdown/window')
 const { spawnPythonApi } = require('./services/python-spawner')
 const { registerIpcHandlers } = require('./ipc/index')
 
-// Remove native menu bar completely
-Menu.setApplicationMenu(null)
+if (process.env.NODE_ENV !== 'development') {
+  Menu.setApplicationMenu(null)
+}
 
 let mainWindow = null
 let pythonProcess = null
@@ -25,35 +26,42 @@ function createWindow() {
       nodeIntegration: false,
       webviewTag: true
     },
-    icon: path.join(__dirname, '../assets/icons/app-icon.png'),
+    icon: path.join(__dirname, '../assets/icons/app-icon.ico'),
     title: '3rdEyeZ360'
   })
 
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173')
+    const tryLoad = (retries = 10) => {
+      mainWindow.loadURL('http://localhost:5173').catch(() => {
+        if (retries > 0) {
+          console.log(`[Main] Vite not ready, retrying... (${retries} left)`)
+          setTimeout(() => tryLoad(retries - 1), 1500)
+        } else {
+          console.error('[Main] Could not connect to Vite on port 5173')
+        }
+      })
+    }
 
-    // -------------------------------------------------------
-    // DEV TOOLS SHORTCUTS (Ctrl+Shift+I and F12)
-    // To DISABLE inspect in dev: comment out the block below
-    // -------------------------------------------------------
+    tryLoad()
+
     mainWindow.webContents.on('before-input-event', (event, input) => {
       if (input.control && input.shift && input.key.toLowerCase() === 'i') {
         mainWindow.webContents.toggleDevTools()
         event.preventDefault()
       }
+
       if (input.key === 'F12') {
         mainWindow.webContents.toggleDevTools()
         event.preventDefault()
       }
     })
-    // -------------------------------------------------------
-
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist-renderer/index.html'))
-    // DevTools shortcuts are NOT available in production build
   }
 
-  mainWindow.on('closed', () => { mainWindow = null })
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 }
 
 app.whenReady().then(async () => {

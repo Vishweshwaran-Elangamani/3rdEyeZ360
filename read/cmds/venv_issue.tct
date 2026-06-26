@@ -1,0 +1,4 @@
+
+# venv activate :Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+venv\Scripts\activate
+

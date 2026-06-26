@@ -1,19 +1,51 @@
-const { globalShortcut } = require('electron')
+const { globalShortcut, app } = require('electron')
 
-function blockShortcuts() {
-  globalShortcut.register('Alt+F4', () => false)
-  globalShortcut.register('Alt+Tab', () => false)
-  globalShortcut.register('Super', () => false)
-  globalShortcut.register('Control+Alt+Delete', () => false)
-  globalShortcut.register('Control+Shift+Escape', () => false)
-  globalShortcut.register('Control+Escape', () => false)
-  globalShortcut.register('F11', () => false)
-  console.log('🔒 Keyboard shortcuts blocked')
+const registeredShortcuts = new Set()
+
+function safeRegister(accelerator, handler = () => false) {
+  try {
+    const ok = globalShortcut.register(accelerator, handler)
+    if (ok) {
+      registeredShortcuts.add(accelerator)
+    } else {
+      console.warn(`⚠️ Could not register shortcut: ${accelerator}`)
+    }
+  } catch (err) {
+    console.warn(`⚠️ Failed to register shortcut ${accelerator}:`, err.message)
+  }
+}
+
+function blockShortcuts(options = {}) {
+  const isDevelopment = process.env.NODE_ENV === 'development'
+  const forceInDev = options.forceInDev === true
+
+  if (isDevelopment && !forceInDev) {
+    console.log('🛠️ Dev mode detected: shortcut blocking skipped')
+    return
+  }
+
+  if (!app.isReady()) {
+    console.warn('⚠️ App is not ready, shortcut blocking skipped')
+    return
+  }
+
+  safeRegister('Alt+F4')
+  safeRegister('F11')
+
+  console.log('🔒 Exam shortcuts blocked')
 }
 
 function unblockShortcuts() {
-  globalShortcut.unregisterAll()
-  console.log('🔓 Keyboard shortcuts unblocked')
+  for (const accelerator of registeredShortcuts) {
+    try {
+      globalShortcut.unregister(accelerator)
+    } catch (err) {
+      console.warn(`⚠️ Failed to unregister shortcut ${accelerator}:`, err.message)
+    }
+  }
+
+  registeredShortcuts.clear()
+  console.log('🔓 Exam shortcuts unblocked')
 }
 
 module.exports = { blockShortcuts, unblockShortcuts }

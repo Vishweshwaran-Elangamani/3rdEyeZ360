@@ -1,41 +1,61 @@
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-from controllers.user_controller import get_all_users, create_user_in_keycloak, disable_user, get_user_by_id
-from middleware.auth import require_role
-import uuid
-from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, EmailStr
+from controllers.user_controller import (
+    getallusers,
+    getuserbyid,
+    createuserinkeycloak,
+    disableuser,
+    enableuser,
+)
+from middleware.auth import requirerole
+
 router = APIRouter(prefix="/api/users", tags=["Users"])
+
 
 class CreateUserRequest(BaseModel):
     name: str
-    email: str
-    password: str
+    email: EmailStr
     role: str
 
-@router.get("/")
-async def list_users(role: str = None, current_user=Depends(require_role("Admin"))):
-    return await get_all_users(role)
 
-@router.get("/{user_id}")
-async def get_user(user_id: str, current_user=Depends(require_role("Admin", "Examiner"))):
-    return await get_user_by_id(user_id)
+@router.get("")
+async def listusers(
+    role: str | None = None,
+    currentuser=Depends(requirerole("Admin"))
+):
+    return await getallusers(role)
 
-@router.post("/")
-async def create_user(req: CreateUserRequest, current_user=Depends(require_role("Admin"))):
-    return await create_user_in_keycloak(req.name, req.email, req.password, req.role)
 
-@router.patch("/{user_id}/disable")
-async def disable(user_id: str, current_user=Depends(require_role("Admin"))):
-    return await disable_user(user_id)
+@router.get("/{userid}")
+async def getuser(
+    userid: str,
+    currentuser=Depends(requirerole("Admin", "Examiner"))
+):
+    user = await getuserbyid(userid)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
-@router.post("/{user_id}/disable")
-async def disable_user(user_id: str, current_user=Depends(require_role("Admin"))):
-    db = get_db()
-    await db.users.update_one({"user_id": user_id}, {"$set": {"status": "Disabled"}})
-    return {"message": "User disabled"}
 
-@router.post("/{user_id}/enable")
-async def enable_user(user_id: str, current_user=Depends(require_role("Admin"))):
-    db = get_db()
-    await db.users.update_one({"user_id": user_id}, {"$set": {"status": "Active"}})
-    return {"message": "User enabled"}
+@router.post("")
+async def createuser(
+    req: CreateUserRequest,
+    currentuser=Depends(requirerole("Admin"))
+):
+    return await createuserinkeycloak(req.name, req.email, req.role)
+
+
+@router.post("/{userid}/disable")
+async def disableuserroute(
+    userid: str,
+    currentuser=Depends(requirerole("Admin"))
+):
+    return await disableuser(userid)
+
+
+@router.post("/{userid}/enable")
+async def enableuserroute(
+    userid: str,
+    currentuser=Depends(requirerole("Admin"))
+):
+    return await enableuser(userid)

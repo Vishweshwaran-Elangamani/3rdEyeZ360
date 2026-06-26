@@ -1,0 +1,5 @@
+#refresh
+Ctrl + R
+
+# introspect
+Ctrl+shift+i

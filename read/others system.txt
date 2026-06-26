@@ -1,0 +1,86 @@
+Based on your project structure, here are all the setup commands from scratch:
+
+***
+
+## 1. Start Docker Services
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360
+docker-compose up -d
+```
+
+***
+
+## 2. Backend (FastAPI)
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+***
+
+## 3. Python Detection API
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\python-api
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+***
+
+## 4. Electron App
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\electron-app
+npm install
+```
+
+***
+
+## Run Everything (3 separate terminals)
+
+**Terminal 1 — Backend:**
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\backend
+venv\Scripts\activate
+uvicorn server:socket_app --host 0.0.0.0 --port 3000
+```
+
+**Terminal 2 — Python Detection API:**
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\python-api
+venv\Scripts\activate
+uvicorn main:app --host 127.0.0.1 --port 5001
+```
+
+**Terminal 3 — Electron App:**
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\electron-app
+npm run dev
+```
+
+***
+
+## One-Time Extras (if not done yet on this laptop)
+
+Seed the database after backend is running:
+```powershell
+cd D:\3rdEyez360V2\3rdEyeZ360\backend
+venv\Scripts\activate
+python seed.py
+```
+
+Fix bcrypt issue if it appears:
+```powershell
+pip uninstall bcrypt -y
+pip install bcrypt==4.0.1
+```
+cd D:\3rdEyez360V2\3rdEyeZ360\electron-app
+npm install --save-dev electron-builder
+
+
+//run to seed the data 
+cd D:\3rdEyez360V2\3rdEyeZ360\backend
+venv\Scripts\activate
+python seed.py

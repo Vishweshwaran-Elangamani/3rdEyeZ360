@@ -4,6 +4,44 @@ import useAuthStore from '../../store/authStore'
 
 const API = 'http://localhost:3000'
 
+function LogoutButton() {
+  const [loading, setLoading] = useState(false)
+
+  const handleLogout = async () => {
+    if (loading) return
+    setLoading(true)
+
+    try {
+      const { refreshToken } = useAuthStore.getState()
+
+      if (refreshToken) {
+        try {
+          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
+        } catch (e) {
+          console.log('Logout API failed, clearing local session anyway', e)
+        }
+      }
+    } finally {
+      localStorage.removeItem('app-screen')
+      localStorage.removeItem('auth-storage')
+      localStorage.removeItem('exam-storage')
+      useAuthStore.getState().clearAuth()
+      window.location.reload()
+    }
+  }
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="btn btn-ghost"
+      style={{ padding: '5px 12px', fontSize: 13 }}
+    >
+      {loading ? 'Signing out...' : 'Logout'}
+    </button>
+  )
+}
+
 export default function AssignCandidates({ exam, onBack }) {
   const { accessToken } = useAuthStore()
   const [allCandidates, setAllCandidates] = useState([])
@@ -11,6 +49,7 @@ export default function AssignCandidates({ exam, onBack }) {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+
   const headers = { Authorization: `Bearer ${accessToken}` }
 
   useEffect(() => {
@@ -31,17 +70,24 @@ export default function AssignCandidates({ exam, onBack }) {
   const toggle = async (candidateId) => {
     setSaving(true)
     const isAssigned = assigned.includes(candidateId)
+
     try {
       if (isAssigned) {
         await axios.delete(`${API}/api/exams/${exam.exam_id}/assign/${candidateId}`, { headers })
         setAssigned(prev => prev.filter(id => id !== candidateId))
       } else {
-        await axios.post(`${API}/api/exams/${exam.exam_id}/assign`,
-          { candidate_id: candidateId }, { headers })
+        await axios.post(
+          `${API}/api/exams/${exam.exam_id}/assign`,
+          { candidate_id: candidateId },
+          { headers }
+        )
         setAssigned(prev => [...prev, candidateId])
       }
-    } catch (e) { console.error(e) }
-    finally { setSaving(false) }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const filtered = allCandidates.filter(c =>
@@ -51,7 +97,6 @@ export default function AssignCandidates({ exam, onBack }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-      {/* Header */}
       <div style={{
         height: 52, background: '#1a1d27', borderBottom: '1px solid #2e3347',
         display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, flexShrink: 0
@@ -61,24 +106,31 @@ export default function AssignCandidates({ exam, onBack }) {
         </button>
         <span style={{ fontWeight: 700, fontSize: 15 }}>Assign Candidates</span>
         <span style={{ fontSize: 12, color: '#8b90a0' }}>— {exam.name}</span>
-        <div style={{
-          marginLeft: 'auto', background: '#22263a', borderRadius: 8,
-          padding: '5px 14px', fontSize: 13
-        }}>
-          {assigned.length} assigned
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            background: '#22263a', borderRadius: 8,
+            padding: '5px 14px', fontSize: 13
+          }}>
+            {assigned.length} assigned
+          </div>
+          <LogoutButton />
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
         <div style={{ maxWidth: 700, margin: '0 auto' }}>
-          {/* Search */}
-          <input value={search} onChange={e => setSearch(e.target.value)}
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
             placeholder="Search candidates by name or email..."
             style={{ marginBottom: 20, fontSize: 14 }}
           />
 
           {loading ? (
-            <div style={{ textAlign: 'center', color: '#8b90a0', padding: 40 }}>Loading candidates...</div>
+            <div style={{ textAlign: 'center', color: '#8b90a0', padding: 40 }}>
+              Loading candidates...
+            </div>
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#8b90a0', padding: 40 }}>
               No candidates found.
@@ -102,15 +154,18 @@ export default function AssignCandidates({ exam, onBack }) {
                     }}>
                       {isAssigned ? '✅' : '👤'}
                     </div>
+
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
                       <div style={{ fontSize: 12, color: '#8b90a0' }}>{c.email}</div>
                     </div>
+
                     <button
                       onClick={() => toggle(c.user_id)}
                       disabled={saving}
                       className={isAssigned ? 'btn btn-ghost' : 'btn btn-primary'}
-                      style={{ padding: '7px 16px', fontSize: 13, minWidth: 90 }}>
+                      style={{ padding: '7px 16px', fontSize: 13, minWidth: 90 }}
+                    >
                       {isAssigned ? 'Remove' : 'Assign'}
                     </button>
                   </div>

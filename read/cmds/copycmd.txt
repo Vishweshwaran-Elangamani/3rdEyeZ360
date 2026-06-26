@@ -1,0 +1,18 @@
+$output="AllCode_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt";
+
+$result = Get-ChildItem -Recurse -File | Where-Object { 
+    ($_.FullName -notmatch "node_modules|\.git|dist|build|__pycache__|venv|env|site-packages|AllCode") -and 
+    ($_.Extension -match "\.py$|\.js$|\.ts$|\.json$|\.ps1$|\.html$|\.css$|\.md$|\.jsx$")
+} | ForEach-Object {
+"===== FILE START =====
+NAME : $($_.Name)
+PATH : $($_.FullName)
+=====================
+
+$(try { Get-Content $_.FullName -Raw -ErrorAction Stop } catch { "[ERROR READING FILE]" })
+
+===== FILE END =====
+"
+};
+
+$result | Set-Content $output

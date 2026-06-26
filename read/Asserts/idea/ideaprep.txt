@@ -1,0 +1,215 @@
+Good — I have read the full system document. Here is my complete understanding of what you want to build **now** (Phase 1 MVP — inbuilt browser only, no local app access):
+
+***
+
+## ✅ What I Understand — 3rdEyeZ360 MVP Scope
+
+**3rdEyeZ360 is a desktop proctoring shell** built in Electron + React (frontend) and Python/FastAPI (violation detection backend). It does NOT host exams — it wraps a secure browser around third-party exam websites and monitors the candidate continuously. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+
+***
+
+## 👥 Three Roles
+
+| Role | Core Job | Key Screens |
+|---|---|---|
+| **Admin** | User management, system control | Dashboard, User CRUD, Bulk upload, Audit logs |
+| **Examiner** | Create exam, assign candidates, monitor live | Create Exam, Assign, Live Monitor Grid, Requests tab |
+| **Candidate** | Attend exam inside secure shell | Pre-check → Instructions → Wait → Active Exam (locked browser) |
+
+***
+
+## 🧩 Modules to Build NOW (No Local App Access Yet)
+
+### 1. Auth Module
+- Login via JWT (you have Keycloak but simplified to JWT for MVP) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+- Role detection → redirect to correct dashboard
+
+### 2. Exam Management (Examiner)
+- Create exam: name, date, start/end time, duration, violation threshold
+- Add allowed websites (e.g., `exam.company.com`)
+- Assign candidates
+
+### 3. Assessment Engine (Core State Machine)
+```
+CREATED → ASSIGNED → AVAILABLE (T-5min) → READY → ACTIVE
+→ INTERRUPTED / LOCKED / COMPLETED / TERMINATED
+```
+- Attendance snapshot at exact start time (PRESENT/ABSENT) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+- Late entry → request → examiner approve/reject
+- Re-entry → request → examiner approve/reject
+
+### 4. Secure Lockdown Browser (Electron)
+- **Inbuilt browser only** (Electron `<webview>`) — no external Chrome
+- Address bar hidden, URL bar disabled
+- Only examiner-approved domains accessible
+- Navigation links shown as top buttons (Exam Site | Login Site)
+- Disabled: `Ctrl+T`, `Ctrl+L`, `Ctrl+Shift+I`, `F12`, right-click
+- Fullscreen enforced, `Alt+F4` / `Alt+Tab` blocked/logged [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+
+### 5. Violation Detection (Python FastAPI — free libraries, no LLMs)
+
+| Detector | Library | Trigger |
+|---|---|---|
+| Face missing / present | MediaPipe | No face in frame |
+| Multiple faces | MediaPipe | >1 face detected |
+| Phone/tablet | OpenCV + cvzone (YOLOv5n) | Object in frame |
+| Head movement / looking away | MediaPipe face mesh | Head pose deviation |
+| Restricted process running | `psutil` | Banned app detected |
+| Multiple monitors | `screeninfo` | >1 display found |
+| Charger removed | `psutil` | AC power disconnected |
+
+Each detection → **Warning first → if repeated → Violation** → screenshot + 30-sec clip [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+
+### 6. Live Monitoring (Examiner)
+- Candidate grid tiles (color: green/yellow/red/orange/gray)
+- Risk-based auto-prioritization (highest risk to top)
+- Right panel: candidate detail, violations, chat, actions
+- Requests tab: Late Entry + Re-entry approve/reject
+- Broadcast message to all
+
+### 7. Admin Panel
+- Create/edit/disable users (candidates + examiners)
+- View all exams, active sessions, violations
+- Audit logs
+
+### 8. Communication
+- Examiner ↔ Candidate chat (per assessment, via WebSocket)
+- Broadcast to all candidates in exam
+
+### 9. Evidence Storage
+- Screenshot: webcam + screen capture on violation
+- 30-sec clip (15s before + 15s after) via rolling buffer
+- Stored in MinIO with MongoDB metadata reference [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+
+***
+
+## ⚙️ Tech Stack (Confirmed)
+
+```
+Electron + React       → Desktop shell + all UIs
+Python FastAPI         → Violation detection API (runs locally)
+MongoDB (samp_db)      → All data
+MinIO                  → Screenshots + clips
+Socket.IO              → Real-time events (violations, exam start, chat)
+psutil, MediaPipe,     → Free Python detection libraries
+OpenCV, cvzone, 
+screeninfo
+```
+
+***
+
+## 📁 Folder Structure (What You Have + What's Needed)
+
+```
+3rdEyeZ360/
+├── electron-app/                    ← Electron + React frontend
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── main.js              ✅ exists
+│   │   │   ├── preload.js
+│   │   │   ├── lockdown/
+│   │   │   │   └── window.js        ← Alt+F4, Alt+Tab blocking
+│   │   │   ├── services/
+│   │   │   │   └── python-spawner.js ✅ exists
+│   │   │   └── ipc/
+│   │   │       └── index.js
+│   ├── renderer/
+│   │   ├── index.html               ✅ exists
+│   │   ├── index.jsx                ✅ exists (fixed)
+│   │   ├── styles/
+│   │   │   └── global.css
+│   │   ├── pages/
+│   │   │   ├── Login.jsx
+│   │   │   ├── admin/
+│   │   │   │   └── AdminPanel.jsx
+│   │   │   ├── examiner/
+│   │   │   │   ├── ExaminerDashboard.jsx  ✅ fixed
+│   │   │   │   ├── CreateExam.jsx
+│   │   │   │   └── AssignCandidates.jsx
+│   │   │   └── candidate/
+│   │   │       ├── PreCheck.jsx
+│   │   │       ├── Instructions.jsx
+│   │   │       ├── WaitScreen.jsx
+│   │   │       └── ActiveExam.jsx   ← contains locked <webview>
+│   │   ├── components/
+│   │   │   └── common/
+│   │   │       └── ChatWindow.jsx
+│   │   ├── store/
+│   │   │   ├── authStore.js
+│   │   │   └── examStore.js
+│   │   └── hooks/
+│   │       └── useSocket.js
+│   ├── vite.config.js               ✅ fixed
+│   └── package.json
+│
+├── python-api/                      ← Violation detection backend
+│   ├── server.py                    ← FastAPI entry point
+│   ├── routes/
+│   │   ├── auth_routes.py
+│   │   ├── exam_routes.py
+│   │   ├── assessment_routes.py
+│   │   ├── violation_routes.py
+│   │   ├── user_routes.py
+│   │   ├── chat_routes.py
+│   │   ├── request_routes.py
+│   │   ├── notification_routes.py
+│   │   └── admin_routes.py
+│   ├── detectors/
+│   │   ├── face_detector.py         ← MediaPipe face presence + count
+│   │   ├── phone_detector.py        ← OpenCV + cvzone YOLO
+│   │   ├── head_pose_detector.py    ← MediaPipe face mesh
+│   │   ├── process_monitor.py       ← psutil banned apps
+│   │   ├── monitor_detector.py      ← screeninfo multi-display
+│   │   └── charger_monitor.py       ← psutil battery
+│   ├── services/
+│   │   ├── violation_service.py
+│   │   ├── evidence_service.py      ← screenshot + clip capture
+│   │   └── minio_service.py
+│   ├── sockets/
+│   │   └── monitoring_socket.py     ← Socket.IO events
+│   ├── config/
+│   │   ├── database.py              ← MongoDB connection
+│   │   └── minio_client.py
+│   └── requirements.txt
+```
+
+***
+
+## 🗓️ 4-Week Build Plan (3 Members, No Compromise)
+
+| Week | Member A (Electron/React) | Member B (Python API + Detection) | Member C (DB + Sockets + Integration) |
+|---|---|---|---|
+| **Week 1** | Login, role routing, ExaminerDashboard, AdminPanel | FastAPI skeleton, auth routes, DB models | MongoDB schema, Socket.IO setup, MinIO config |
+| **Week 2** | CreateExam, AssignCandidates, PreCheck, Instructions | Face + phone + process detectors wired to API | Assessment state machine, attendance engine |
+| **Week 3** | ActiveExam locked webview, WaitScreen, lockdown.js | Evidence capture (screenshot + 30s clip), MinIO upload | Violation pipeline, re-entry/late-entry logic, examiner actions |
+| **Week 4** | Live monitor grid (real socket data), chat, notification toasts | Polling loop per candidate (queue-based, not 100 parallel processes) | End-to-end testing, credibility scoring, audit logs, bug fixes |
+
+***
+
+## ⚠️ What Is Deliberately Excluded From MVP
+
+- Local app access (VS Code, Notes) — **deferred per your instruction**
+- Full assessment video recording — Phase 6 future feature [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+- WebRTC live camera streaming to examiner — replaced by periodic snapshots in MVP
+- Microservices split — single FastAPI monolith for now
+- Keycloak — simplified to JWT auth for MVP speed
+
+***
+
+## The One Rule for Detection Architecture
+
+With many simultaneous candidates, you **must NOT** run a separate Python process per candidate. The correct architecture: [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/30061913/c800fa1b-7083-4f3a-a404-3f20d9dad57b/paste.txt?AWSAccessKeyId=ASIA2F3EMEYEXJE3ZP6A&Signature=XMQhovXCuNi0PuJg0TnK96V2I7U%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEFEaCXVzLWVhc3QtMSJHMEUCIQDmnLtjIMFdf1%2FkKRgIkExtIserwS6rpvgbYhJE4ysCqAIgIZBDfjMJQ9M%2BC1our9GwreMLl%2BxlQ4JmiSQoROQulB8q8wQIGhABGgw2OTk3NTMzMDk3MDUiDDEqWKjkDqa0dBdwoyrQBMxl6FWelwvSP6aN11wwlb6Rc2vLiqBM8tgnu7mSgiCmjQUjKaHW5CQss7Dr9JQ1Ip9SfQd42EnTd%2Blj7e492esJnh7nW0BYlErXfHInDxl7luZWppzW2EO%2BEc5TKORkaDlxoYkDe9gBsH1rhp0gJ%2FN%2BQADDGDipZfUFk5JlSxqOoNznj4pRnPvvRykadrr0RqGacT16goqgpxzAo%2B5xn9AnfmWBznnfzV2w9nPl6NMkoKLrcxclDngiKPSdSVTRpBAvglwhCRZkdG9Vw86%2BvuASAGShgiCBJADRInnmvn%2BwH40iGFw3E893qunExE2MOlrhRt5hQY%2FkQ6jeEOsY7K%2FvRnugVnT%2B3MMdFmCWt0likYhha6TX90IzkPf4AfLOef6WoxzCphZnjPSvVHhGmiqBuAP4zZJTWVBvys%2Fup2X47r2bR1rHX0ELtX612MqAcfEAqDccBtv7plekPhJ4dcstdORee%2FgwVkEeILz9BguPMiCOo2JfFsETEuG7C2j0DRvpEiMSnW0S02xSTMTok8SR6omOn58uuh5dOMhTA1hA0LEfTHSulU7WlgrmZDCv2t9IglY5tgfa%2BexoGDUGzq8ZuCbbVm%2BjtFzD97GpTT2bL1Bbf8gC8Lyt5vM2YS5Z70L%2B%2BeV9GikN047hPCL5QLsEXRyxHfx%2B8Jd2bn9XIg40k%2BjdtUlmL9%2FejYl86qW3RNrv7Sfqa9%2FYViSStEuJ0HhYenbJTdht43SHLMOCIo61chJRuyMKE0hSAmYqgTA1VOFJTVBviVp6D%2F8jHys%2Fak0ww5Dp0QY6mAEadtmL8tZOw2JZFqkIJxWy9BYxpweolnX4ySytV33kzicsp3lH3uhUQCaEKeGUW%2FZ6tja1NJCHIpA7uXfyAJ%2FfqrkS2VrtJfjPQVn%2Flw53jLlM6%2BR2YZO%2Fit2ZpeYdXioXeA1lBM0nWNHK0DR%2FJ7PPuEo4boztiAlxj0Qwc%2FnmDy4gHFIyXh6MRhZgvS3bPXNqDHklg5fGEQ%3D%3D&Expires=1782208022)
+
+```
+Electron (per candidate, every 3-5 sec)
+  → sends { candidate_id, base64_frame } to Python API
+  → Python processes frame (async worker pool)
+  → returns { violations: [...], warnings: [...] }
+  → Electron emits result via Socket.IO to examiner
+```
+
+FastAPI's `async` + `BackgroundTasks` handles this efficiently without spawning 100 processes.
+
+***
+
+You are understood completely. Share whatever file you need fixed or built next — CreateExam, ActiveExam locked browser, PreCheck, the Python detectors, or the violation pipeline. Just say which one. 👍

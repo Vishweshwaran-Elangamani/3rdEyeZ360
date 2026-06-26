@@ -1,48 +1,79 @@
-from config.keycloak_client import keycloak_openid
-from config.database import get_db
-from utils.id_generator import generate_user_id
 from datetime import datetime
+from config.keycloak_client import keycloakopenid
+from config.database import getdb
+from utils.id_generator import generateuserid
 
 async def login(email: str, password: str):
-    token_response = keycloak_openid.token(email, password)
-    token_info = keycloak_openid.introspect(token_response["access_token"])
-    keycloak_id = token_info["sub"]
-    roles = token_info.get("realm_access", {}).get("roles", [])
+    try:
+        tokenresponse = keycloakopenid.token(email, password)
+    except Exception as e:
+        raise Exception(f"Invalid email or password: {str(e)}")
+
+    tokeninfo = keycloakopenid.introspect(tokenresponse["access_token"])
+    keycloakid = tokeninfo.get("sub")
+    roles = tokeninfo.get("realm_access", {}).get("roles", [])
+
     role = next((r for r in ["Admin", "Examiner", "Candidate"] if r in roles), None)
     if not role:
         raise Exception("No valid role assigned in Keycloak")
-    db = get_db()
-    user = await db.users.find_one({"keycloak_id": keycloak_id})
+
+    db = getdb()
+    user = await db.users.find_one({"keycloakid": keycloakid})
+
     if not user:
-        user_id = await generate_user_id(role)
-        name = f"{token_info.get('given_name', '')} {token_info.get('family_name', '')}".strip()
-        user = {
-            "user_id": user_id,
-            "keycloak_id": keycloak_id,
-            "name": name or email,
-            "email": email,
-            "role": role,
-            "status": "Active",
-            "created_at": datetime.utcnow(),
-            "last_login": datetime.utcnow()
-        }
-        await db.users.insert_one(user)
+        user = await db.users.find_one({"email": email})
+
+        if user:
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {
+                    "$set": {
+                        "keycloakid": keycloakid,
+                        "role": role,
+                        "status": "Active",
+                        "lastlogin": datetime.utcnow(),
+                    }
+                }
+            )
+            user = await db.users.find_one({"_id": user["_id"]})
+        else:
+            userid = await generateuserid(role)
+            given = tokeninfo.get("given_name", "")
+            family = tokeninfo.get("family_name", "")
+            name = f"{given} {family}".strip() or email
+
+            user = {
+                "userid": userid,
+                "keycloakid": keycloakid,
+                "name": name,
+                "email": email,
+                "role": role,
+                "status": "Active",
+                "createdat": datetime.utcnow(),
+                "lastlogin": datetime.utcnow(),
+            }
+            await db.users.insert_one(user)
     else:
         await db.users.update_one(
-            {"keycloak_id": keycloak_id},
-            {"$set": {"last_login": datetime.utcnow()}}
+            {"keycloakid": keycloakid},
+            {"$set": {"lastlogin": datetime.utcnow()}}
         )
-        user = await db.users.find_one({"keycloak_id": keycloak_id})
+        user = await db.users.find_one({"keycloakid": keycloakid})
+
     return {
-        "access_token": token_response["access_token"],
-        "refresh_token": token_response["refresh_token"],
-        "expires_in": token_response["expires_in"],
-        "user": {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"}
+        "accesstoken": tokenresponse["access_token"],
+        "refreshtoken": tokenresponse["refresh_token"],
+        "expiresin": tokenresponse.get("expires_in"),
+        "user": {k: str(v) if k == "_id" else v for k, v in user.items() if k != "_id"},
     }
 
-async def refresh_token(refresh_token: str):
-    return keycloak_openid.refresh_token(refresh_token)
+async def refresh_token(refreshtoken: str):
+    return keycloakopenid.refresh_token(refreshtoken)
 
-async def logout(refresh_token: str):
-    keycloak_openid.logout(refresh_token)
+async def logout(refreshtoken: str):
+    keycloakopenid.logout(refreshtoken)
     return {"message": "Logged out"}
+
+# legacy compatibility aliases
+async def refreshtoken(refreshtoken_value: str):
+    return await refresh_token(refreshtoken_value)

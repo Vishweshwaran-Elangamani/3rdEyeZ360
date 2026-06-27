@@ -16,11 +16,8 @@ import appLogo from "../dist-renderer/assets/icons/app-icon.ico";
 
 const API = "http://localhost:3000";
 const SCREEN_STORAGE_KEY = "app-screen";
+const SPLASH_SESSION_KEY = "splash-shown";
 const SPLASH_DURATION = 10000;
-
-if (typeof window.__HIDE_SPLASH_FOREVER__ === "undefined") {
-  window.__HIDE_SPLASH_FOREVER__ = false;
-}
 
 function AppLogo({ size = 56 }) {
   return (
@@ -450,36 +447,34 @@ function AppShell() {
 
 function Root() {
   const { hasHydrated } = useAuthStore();
-  const [showSplash, setShowSplash] = useState(!window.__HIDE_SPLASH_FOREVER__);
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      return sessionStorage.getItem(SPLASH_SESSION_KEY) !== "true";
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
-    if (window.__HIDE_SPLASH_FOREVER__) return;
+    if (!showSplash) return;
 
     const timer = setTimeout(() => {
-      window.__HIDE_SPLASH_FOREVER__ = true;
+      try {
+        sessionStorage.setItem(SPLASH_SESSION_KEY, "true");
+      } catch (e) {
+        console.log("Unable to persist splash session flag", e);
+      }
       setShowSplash(false);
     }, SPLASH_DURATION);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [showSplash]);
 
   if (!hasHydrated) {
     return showSplash ? <SplashScreen /> : null;
   }
 
-  if (window.__HIDE_SPLASH_FOREVER__) {
-    return <AppShell />;
-  }
-
-  if (showSplash) {
-    return <SplashScreen />;
-  }
-
-  return <AppShell />;
+  return showSplash ? <SplashScreen /> : <AppShell />;
 }
 
-createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>
-);
+createRoot(document.getElementById("root")).render(<Root />);

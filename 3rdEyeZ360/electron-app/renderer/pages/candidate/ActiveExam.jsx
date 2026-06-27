@@ -32,7 +32,7 @@ function LogoutButton() {
       localStorage.removeItem('auth-storage')
       localStorage.removeItem('exam-storage')
       useAuthStore.getState().clearAuth()
-      window.location.reload()
+     
     }
   }
 

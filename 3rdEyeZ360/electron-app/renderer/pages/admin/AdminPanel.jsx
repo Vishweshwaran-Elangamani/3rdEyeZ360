@@ -23,12 +23,11 @@ function LogoutButton() {
         }
       }
     } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-      window.location.reload()
-    }
+  localStorage.removeItem('app-screen')
+  localStorage.removeItem('auth-storage')
+  localStorage.removeItem('exam-storage')
+  useAuthStore.getState().clearAuth()
+}
   }
 
   return (

@@ -18,6 +18,10 @@ const API = "http://localhost:3000";
 const SCREEN_STORAGE_KEY = "app-screen";
 const SPLASH_DURATION = 10000;
 
+if (typeof window.__HIDE_SPLASH_FOREVER__ === "undefined") {
+  window.__HIDE_SPLASH_FOREVER__ = false;
+}
+
 function AppLogo({ size = 56 }) {
   return (
     <img
@@ -35,9 +39,7 @@ function AppLogo({ size = 56 }) {
   );
 }
 
-function SplashScreen({ visible }) {
-  if (!visible) return null;
-
+function SplashScreen() {
   return (
     <div
       style={{
@@ -186,13 +188,13 @@ function SplashScreen({ visible }) {
   );
 }
 
-function App() {
-  const { user, accessToken } = useAuthStore();
+function AppShell() {
+  const { user, accessToken, hasHydrated } = useAuthStore();
   const { currentExam, currentAssessment, setExam, setAssessment } = useExamStore();
   const [screen, setScreenState] = useState(
     localStorage.getItem(SCREEN_STORAGE_KEY) || "login"
   );
-  const [bootVisible, setBootVisible] = useState(true);
+  const [bootstrapping, setBootstrapping] = useState(true);
 
   const socket = useSocket(accessToken);
 
@@ -227,17 +229,6 @@ function App() {
     }
   };
 
-  const handleLogin = async (loggedUser) => {
-    if (loggedUser.role === "Admin") {
-      setScreen("admin");
-    } else if (loggedUser.role === "Examiner") {
-      setScreen("examiner");
-    } else {
-      await loadCandidateExam();
-      setScreen("precheck");
-    }
-  };
-
   const loadCandidateExam = async () => {
     try {
       const token = useAuthStore.getState().accessToken;
@@ -259,6 +250,17 @@ function App() {
     }
   };
 
+  const handleLogin = async (loggedUser) => {
+    if (loggedUser.role === "Admin") {
+      setScreen("admin");
+    } else if (loggedUser.role === "Examiner") {
+      setScreen("examiner");
+    } else {
+      await loadCandidateExam();
+      setScreen("precheck");
+    }
+  };
+
   useEffect(() => {
     document.body.style.margin = "0";
     document.body.style.background = "#0b1114";
@@ -266,47 +268,51 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const splashTimer = setTimeout(() => {
-      setBootVisible(false);
-    }, SPLASH_DURATION);
+    if (!hasHydrated) return;
 
-    return () => {
-      clearTimeout(splashTimer);
-    };
-  }, []);
-
-  useEffect(() => {
     const bootstrap = async () => {
-      if (!user || !accessToken) {
-        setScreen("login");
-        return;
-      }
-
       try {
+        if (!user || !accessToken) {
+          setScreen("login");
+          setBootstrapping(false);
+          return;
+        }
+
+        const savedScreen = localStorage.getItem(SCREEN_STORAGE_KEY);
+
         if (user.role === "Admin") {
-          if (screen === "login") setScreen("admin");
+          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "admin");
+          setBootstrapping(false);
           return;
         }
 
         if (user.role === "Examiner") {
-          if (screen === "login") setScreen("examiner");
+          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "examiner");
+          setBootstrapping(false);
           return;
         }
 
         if (user.role === "Candidate") {
-          if (!currentExam) await loadCandidateExam();
-          const savedScreen = localStorage.getItem(SCREEN_STORAGE_KEY);
-          if (savedScreen && savedScreen !== "login") setScreen(savedScreen);
-          else setScreen("precheck");
+          if (!currentExam) {
+            await loadCandidateExam();
+          }
+
+          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "precheck");
+          setBootstrapping(false);
+          return;
         }
+
+        setScreen("login");
+        setBootstrapping(false);
       } catch (e) {
         console.log("Bootstrap failed", e);
         resetToLogin();
+        setBootstrapping(false);
       }
     };
 
     bootstrap();
-  }, [user, accessToken]);
+  }, [hasHydrated, user, accessToken]);
 
   const handlePreCheckPass = () => setScreen("instructions");
 
@@ -338,62 +344,142 @@ function App() {
     };
   }, [socket]);
 
+  if (!hasHydrated || bootstrapping) {
+    return null;
+  }
+
   const handleExamComplete = () => setScreen("complete");
 
-  return (
-    <>
-      <SplashScreen visible={bootVisible} />
+  if (screen === "login") return <Login onLogin={handleLogin} />;
+  if (screen === "admin") return <AdminPanel />;
+  if (screen === "examiner") return <ExaminerDashboard />;
+  if (screen === "precheck") return <PreCheck onPass={handlePreCheckPass} />;
+  if (screen === "instructions") {
+    return <Instructions exam={currentExam} onStart={handleStartMonitoring} />;
+  }
+  if (screen === "wait") {
+    return <WaitScreen exam={currentExam} onExamStart={() => setScreen("exam")} />;
+  }
+  if (screen === "exam") {
+    return (
+      <ActiveExam
+        exam={currentExam}
+        assessment={currentAssessment}
+        onComplete={handleExamComplete}
+      />
+    );
+  }
 
-      {screen === "login" && <Login onLogin={handleLogin} />}
-      {screen === "admin" && <AdminPanel />}
-      {screen === "examiner" && <ExaminerDashboard />}
-      {screen === "precheck" && <PreCheck onPass={handlePreCheckPass} />}
-      {screen === "instructions" && (
-        <Instructions exam={currentExam} onStart={handleStartMonitoring} />
-      )}
-      {screen === "wait" && (
-        <WaitScreen exam={currentExam} onExamStart={() => setScreen("exam")} />
-      )}
-      {screen === "exam" && (
-        <ActiveExam
-          exam={currentExam}
-          assessment={currentAssessment}
-          onComplete={handleExamComplete}
-        />
-      )}
-
-      {screen === "complete" && (
-        <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117", color: "#fff", fontFamily: "Inter, sans-serif" }}>
-          <div style={{ height: 56, background: "#1a1d27", borderBottom: "1px solid #2e3347", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <AppLogo size={22} />
-              <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
-            </div>
-            <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }}>
-              Logout
-            </button>
+  if (screen === "complete") {
+    return (
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "#0f1117",
+          color: "#fff",
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            height: 56,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 20px",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <AppLogo size={22} />
+            <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
           </div>
-
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
-            <div style={{ marginBottom: 18 }}>
-              <AppLogo size={72} />
-            </div>
-            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Exam Completed</h2>
-            <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 20, textAlign: "center" }}>
-              Your assessment has ended. You may now close this application.
-            </p>
-            <button onClick={handleLogout} className="btn btn-primary" style={{ padding: "10px 20px", fontSize: 14 }}>
-              Finish and Logout
-            </button>
-          </div>
+          <button
+            onClick={handleLogout}
+            className="btn btn-ghost"
+            style={{ padding: "8px 14px", fontSize: 12 }}
+          >
+            Logout
+          </button>
         </div>
-      )}
-    </>
-  );
+
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div style={{ marginBottom: 18 }}>
+            <AppLogo size={72} />
+          </div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+            Exam Completed
+          </h2>
+          <p
+            style={{
+              color: "#8b90a0",
+              fontSize: 14,
+              marginBottom: 20,
+              textAlign: "center",
+            }}
+          >
+            Your assessment has ended. You may now close this application.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="btn btn-primary"
+            style={{ padding: "10px 20px", fontSize: 14 }}
+          >
+            Finish and Logout
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function Root() {
+  const { hasHydrated } = useAuthStore();
+  const [showSplash, setShowSplash] = useState(!window.__HIDE_SPLASH_FOREVER__);
+
+  useEffect(() => {
+    if (window.__HIDE_SPLASH_FOREVER__) return;
+
+    const timer = setTimeout(() => {
+      window.__HIDE_SPLASH_FOREVER__ = true;
+      setShowSplash(false);
+    }, SPLASH_DURATION);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!hasHydrated) {
+    return showSplash ? <SplashScreen /> : null;
+  }
+
+  if (window.__HIDE_SPLASH_FOREVER__) {
+    return <AppShell />;
+  }
+
+  if (showSplash) {
+    return <SplashScreen />;
+  }
+
+  return <AppShell />;
 }
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <Root />
   </React.StrictMode>
 );

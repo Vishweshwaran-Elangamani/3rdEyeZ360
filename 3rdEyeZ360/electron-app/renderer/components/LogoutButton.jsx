@@ -20,8 +20,8 @@ export default function LogoutButton({ onLoggedOut, style = {} }) {
       if (refreshToken) {
         try {
           await axios.post(`${API}/api/auth/logout`, {
-            refreshtoken: refreshToken,
-          })
+  refresh_token: refreshToken,
+})
         } catch (e) {
           console.log('Logout API failed, clearing local session anyway', e)
         }

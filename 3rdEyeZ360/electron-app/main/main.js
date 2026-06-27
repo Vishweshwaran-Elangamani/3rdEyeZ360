@@ -1,6 +1,5 @@
-const { app, BrowserWindow, ipcMain, session, Menu } = require('electron')
+const { app, BrowserWindow, Menu } = require('electron')
 const path = require('path')
-const { setupLockdown, removeLockdown } = require('./lockdown/window')
 const { spawnPythonApi } = require('./services/python-spawner')
 const { registerIpcHandlers } = require('./ipc/index')
 
@@ -20,13 +19,15 @@ function createWindow() {
     frame: true,
     resizable: true,
     autoHideMenuBar: true,
+    show: false,
+    backgroundColor: '#0b1114',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true
     },
-    icon: path.join(__dirname, '../assets/icons/app-icon.ico'),
+    icon: path.join(__dirname, '../dist-renderer/assets/icons/app-icon.ico'),
     title: '3rdEyeZ360'
   })
 
@@ -58,6 +59,12 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist-renderer/index.html'))
   }
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (!mainWindow) return
+    mainWindow.show()
+    mainWindow.focus()
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null

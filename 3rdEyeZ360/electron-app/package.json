@@ -13,7 +13,8 @@
     "appId": "com.3rdeyez360.app",
     "productName": "3rdEyeZ360",
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "dist-renderer/assets/icons/app-icon.ico"
     },
     "directories": {
       "output": "dist"

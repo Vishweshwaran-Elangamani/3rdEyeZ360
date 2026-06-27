@@ -29,7 +29,6 @@ function AppLogo({ size = 56 }) {
         width: size,
         height: size,
         objectFit: "contain",
-        borderRadius: 16,
         display: "block",
       }}
     />
@@ -49,42 +48,52 @@ function SplashScreen({ visible }) {
         alignItems: "center",
         justifyContent: "center",
         background:
-          "radial-gradient(circle at top, rgba(79,152,163,0.16), transparent 38%), radial-gradient(circle at bottom, rgba(79,152,163,0.08), transparent 42%), linear-gradient(180deg, #0b1114 0%, #0f1418 100%)",
+          "radial-gradient(circle at top, rgba(79,152,163,0.10), transparent 38%), linear-gradient(180deg, #0b1114 0%, #0f1418 100%)",
+        overflow: "hidden",
       }}
     >
       <div
         style={{
-          width: "min(440px, calc(100vw - 48px))",
-          padding: "32px 28px",
-          borderRadius: 24,
-          background: "rgba(18, 25, 30, 0.92)",
-          border: "1px solid rgba(79, 152, 163, 0.22)",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.42)",
+          width: "min(520px, calc(100vw - 48px))",
+          padding: "36px 30px",
+          borderRadius: 28,
+          background: "rgba(18, 25, 30, 0.88)",
+          border: "1px solid rgba(79, 152, 163, 0.16)",
+          boxShadow: "0 20px 70px rgba(0,0,0,0.38)",
           textAlign: "center",
-          backdropFilter: "blur(12px)",
+          backdropFilter: "blur(10px)",
+          position: "relative",
         }}
       >
         <div
           style={{
-            width: 110,
-            height: 110,
-            margin: "0 auto 20px",
-            borderRadius: 28,
+            width: 180,
+            height: 180,
+            margin: "0 auto 24px",
             display: "grid",
             placeItems: "center",
-            background: "linear-gradient(180deg, rgba(79,152,163,0.18), rgba(79,152,163,0.05))",
-            border: "1px solid rgba(79,152,163,0.24)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
-            padding: 16,
+            position: "relative",
+            animation: "logoPulse 2.8s ease-in-out infinite",
           }}
         >
-          <AppLogo size={76} />
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(79,152,163,0.24) 0%, rgba(79,152,163,0.10) 42%, rgba(79,152,163,0.00) 72%)",
+              filter: "blur(10px)",
+              animation: "glowBreath 2.8s ease-in-out infinite",
+            }}
+          />
+          <AppLogo size={140} />
         </div>
 
         <h1
           style={{
             margin: 0,
-            fontSize: 28,
+            fontSize: 30,
             fontWeight: 700,
             letterSpacing: "0.02em",
             color: "#eaf4f6",
@@ -95,7 +104,7 @@ function SplashScreen({ visible }) {
 
         <div
           style={{
-            margin: "8px 0 20px",
+            margin: "10px 0 22px",
             fontSize: 13,
             color: "rgba(212, 232, 236, 0.72)",
             letterSpacing: "0.08em",
@@ -120,8 +129,8 @@ function SplashScreen({ visible }) {
               height: "100%",
               borderRadius: 999,
               background: "linear-gradient(90deg, #4f98a3, #86d1dd)",
-              boxShadow: "0 0 16px rgba(79,152,163,0.38)",
-              animation: "bootLoad 1.2s ease-in-out infinite",
+              boxShadow: "0 0 16px rgba(79,152,163,0.30)",
+              animation: "bootLoad 1.35s ease-in-out infinite",
             }}
           />
         </div>
@@ -138,6 +147,36 @@ function SplashScreen({ visible }) {
       </div>
 
       <style>{`
+        @keyframes logoPulse {
+          0% {
+            opacity: 0.78;
+            transform: scale(0.985);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.02);
+          }
+          100% {
+            opacity: 0.78;
+            transform: scale(0.985);
+          }
+        }
+
+        @keyframes glowBreath {
+          0% {
+            opacity: 0.35;
+            transform: scale(0.92);
+          }
+          50% {
+            opacity: 0.85;
+            transform: scale(1.08);
+          }
+          100% {
+            opacity: 0.35;
+            transform: scale(0.92);
+          }
+        }
+
         @keyframes bootLoad {
           0% { transform: translateX(-110%); }
           100% { transform: translateX(310%); }

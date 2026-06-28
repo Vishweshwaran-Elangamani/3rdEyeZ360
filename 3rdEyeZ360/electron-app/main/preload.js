@@ -1,24 +1,42 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  sendFrame: (data) => ipcRenderer.send('webcam-frame', data),
-  startWebcamCapture: (callback) => ipcRenderer.on('start-webcam-capture', (_, d) => callback(d)),
-  stopWebcamCapture: (callback) => ipcRenderer.on('stop-webcam-capture', () => callback()),
+contextBridge.exposeInMainWorld("electronAPI", {
+  sendFrame: (data) => ipcRenderer.send("webcam-frame", data),
 
-  enableLockdown: () => ipcRenderer.invoke('enable-lockdown'),
-  disableLockdown: () => ipcRenderer.invoke('disable-lockdown'),
+  startWebcamCapture: (callback) =>
+    ipcRenderer.on("start-webcam-capture", (_, d) => callback(d)),
 
-  startCapture: (data) => ipcRenderer.invoke('start-capture', data),
-  stopCapture: () => ipcRenderer.invoke('stop-capture'),
+  stopWebcamCapture: (callback) =>
+    ipcRenderer.on("stop-webcam-capture", () => callback()),
 
-  onDetectionResult: (callback) => ipcRenderer.on('detection-result', (_, data) => callback(data)),
-  removeDetectionListener: () => ipcRenderer.removeAllListeners('detection-result'),
+  enableLockdown: () => ipcRenderer.invoke("enable-lockdown"),
+  disableLockdown: () => ipcRenderer.invoke("disable-lockdown"),
 
-  openBrowser: (data) => ipcRenderer.invoke('open-browser', data),
-  closeBrowser: () => ipcRenderer.invoke('close-browser'),
+  startCapture: (data) => ipcRenderer.invoke("start-capture", data),
+  stopCapture: () => ipcRenderer.invoke("stop-capture"),
 
-  onExamControl: (callback) => ipcRenderer.on('exam-control', (_, data) => callback(data)),
-  removeExamControlListener: () => ipcRenderer.removeAllListeners('exam-control'),
+  onDetectionResult: (callback) =>
+    ipcRenderer.on("detection-result", (_, data) => callback(data)),
+  removeDetectionListener: () =>
+    ipcRenderer.removeAllListeners("detection-result"),
 
-  setClosable: (val) => ipcRenderer.invoke('set-closable', val)
-})
+  openBrowser: (data) => ipcRenderer.invoke("open-browser", data),
+  closeBrowser: () => ipcRenderer.invoke("close-browser"),
+  navigateBrowser: (url) => ipcRenderer.invoke("navigate-browser", url),
+
+  // DEV ONLY: called by main.js Ctrl+Shift+L reset
+  devResetToLogin: () => ipcRenderer.invoke("dev-reset-to-login"),
+
+  // DEV ONLY: received from main after cleanup is done
+  onDevForceLogin: (callback) =>
+    ipcRenderer.on("dev-force-login", () => callback()),
+  removeDevForceLoginListener: () =>
+    ipcRenderer.removeAllListeners("dev-force-login"),
+
+  onExamControl: (callback) =>
+    ipcRenderer.on("exam-control", (_, data) => callback(data)),
+  removeExamControlListener: () =>
+    ipcRenderer.removeAllListeners("exam-control"),
+
+  setClosable: (val) => ipcRenderer.invoke("set-closable", val),
+});

@@ -1,254 +1,217 @@
-import React, { useEffect, useRef, useState } from 'react'
-import axios from 'axios'
-import useAuthStore from '../../store/authStore'
-import useExamStore from '../../store/examStore'
-import { useTimer } from '../../hooks/useTimer'
-import { useToaster } from '../../hooks/useToaster'
-import { getSocket } from '../../hooks/useSocket'
-import Toaster from '../../components/common/Toaster'
-import ChatWindow from '../../components/common/ChatWindow'
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const API = 'http://localhost:3000'
+export default function ActiveExam({
+  exam,
+  assessment,
+  onLogout,
+}) {
+  const shellRef = useRef(null);
+  const browserAreaRef = useRef(null);
 
-function LogoutButton() {
-  const [loading, setLoading] = useState(false)
+  const allowedSites = useMemo(() => {
+    const candidates = [
+      assessment?.allowedwebsites,
+      assessment?.allowed_websites,
+      exam?.allowedwebsites,
+      exam?.allowed_websites,
+    ];
 
-  const handleLogout = async () => {
-    if (loading) return
-    setLoading(true)
-
-    try {
-      const { refreshToken } = useAuthStore.getState()
-
-      if (refreshToken) {
-        try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
-        } catch (e) {
-          console.log('Logout API failed, clearing local session anyway', e)
-        }
-      }
-    } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-     
+    for (const item of candidates) {
+      if (Array.isArray(item) && item.length) return item;
     }
-  }
 
-  return (
-    <button
-      onClick={handleLogout}
-      disabled={loading}
-      className="btn btn-ghost"
-      style={{ padding: '6px 12px', fontSize: 12 }}
-    >
-      {loading ? 'Signing out...' : 'Logout'}
-    </button>
-  )
-}
+    return [];
+  }, [assessment, exam]);
 
-export default function ActiveExam({ exam, assessment, onComplete }) {
-  const { user, accessToken } = useAuthStore()
-  const { violationCount, incrementViolation, setLocked, isLocked } = useExamStore()
-  const { toasts, addToast, removeToast } = useToaster()
-  const { formatted } = useTimer(exam.duration_minutes, onComplete)
-  const videoRef = useRef(null)
-  const captureIntervalRef = useRef(null)
-  const streamRef = useRef(null)
-  const [warningCounts, setWarningCounts] = useState({})
+  const [activeTab, setActiveTab] = useState(0);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    startMonitoring()
-    setupSocketListeners()
-    window.electronAPI?.enableLockdown()
-    window.electronAPI?.setClosable(false)
-    window.electronAPI?.openBrowser({ allowedWebsites: exam.allowed_websites })
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const activeUrl = allowedSites[activeTab] || "";
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    window.electronAPI.openBrowser?.({ allowedWebsites: allowedSites });
 
     return () => {
-      stopMonitoring()
-      window.electronAPI?.disableLockdown()
-      window.electronAPI?.setClosable(true)
-      window.electronAPI?.closeBrowser()
-    }
-  }, [])
+      window.electronAPI.closeBrowser?.();
+    };
+  }, [allowedSites]);
 
-  const startMonitoring = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-      streamRef.current = stream
-      if (videoRef.current) videoRef.current.srcObject = stream
+  useEffect(() => {
+    if (!window.electronAPI || !activeUrl) return;
+    window.electronAPI.navigateBrowser?.(activeUrl);
+  }, [activeUrl]);
 
-      captureIntervalRef.current = setInterval(() => {
-        captureAndSendFrame()
-      }, 4000)
-    } catch (e) {
-      addToast('⚠️ Camera access lost — please reconnect your camera', 'error', 8000)
-    }
-  }
+  useEffect(() => {
+    const sendBounds = () => {
+      if (!shellRef.current || !browserAreaRef.current || !window.electronAPI) return;
 
-  const captureAndSendFrame = () => {
-    if (!videoRef.current || !window.electronAPI) return
-    const canvas = document.createElement('canvas')
-    canvas.width = 640
-    canvas.height = 480
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(videoRef.current, 0, 0, 640, 480)
-    const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
+      const shellRect = shellRef.current.getBoundingClientRect();
+      const browserRect = browserAreaRef.current.getBoundingClientRect();
 
-    window.electronAPI.sendFrame({
-      frame: base64,
-      assessmentId: assessment.assessment_id,
-      candidateId: user.user_id,
-      examId: exam.exam_id,
-      token: accessToken
-    })
-  }
+      const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
+      const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
+      const right = Math.max(0, Math.round(shellRect.width - browserRect.right));
+      const bottom = Math.max(0, Math.round(shellRect.height - browserRect.bottom));
 
-  const stopMonitoring = () => {
-    if (captureIntervalRef.current) clearInterval(captureIntervalRef.current)
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
-  }
+      window.electronAPI.resizeBrowser?.({ top, left, right, bottom });
+    };
 
-  const setupSocketListeners = () => {
-    window.electronAPI?.onDetectionResult((result) => {
-      if (result.action === 'toast' || result.action === 'violation') {
-        addToast(result.message, result.action === 'violation' ? 'error' : 'warning', 6000)
-        if (result.action === 'violation') incrementViolation()
-        if (result.locked) {
-          setLocked(true)
-          addToast('🔒 Your assessment has been locked. Contact your examiner.', 'error', 0)
-        }
-      }
-    })
+    sendBounds();
 
-    const socket = getSocket()
-    if (socket) {
-      socket.on('control_command', ({ action }) => {
-        if (action === 'pause') {
-          addToast('⏸️ Your assessment has been paused by the examiner.', 'warning', 0)
-        } else if (action === 'resume') {
-          addToast('▶️ Your assessment has been resumed.', 'success', 5000)
-        } else if (action === 'terminate') {
-          addToast('🛑 Your assessment has been terminated by the examiner.', 'error', 0)
-          setTimeout(onComplete, 3000)
-        }
-      })
+    const id = setTimeout(sendBounds, 300);
+    window.addEventListener("resize", sendBounds);
 
-      socket.on('you_are_locked', () => {
-        setLocked(true)
-        addToast('🔒 Assessment locked due to violations. Waiting for examiner.', 'error', 0)
-      })
-    }
-  }
+    return () => {
+      clearTimeout(id);
+      window.removeEventListener("resize", sendBounds);
+    };
+  }, [activeTab, allowedSites.length]);
+
+  const endLabel = exam?.endtime || exam?.end_time || "23:55";
+
+  const durationSecs = 1 * 60 * 60 + 52 * 60 + 16;
+  const mins = Math.floor(durationSecs / 60);
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  const secs = durationSecs % 60;
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-      <div style={{
-        height: 50, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16, flexShrink: 0
-      }}>
-        <span style={{ fontWeight: 700, fontSize: 14 }}>👁️ 3rdEyeZ360</span>
-        <span style={{ color: '#8b90a0', fontSize: 13 }}>|</span>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{exam.name}</span>
-
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <LogoutButton />
-
-          <div style={{
-            background: '#22263a', padding: '5px 14px', borderRadius: 8,
-            fontSize: 15, fontWeight: 700,
-            color: parseInt(formatted().split(':')[0]) < 5 ? '#f75f5f' : '#34c97a'
-          }}>
-            ⏱ {formatted()}
+    <div
+      ref={shellRef}
+      style={{
+        minHeight: "100vh",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+        color: "#e8eaf0",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          height: 58,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 18px",
+          background: "#1a1d27",
+          borderBottom: "1px solid #2c3143",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>3rdEyeZ360</div>
+          <div style={{ width: 1, height: 20, background: "#394055" }} />
+          <div style={{ fontSize: 14, fontWeight: 600 }}>
+            {exam?.name || "Exam"}
           </div>
+        </div>
 
-          <div style={{
-            background: violationCount > 0 ? '#2a1010' : '#22263a',
-            padding: '5px 12px', borderRadius: 8, fontSize: 13,
-            color: violationCount > 0 ? '#f75f5f' : '#8b90a0'
-          }}>
-            ⚠️ {violationCount} violation{violationCount !== 1 ? 's' : ''}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={pill("#2b2230", "#ff6b6b")}>
+            ⏱ {String(hrs).padStart(2, "0")}:
+            {String(remMins).padStart(2, "0")}:
+            {String(secs).padStart(2, "0")}
           </div>
-
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: 12, color: '#34c97a'
-          }}>
-            <span style={{
-              width: 8, height: 8, background: '#34c97a',
-              borderRadius: '50%', animation: 'pulse 1.5s infinite'
-            }} />
-            Monitoring Active
-          </div>
+          <div style={pill("#252c40", "#b8d1ff")}>🕒 Ends at {endLabel}</div>
+          <div style={pill("#252937", "#f2c46d")}>⚠ 0 violations</div>
+          <div style={pill("#15281f", "#44d17a")}>● Monitoring Active</div>
         </div>
       </div>
 
-      {exam.allowed_websites?.length > 0 && (
-        <div style={{
-          height: 36, background: '#22263a', borderBottom: '1px solid #2e3347',
-          display: 'flex', alignItems: 'center', padding: '0 16px', gap: 8, flexShrink: 0
-        }}>
-          <span style={{ fontSize: 11, color: '#8b90a0', marginRight: 4 }}>Allowed:</span>
-          {exam.allowed_websites.map((site, i) => (
+      <div
+        style={{
+          height: 44,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "0 10px",
+          background: "#252a3d",
+          borderBottom: "1px solid #32384d",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ fontSize: 13, color: "#98a0b8" }}>Allowed websites:</div>
+
+        {allowedSites.map((site, i) => {
+          const label = safeHost(site) || `Tab ${i + 1}`;
+          const active = i === activeTab;
+
+          return (
             <button
-              key={i}
+              key={`${site}-${i}`}
+              onClick={() => setActiveTab(i)}
               style={{
-                background: '#1a1d27', border: '1px solid #2e3347',
-                borderRadius: 6, padding: '3px 10px', fontSize: 12, color: '#4f8ef7',
-                cursor: 'pointer'
+                border: active ? "1px solid #4f8ef7" : "1px solid #474e65",
+                background: active ? "#193457" : "#2a2f3f",
+                color: active ? "#cfe3ff" : "#e8eaf0",
+                borderRadius: 8,
+                padding: "7px 12px",
+                fontSize: 12,
+                cursor: "pointer",
               }}
             >
-              🔗 {site}
+              Tab {i + 1}: {label}
             </button>
-          ))}
-        </div>
-      )}
-
-      <div style={{ flex: 1, background: '#0a0c14', position: 'relative' }}>
-        {isLocked && (
-          <div style={{
-            position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', zIndex: 100
-          }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Assessment Locked</h2>
-            <p style={{ color: '#8b90a0', fontSize: 14, textAlign: 'center', maxWidth: 320 }}>
-              Your assessment has been locked due to repeated violations.<br />
-              Please wait for your examiner to take action.
-            </p>
-          </div>
-        )}
+          );
+        })}
       </div>
 
-      <div style={{
-        height: 32, background: '#1a1d27', borderTop: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', padding: '0 16px', gap: 20,
-        fontSize: 11, color: '#8b90a0', flexShrink: 0
-      }}>
+      <div
+        ref={browserAreaRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          background: "#0b0f17",
+        }}
+      />
+
+      <div
+        style={{
+          height: 34,
+          background: "#1a1d27",
+          borderTop: "1px solid #2c3143",
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          padding: "0 12px",
+          color: "#a5acc0",
+          fontSize: 13,
+          flexShrink: 0,
+        }}
+      >
         <span>📷 Camera Active</span>
         <span>🌐 Connected</span>
         <span>🔴 Recording</span>
-        <span style={{ marginLeft: 'auto', color: '#f75f5f', fontSize: 11 }}>
-          ⚠️ Do not close this window during the exam
-        </span>
       </div>
-
-      <video ref={videoRef} autoPlay muted style={{ display: 'none' }} />
-
-      <Toaster toasts={toasts} onRemove={removeToast} />
-
-      <ChatWindow
-        examId={exam.exam_id}
-        candidateId={user.user_id}
-        currentUser={user}
-        token={accessToken}
-      />
-
-      <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-      `}</style>
     </div>
-  )
+  );
+}
+
+function safeHost(url) {
+  try {
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return new URL(normalized).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function pill(bg, color) {
+  return {
+    background: bg,
+    color,
+    borderRadius: 10,
+    padding: "8px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+  };
 }

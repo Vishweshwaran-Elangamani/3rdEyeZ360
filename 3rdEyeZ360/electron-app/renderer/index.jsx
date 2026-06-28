@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/global.css";
 import Login from "./pages/Login";
+import CandidateDashboard from "./pages/candidate/CandidateDashboard";
 import PreCheck from "./pages/candidate/PreCheck";
 import Instructions from "./pages/candidate/Instructions";
 import WaitScreen from "./pages/candidate/WaitScreen";
@@ -26,12 +27,7 @@ function AppLogo({ size = 56 }) {
       alt="3rdEyeZ360 logo"
       width={size}
       height={size}
-      style={{
-        width: size,
-        height: size,
-        objectFit: "contain",
-        display: "block",
-      }}
+      style={{ width: size, height: size, objectFit: "contain", display: "block" }}
     />
   );
 }
@@ -147,35 +143,15 @@ function SplashScreen() {
 
       <style>{`
         @keyframes logoPulse {
-          0% {
-            opacity: 0.78;
-            transform: scale(0.985);
-          }
-          50% {
-            opacity: 1;
-            transform: scale(1.02);
-          }
-          100% {
-            opacity: 0.78;
-            transform: scale(0.985);
-          }
+          0% { opacity: 0.78; transform: scale(0.985); }
+          50% { opacity: 1; transform: scale(1.02); }
+          100% { opacity: 0.78; transform: scale(0.985); }
         }
-
         @keyframes glowBreath {
-          0% {
-            opacity: 0.35;
-            transform: scale(0.92);
-          }
-          50% {
-            opacity: 0.85;
-            transform: scale(1.08);
-          }
-          100% {
-            opacity: 0.35;
-            transform: scale(0.92);
-          }
+          0% { opacity: 0.35; transform: scale(0.92); }
+          50% { opacity: 0.85; transform: scale(1.08); }
+          100% { opacity: 0.35; transform: scale(0.92); }
         }
-
         @keyframes bootLoad {
           0% { transform: translateX(-110%); }
           100% { transform: translateX(310%); }
@@ -185,51 +161,106 @@ function SplashScreen() {
   );
 }
 
+function normalizeAssessment(exam) {
+  if (!exam) return null;
+
+  return {
+    assessmentid: exam.assessmentid ?? exam.assessment_id ?? null,
+    examid: exam.examid ?? exam.exam_id ?? null,
+    status: exam.status ?? exam.assessment_status ?? null,
+    examstatus: exam.examstatus ?? exam.exam_status ?? null,
+    durationminutes: exam.durationminutes ?? exam.duration_minutes ?? 0,
+    allowedwebsites: Array.isArray(exam.allowedwebsites)
+      ? exam.allowedwebsites
+      : Array.isArray(exam.allowed_websites)
+        ? exam.allowed_websites
+        : [],
+    allowedapplications: Array.isArray(exam.allowedapplications)
+      ? exam.allowedapplications
+      : Array.isArray(exam.allowed_applications)
+        ? exam.allowed_applications
+        : [],
+    violationthreshold: exam.violationthreshold ?? exam.violation_threshold ?? null,
+    instructions: exam.instructions ?? "",
+    name: exam.name ?? "",
+    description: exam.description ?? "",
+    date: exam.date ?? "",
+    starttime: exam.starttime ?? exam.start_time ?? "",
+    endtime: exam.endtime ?? exam.end_time ?? "",
+  };
+}
+
 function AppShell() {
   const { user, accessToken, hasHydrated } = useAuthStore();
-  const { currentExam, currentAssessment, setExam, setAssessment } = useExamStore();
-  const [screen, setScreenState] = useState(
-    localStorage.getItem(SCREEN_STORAGE_KEY) || "login"
-  );
+  const {
+    currentExam,
+    currentAssessment,
+    setExam,
+    setAssessment,
+    reset: resetExamStore,
+  } = useExamStore();
+
+  const [screen, setScreenState] = useState(() => localStorage.getItem(SCREEN_STORAGE_KEY) || "login");
   const [bootstrapping, setBootstrapping] = useState(true);
 
   const socket = useSocket(accessToken);
 
-  const setScreen = (nextScreen) => {
+  const setScreen = useCallback((nextScreen) => {
     setScreenState(nextScreen);
     localStorage.setItem(SCREEN_STORAGE_KEY, nextScreen);
-  };
+  }, []);
 
-  const resetToLogin = () => {
+  const resetToLogin = useCallback(() => {
     useAuthStore.getState().clearAuth();
-    useExamStore.getState().reset();
+    resetExamStore();
     localStorage.removeItem("auth-storage");
     localStorage.removeItem("exam-storage");
-    localStorage.setItem(SCREEN_STORAGE_KEY, "login");
+    localStorage.removeItem("app-screen");
+    localStorage.removeItem("zustand");
     setScreenState("login");
-  };
+  }, [resetExamStore]);
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    if (!window.electronAPI?.onDevForceLogin) return;
+
+    const handleDevForceLogin = () => {
+      resetToLogin();
+    };
+
+    window.electronAPI.onDevForceLogin(handleDevForceLogin);
+
+    return () => {
+      window.electronAPI.removeDevForceLoginListener?.();
+    };
+  }, [resetToLogin]);
+
+  const handleLogout = useCallback(async () => {
     try {
       const refreshToken = useAuthStore.getState().refreshToken;
       if (refreshToken) {
         try {
-          await axios.post(`${API}/api/auth/logout`, {
-            refresh_token: refreshToken,
-          });
+          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
         } catch (e) {
           console.log("Logout API failed, clearing local session anyway", e);
         }
       }
     } finally {
+      try {
+        await window.electronAPI?.stopCapture?.();
+        await window.electronAPI?.closeBrowser?.();
+        await window.electronAPI?.disableLockdown?.();
+        await window.electronAPI?.setClosable?.(true);
+      } catch (e) {
+        console.log("Electron cleanup during logout failed", e);
+      }
       resetToLogin();
     }
-  };
+  }, [resetToLogin]);
 
-  const loadCandidateExam = async () => {
+  const loadCandidateExam = useCallback(async () => {
     try {
       const token = useAuthStore.getState().accessToken;
-      if (!token) return;
+      if (!token) return null;
 
       const res = await axios.get(`${API}/api/exams/candidate/upcoming`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -238,24 +269,28 @@ function AppShell() {
       if (Array.isArray(res.data) && res.data.length > 0) {
         const firstExam = res.data[0];
         setExam(firstExam);
-        setAssessment({
-          assessment_id: firstExam.assessment_id,
-        });
+        setAssessment(normalizeAssessment(firstExam));
+        return firstExam;
       }
     } catch (e) {
       console.log("No exam found", e);
     }
-  };
+    return null;
+  }, [setExam, setAssessment]);
 
   const handleLogin = async (loggedUser) => {
     if (loggedUser.role === "Admin") {
       setScreen("admin");
-    } else if (loggedUser.role === "Examiner") {
-      setScreen("examiner");
-    } else {
-      await loadCandidateExam();
-      setScreen("precheck");
+      return;
     }
+
+    if (loggedUser.role === "Examiner") {
+      setScreen("examiner");
+      return;
+    }
+
+    await loadCandidateExam();
+    setScreen("candidate-dashboard");
   };
 
   useEffect(() => {
@@ -293,8 +328,7 @@ function AppShell() {
           if (!currentExam) {
             await loadCandidateExam();
           }
-
-          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "precheck");
+          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "candidate-dashboard");
           setBootstrapping(false);
           return;
         }
@@ -309,15 +343,23 @@ function AppShell() {
     };
 
     bootstrap();
-  }, [hasHydrated, user, accessToken]);
+  }, [hasHydrated, user, accessToken, currentExam, loadCandidateExam, resetToLogin, setScreen]);
 
-  const handlePreCheckPass = () => setScreen("instructions");
+  const handleEnterExam = (exam) => {
+    setExam(exam);
+    setAssessment(normalizeAssessment(exam));
+    setScreen("precheck");
+  };
+
+  const handlePreCheckPass = () => {
+    setScreen("instructions");
+  };
 
   const handleStartMonitoring = () => {
-    if (socket && currentExam) {
-      socket.emit("join_exam", {
-        exam_id: currentExam.exam_id,
-        candidate_id: user?.user_id,
+    if (socket && currentExam && user) {
+      socket.emit("joinexam", {
+        examid: currentExam.examid,
+        candidateid: user.userid,
         role: "Candidate",
       });
     }
@@ -327,114 +369,74 @@ function AppShell() {
   useEffect(() => {
     if (!socket) return;
 
-    const onExamStarted = () => setScreen("exam");
-    const onControlCommand = ({ action }) => {
+    const onExamStarted = () => {
+      console.log("Socket examstarted received");
+      setScreen("wait");
+    };
+
+    const onControlCommand = (action) => {
       if (action === "terminate") setScreen("complete");
     };
 
-    socket.on("exam_started", onExamStarted);
-    socket.on("control_command", onControlCommand);
+    socket.on("examstarted", onExamStarted);
+    socket.on("controlcommand", onControlCommand);
 
     return () => {
-      socket.off("exam_started", onExamStarted);
-      socket.off("control_command", onControlCommand);
+      socket.off("examstarted", onExamStarted);
+      socket.off("controlcommand", onControlCommand);
     };
-  }, [socket]);
+  }, [socket, setScreen]);
 
-  if (!hasHydrated || bootstrapping) {
-    return null;
-  }
+  if (!hasHydrated || bootstrapping) return null;
 
   const handleExamComplete = () => setScreen("complete");
 
   if (screen === "login") return <Login onLogin={handleLogin} />;
   if (screen === "admin") return <AdminPanel />;
   if (screen === "examiner") return <ExaminerDashboard />;
-  if (screen === "precheck") return <PreCheck onPass={handlePreCheckPass} />;
+  if (screen === "candidate-dashboard") {
+    return <CandidateDashboard onEnterExam={handleEnterExam} />;
+  }
+  if (screen === "precheck") {
+    return <PreCheck exam={currentExam} assessment={currentAssessment} onPass={handlePreCheckPass} />;
+  }
   if (screen === "instructions") {
-    return <Instructions exam={currentExam} onStart={handleStartMonitoring} />;
+    return <Instructions exam={currentExam} assessment={currentAssessment} onStart={handleStartMonitoring} />;
   }
   if (screen === "wait") {
-    return <WaitScreen exam={currentExam} onExamStart={() => setScreen("exam")} />;
-  }
-  if (screen === "exam") {
     return (
-      <ActiveExam
+      <WaitScreen
         exam={currentExam}
         assessment={currentAssessment}
-        onComplete={handleExamComplete}
+        onExamStart={() => setScreen("exam")}
+        onLogout={handleLogout}
       />
     );
   }
-
+  if (screen === "exam") {
+    return <ActiveExam exam={currentExam} assessment={currentAssessment} onComplete={handleExamComplete} />;
+  }
   if (screen === "complete") {
     return (
-      <div
-        style={{
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          background: "#0f1117",
-          color: "#fff",
-          fontFamily: "Inter, sans-serif",
-        }}
-      >
-        <div
-          style={{
-            height: 56,
-            background: "#1a1d27",
-            borderBottom: "1px solid #2e3347",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 20px",
-            flexShrink: 0,
-          }}
-        >
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117", color: "#fff", fontFamily: "Inter, sans-serif" }}>
+        <div style={{ height: 56, background: "#1a1d27", borderBottom: "1px solid #2e3347", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <AppLogo size={22} />
             <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
           </div>
-          <button
-            onClick={handleLogout}
-            className="btn btn-ghost"
-            style={{ padding: "8px 14px", fontSize: 12 }}
-          >
+          <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }}>
             Logout
           </button>
         </div>
-
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 24,
-          }}
-        >
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div style={{ marginBottom: 18 }}>
             <AppLogo size={72} />
           </div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
-            Exam Completed
-          </h2>
-          <p
-            style={{
-              color: "#8b90a0",
-              fontSize: 14,
-              marginBottom: 20,
-              textAlign: "center",
-            }}
-          >
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Exam Completed</h2>
+          <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 20, textAlign: "center" }}>
             Your assessment has ended. You may now close this application.
           </p>
-          <button
-            onClick={handleLogout}
-            className="btn btn-primary"
-            style={{ padding: "10px 20px", fontSize: 14 }}
-          >
+          <button onClick={handleLogout} className="btn btn-primary" style={{ padding: "10px 20px", fontSize: 14 }}>
             Finish and Logout
           </button>
         </div>
@@ -457,23 +459,16 @@ function Root() {
 
   useEffect(() => {
     if (!showSplash) return;
-
     const timer = setTimeout(() => {
       try {
         sessionStorage.setItem(SPLASH_SESSION_KEY, "true");
-      } catch (e) {
-        console.log("Unable to persist splash session flag", e);
-      }
+      } catch {}
       setShowSplash(false);
     }, SPLASH_DURATION);
-
     return () => clearTimeout(timer);
   }, [showSplash]);
 
-  if (!hasHydrated) {
-    return showSplash ? <SplashScreen /> : null;
-  }
-
+  if (!hasHydrated) return showSplash ? <SplashScreen /> : null;
   return showSplash ? <SplashScreen /> : <AppShell />;
 }
 

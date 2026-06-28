@@ -1,84 +1,106 @@
-const { ipcMain } = require('electron')
-const { setupLockdown, removeLockdown } = require('../lockdown/window')
-const { createBrowserView, destroyBrowserView, navigateTo } = require('../lockdown/browser-view')
-const { runDetection, startCapture, stopCapture } = require('../services/webcam')
-const axios = require('axios')
+const { ipcMain } = require("electron");
+const { setupLockdown, removeLockdown } = require("../lockdown/window");
+const {
+  createBrowserView,
+  destroyBrowserView,
+  navigateTo,
+} = require("../lockdown/browser-view");
+const { runDetection, startCapture, stopCapture } = require("../services/webcam");
+const axios = require("axios");
 
-const BACKEND_URL = 'http://localhost:3000'
+const BACKEND_URL = "http://localhost:3000";
 
 function registerIpcHandlers(mainWindow) {
+  ipcMain.handle("enable-lockdown", () => {
+    setupLockdown(mainWindow);
+    return { success: true };
+  });
 
-  // Lockdown
-  ipcMain.handle('enable-lockdown', () => {
-    setupLockdown(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("disable-lockdown", () => {
+    removeLockdown(mainWindow);
+    return { success: true };
+  });
 
-  ipcMain.handle('disable-lockdown', () => {
-    removeLockdown(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("set-closable", (_, val) => {
+    mainWindow.setClosable(!!val);
+    return { success: true };
+  });
 
-  // Window closable toggle
-  ipcMain.handle('set-closable', (_, val) => {
-    mainWindow.setClosable(val)
-    return { success: true }
-  })
+  ipcMain.handle("open-browser", (_, data) => {
+    createBrowserView(mainWindow, data?.allowedWebsites || []);
+    return { success: true };
+  });
 
-  // Open locked browser
-  ipcMain.handle('open-browser', (_, data) => {
-    createBrowserView(mainWindow, data.allowedWebsites)
-    return { success: true }
-  })
+  ipcMain.handle("close-browser", () => {
+    destroyBrowserView(mainWindow);
+    return { success: true };
+  });
 
-  // Close browser
-  ipcMain.handle('close-browser', () => {
-    destroyBrowserView(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("navigate-browser", (_, url) => {
+    navigateTo(url);
+    return { success: true };
+  });
 
-  // Webcam frame received from renderer → send to Python → send result to renderer
-  ipcMain.handle('start-capture', (_, data) => {
-    startCapture(data, mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("start-capture", (_, data) => {
+    startCapture(data, mainWindow);
+    return { success: true };
+  });
 
-  ipcMain.handle('stop-capture', () => {
-    stopCapture(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("stop-capture", () => {
+    stopCapture(mainWindow);
+    return { success: true };
+  });
 
-  // Receive frame from renderer, run detection, send back result
-  ipcMain.on('webcam-frame', async (_, data) => {
+  // DEV RESET: called by Ctrl+Shift+L in main.js
+  // destroys BrowserView, removes lockdown, then tells renderer to show login
+  ipcMain.handle("dev-reset-to-login", async () => {
+    try { stopCapture(mainWindow); } catch (e) { console.log("stopCapture cleanup:", e.message); }
+    try { destroyBrowserView(mainWindow); } catch (e) { console.log("destroyBrowserView cleanup:", e.message); }
+    try { removeLockdown(mainWindow); } catch (e) { console.log("removeLockdown cleanup:", e.message); }
+    try { mainWindow.setClosable(true); } catch (e) { console.log("setClosable cleanup:", e.message); }
+
+    // tell renderer to switch to login screen
+    mainWindow.webContents.send("dev-force-login");
+    return { success: true };
+  });
+
+  ipcMain.on("webcam-frame", async (_, data) => {
     try {
       const results = await runDetection(
-        data.frame, data.assessmentId, data.candidateId, data.examId
-      )
-      // Post each detection to backend for processing
+        data.frame,
+        data.assessmentId,
+        data.candidateId,
+        data.examId
+      );
+
       for (const result of results) {
-        if (result.detail !== 'ok' && result.detail !== 'no_face') {
+        if (result.detail !== "ok" && result.detail !== "noface") {
           try {
-            const response = await axios.post(`${BACKEND_URL}/api/assessments/detect`, {
-              assessment_id: data.assessmentId,
-              candidate_id: data.candidateId,
-              exam_id: data.examId,
-              detection_type: result.type,
-              detail: result.detail,
-              confidence: result.confidence,
-              screenshot_b64: data.frame
-            }, {
-              headers: { Authorization: `Bearer ${data.token}` }
-            })
-            mainWindow.webContents.send('detection-result', response.data)
+            const response = await axios.post(
+              `${BACKEND_URL}/api/assessments/detect`,
+              {
+                assessmentid: data.assessmentId,
+                candidateid: data.candidateId,
+                examid: data.examId,
+                detectiontype: result.type,
+                detail: result.detail,
+                confidence: result.confidence,
+                screenshotb64: data.frame,
+              },
+              {
+                headers: { Authorization: `Bearer ${data.token}` },
+              }
+            );
+            mainWindow.webContents.send("detection-result", response.data);
           } catch (e) {
-            console.log('Detection post error:', e.message)
+            console.log("Detection post error:", e.message);
           }
         }
       }
     } catch (e) {
-      console.log('Detection error:', e.message)
+      console.log("Detection error:", e.message);
     }
-  })
+  });
 }
 
-module.exports = { registerIpcHandlers }
+module.exports = registerIpcHandlers;

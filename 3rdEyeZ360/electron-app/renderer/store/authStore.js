@@ -39,6 +39,11 @@ const useAuthStore = create(
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.error("Auth store hydration failed", error);
+          try {
+            localStorage.removeItem("auth-storage");
+          } catch (e) {
+            console.error("Failed to clear corrupted auth storage", e);
+          }
         }
         state?.setHasHydrated(true);
       },

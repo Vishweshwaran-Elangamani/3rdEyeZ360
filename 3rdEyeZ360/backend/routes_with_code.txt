@@ -1,0 +1,1405 @@
+==================================================
+File Name: admin_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\admin_routes.py
+==================================================
+
+from fastapi import APIRouter, Depends
+from config.database import get_db
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/admin", tags=["Admin"])
+
+
+def _serialize(document: dict) -> dict:
+    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+
+
+@router.get("/stats")
+async def get_stats(current_user=Depends(require_role("Admin"))):
+    db = get_db()
+    return {
+        "total_candidates": await db.users.count_documents({"role": "Candidate"}),
+        "total_examiners": await db.users.count_documents({"role": "Examiner"}),
+        "total_exams": await db.exams.count_documents({}),
+        "active_assessments": await db.assessments.count_documents({"status": "ACTIVE"}),
+    }
+
+
+@router.get("/audit-logs")
+async def get_audit_logs(current_user=Depends(require_role("Admin"))):
+    db = get_db()
+    logs = await db.audit_logs.find().sort("timestamp", -1).limit(200).to_list(None)
+    return [_serialize(log) for log in logs]
+
+
+
+==================================================
+File Name: assessment_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\assessment_routes.py
+==================================================
+
+from datetime import datetime
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
+from pymongo import ReturnDocument
+
+from config.database import get_db
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/assessments", tags=["Assessments"])
+
+
+def _serialize(document: dict) -> dict:
+    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+
+
+async def _get_assessment_or_404(db, assessment_id: str):
+    assessment = await db.assessments.find_one({"assessment_id": assessment_id})
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    return assessment
+
+
+async def _ensure_assessment_access(db, assessment_id: str, current_user: dict):
+    assessment = await _get_assessment_or_404(db, assessment_id)
+
+    if current_user["role"] == "Candidate":
+        if assessment.get("candidate_id") != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return assessment
+
+    if current_user["role"] == "Examiner":
+        exam = await db.exams.find_one({"exam_id": assessment.get("exam_id")})
+        if not exam or exam.get("examiner_id") != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    return assessment
+
+
+@router.post("/{assessment_id}/action")
+async def assessment_action(
+    assessment_id: str,
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    assessment = await _ensure_assessment_access(db, assessment_id, current_user)
+
+    action = body.get("action", "").strip().lower()
+    reason = body.get("reason", "").strip()
+
+    if not reason:
+        raise HTTPException(status_code=400, detail="Reason is required")
+
+    status_map = {
+        "pause": "PAUSED",
+        "resume": "ACTIVE",
+        "terminate": "TERMINATED",
+    }
+    new_status = status_map.get(action)
+    if not new_status:
+        raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+
+    await db.assessments.update_one(
+        {"assessment_id": assessment_id},
+        {"$set": {"status": new_status, "updated_at": datetime.utcnow()}},
+    )
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": assessment.get("exam_id"),
+        "assessment_id": assessment_id,
+        "action": f"{action.capitalize()}Assessment",
+        "reason": reason,
+        "timestamp": datetime.utcnow(),
+    })
+
+    return {"message": f"Assessment {action}d successfully", "new_status": new_status}
+
+
+@router.get("/{assessment_id}")
+async def get_assessment(
+    assessment_id: str,
+    current_user=Depends(require_role("Examiner", "Admin", "Candidate"))
+):
+    db = get_db()
+    assessment = await _ensure_assessment_access(db, assessment_id, current_user)
+    return _serialize(assessment)
+
+
+@router.post("/{assessment_id}/reentry")
+async def request_reentry(
+    assessment_id: str,
+    body: dict,
+    current_user=Depends(require_role("Candidate"))
+):
+    db = get_db()
+    assessment = await _ensure_assessment_access(db, assessment_id, current_user)
+
+    reason = body.get("reason", "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Reason is required")
+
+    existing = await db.reentry_requests.find_one({
+        "assessment_id": assessment_id,
+        "candidate_id": current_user["user_id"],
+        "status": "Pending",
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail="A pending re-entry request already exists")
+
+    request_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+
+    await db.reentry_requests.insert_one({
+        "request_id": request_id,
+        "assessment_id": assessment_id,
+        "exam_id": assessment.get("exam_id"),
+        "candidate_id": current_user["user_id"],
+        "reason": reason,
+        "status": "Pending",
+        "created_at": now,
+    })
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": assessment.get("exam_id"),
+        "assessment_id": assessment_id,
+        "action": "RequestReentry",
+        "reason": reason,
+        "timestamp": now,
+    })
+
+    return {"message": "Re-entry request submitted", "request_id": request_id}
+
+
+@router.post("/{assessment_id}/reentry/{request_id}/approve")
+async def approve_reentry(
+    assessment_id: str,
+    request_id: str,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    assessment = await _ensure_assessment_access(db, assessment_id, current_user)
+
+    request_doc = await db.reentry_requests.find_one({
+        "request_id": request_id,
+        "assessment_id": assessment_id
+    })
+    if not request_doc:
+        raise HTTPException(status_code=404, detail="Re-entry request not found")
+
+    if request_doc.get("status") != "Pending":
+        raise HTTPException(status_code=400, detail="Re-entry request already reviewed")
+
+    now = datetime.utcnow()
+
+    await db.reentry_requests.update_one(
+        {"request_id": request_id},
+        {
+            "$set": {
+                "status": "Approved",
+                "reviewed_by": current_user["user_id"],
+                "reviewed_at": now,
+            }
+        },
+    )
+    await db.assessments.update_one(
+        {"assessment_id": assessment_id},
+        {
+            "$set": {"status": "ACTIVE", "updated_at": now},
+            "$inc": {"re_entry_count": 1},
+        },
+    )
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": assessment.get("exam_id"),
+        "assessment_id": assessment_id,
+        "action": "ApproveReentry",
+        "reason": f"Approved request {request_id}",
+        "timestamp": now,
+    })
+
+    return {"message": "Re-entry approved"}
+
+
+@router.post("/{assessment_id}/reentry/{request_id}/reject")
+async def reject_reentry(
+    assessment_id: str,
+    request_id: str,
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    assessment = await _ensure_assessment_access(db, assessment_id, current_user)
+
+    request_doc = await db.reentry_requests.find_one({
+        "request_id": request_id,
+        "assessment_id": assessment_id
+    })
+    if not request_doc:
+        raise HTTPException(status_code=404, detail="Re-entry request not found")
+
+    if request_doc.get("status") != "Pending":
+        raise HTTPException(status_code=400, detail="Re-entry request already reviewed")
+
+    now = datetime.utcnow()
+    rejection_reason = body.get("reason", "").strip()
+
+    await db.reentry_requests.update_one(
+        {"request_id": request_id},
+        {
+            "$set": {
+                "status": "Rejected",
+                "reviewed_by": current_user["user_id"],
+                "reviewed_at": now,
+                "rejection_reason": rejection_reason,
+            }
+        },
+    )
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": assessment.get("exam_id"),
+        "assessment_id": assessment_id,
+        "action": "RejectReentry",
+        "reason": rejection_reason or f"Rejected request {request_id}",
+        "timestamp": now,
+    })
+
+    return {"message": "Re-entry rejected"}
+
+
+@router.post("/detect")
+async def handle_detection(
+    body: dict,
+    current_user=Depends(require_role("Candidate"))
+):
+    db = get_db()
+
+    assessment_id = body.get("assessment_id")
+    exam_id = body.get("exam_id")
+    detection_type = body.get("detection_type")
+    detail = body.get("detail")
+    confidence = float(body.get("confidence", 0.0))
+    screenshot_b64 = body.get("screenshot_b64", "")
+
+    if not assessment_id or not detection_type:
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    assessment = await _ensure_assessment_access(db, assessment_id, current_user)
+
+    if exam_id and assessment.get("exam_id") != exam_id:
+        raise HTTPException(status_code=400, detail="Exam ID does not match assessment")
+
+    exam_id = assessment.get("exam_id")
+
+    if confidence < 0.55:
+        return {"action": "ignored", "message": "Low confidence - ignored"}
+
+    if assessment["status"] not in ("ACTIVE", "PAUSED"):
+        return {"action": "ignored", "message": "Assessment not active"}
+
+    exam = await db.exams.find_one({"exam_id": exam_id})
+    threshold = exam.get("violation_threshold", 10) if exam else 10
+
+    warning_count = await db.warnings.count_documents({
+        "assessment_id": assessment_id,
+        "type": detection_type,
+    })
+
+    warning_before_violation = 2
+
+    if warning_count < warning_before_violation:
+        await db.warnings.insert_one({
+            "warning_id": str(uuid.uuid4()),
+            "assessment_id": assessment_id,
+            "candidate_id": current_user["user_id"],
+            "exam_id": exam_id,
+            "type": detection_type,
+            "detail": detail or detection_type,
+            "count": 1,
+            "timestamp": datetime.utcnow(),
+        })
+        await db.assessments.update_one(
+            {"assessment_id": assessment_id},
+            {"$inc": {"warning_count": 1}, "$set": {"updated_at": datetime.utcnow()}},
+        )
+        return {
+            "action": "toast",
+            "level": "warning",
+            "message": _warning_message(detection_type),
+        }
+
+    risk_score = _risk_score(detection_type)
+    violation_id = str(uuid.uuid4())
+
+    await db.violations.insert_one({
+        "violation_id": violation_id,
+        "assessment_id": assessment_id,
+        "candidate_id": current_user["user_id"],
+        "exam_id": exam_id,
+        "type": detection_type,
+        "detail": detail,
+        "confidence": confidence,
+        "risk_score": risk_score,
+        "status": "Open",
+        "screenshot_b64": screenshot_b64,
+        "timestamp": datetime.utcnow(),
+    })
+
+    updated = await db.assessments.find_one_and_update(
+        {"assessment_id": assessment_id},
+        {
+            "$inc": {
+                "violation_count": 1,
+                "risk_score": risk_score,
+                "credibility_score": -risk_score,
+            },
+            "$set": {"updated_at": datetime.utcnow()},
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+
+    current_risk = updated.get("risk_score", 0) if updated else 0
+
+    if current_risk >= threshold:
+        await db.assessments.update_one(
+            {"assessment_id": assessment_id},
+            {"$set": {"status": "LOCKED", "threshold_reached": True, "updated_at": datetime.utcnow()}},
+        )
+        await db.audit_logs.insert_one({
+            "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+            "user_id": current_user["user_id"],
+            "exam_id": exam_id,
+            "assessment_id": assessment_id,
+            "action": "ThresholdReached",
+            "reason": f"Risk score {current_risk} reached threshold {threshold}",
+            "timestamp": datetime.utcnow(),
+        })
+        return {
+            "action": "violation",
+            "locked": True,
+            "message": f"Assessment locked - violation threshold reached ({current_risk}/{threshold})",
+            "violation_id": violation_id,
+        }
+
+    return {
+        "action": "violation",
+        "locked": False,
+        "message": _violation_message(detection_type),
+        "violation_id": violation_id,
+        "risk_score": current_risk,
+    }
+
+
+def _warning_message(detection_type: str) -> str:
+    messages = {
+        "face_missing": "Please ensure your face is visible on camera",
+        "multiple_face": "Multiple faces detected - please ensure you are alone",
+        "phone_detected": "Mobile device detected - please remove it from view",
+        "looking_away": "Please keep your focus on the screen",
+        "noise_violation": "Background noise detected - please ensure a quiet environment",
+        "restricted_app": "Restricted application detected - please close it",
+        "multiple_monitor": "Multiple monitors detected - please disconnect the extra display",
+        "charger_removed": "Please reconnect your charger",
+    }
+    return messages.get(detection_type, "Please follow exam rules")
+
+
+def _violation_message(detection_type: str) -> str:
+    messages = {
+        "face_missing": "Violation: Face not visible - violation recorded",
+        "multiple_face": "Violation: Multiple people detected",
+        "phone_detected": "Violation: Mobile device detected",
+        "looking_away": "Violation: Repeated loss of focus detected",
+        "noise_violation": "Violation: Persistent background noise",
+        "restricted_app": "Violation: Unauthorized application running",
+        "multiple_monitor": "Violation: Multiple monitors in use",
+        "charger_removed": "Violation: Charger disconnected",
+    }
+    return messages.get(detection_type, "Violation recorded")
+
+
+def _risk_score(detection_type: str) -> int:
+    scores = {
+        "phone_detected": 5,
+        "multiple_face": 8,
+        "face_missing": 2,
+        "looking_away": 2,
+        "noise_violation": 2,
+        "restricted_app": 6,
+        "multiple_monitor": 4,
+        "charger_removed": 1,
+    }
+    return scores.get(detection_type, 2)
+
+
+
+==================================================
+File Name: auth_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\auth_routes.py
+==================================================
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, EmailStr
+
+from controllers.auth_controller import login, logout, refresh_token
+
+router = APIRouter(prefix="/api/auth", tags=["Auth"])
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/login")
+async def login_route(req: LoginRequest):
+    try:
+        return await login(req.email, req.password)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.post("/refresh")
+async def refresh_route(req: RefreshRequest):
+    try:
+        return await refresh_token(req.refresh_token)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.post("/logout")
+async def logout_route(req: LogoutRequest):
+    try:
+        return await logout(req.refresh_token)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
+==================================================
+File Name: chat_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\chat_routes.py
+==================================================
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from config.database import get_db
+from controllers.chat_controller import get_chat_history
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/chat", tags=["Chat"])
+
+
+async def _ensure_chat_access(db, exam_id: str, candidate_id: str, current_user: dict):
+    if current_user["role"] == "Candidate":
+        if current_user["user_id"] != candidate_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        assessment = await db.assessments.find_one({
+            "exam_id": exam_id,
+            "candidate_id": candidate_id,
+        })
+        if not assessment:
+            raise HTTPException(status_code=404, detail="Assessment not found")
+        return
+
+    if current_user["role"] == "Examiner":
+        exam = await db.exams.find_one({"exam_id": exam_id})
+        if not exam or exam.get("examiner_id") != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return
+
+
+@router.get("/{exam_id}/{candidate_id}")
+async def history(
+    exam_id: str,
+    candidate_id: str,
+    current_user=Depends(require_role("Examiner", "Admin", "Candidate")),
+):
+    db = get_db()
+    await _ensure_chat_access(db, exam_id, candidate_id, current_user)
+    return await get_chat_history(exam_id, candidate_id)
+
+
+
+==================================================
+File Name: exam_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\exam_routes.py
+==================================================
+
+from datetime import datetime
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from config.database import get_db
+from middleware.auth import require_role
+from utils.id_generator import generate_exam_id, generate_assessment_id
+
+router = APIRouter(prefix="/api/exams", tags=["Exams"])
+
+
+def _serialize(document: dict) -> dict:
+    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+
+
+async def _ensure_exam_access(db, exam_id: str, current_user: dict):
+    exam = await db.exams.find_one({"exam_id": exam_id})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user["role"] == "Examiner" and exam.get("examiner_id") != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return exam
+
+
+@router.get("/candidate/upcoming")
+async def candidate_upcoming(
+    current_user=Depends(require_role("Candidate"))
+):
+    db = get_db()
+    candidate_id = current_user["user_id"]
+
+    assessments = await db.assessments.find(
+        {"candidate_id": candidate_id}
+    ).sort("created_at", -1).to_list(None)
+
+    result = []
+    for assessment in assessments:
+        exam = await db.exams.find_one({"exam_id": assessment.get("exam_id")})
+        if not exam:
+            continue
+
+        result.append({
+            "assessment_id": assessment.get("assessment_id"),
+            "exam_id": exam.get("exam_id"),
+            "name": exam.get("name"),
+            "description": exam.get("description", ""),
+            "date": exam.get("date"),
+            "start_time": exam.get("start_time"),
+            "end_time": exam.get("end_time"),
+            "duration_minutes": exam.get("duration_minutes"),
+            "status": assessment.get("status"),
+            "exam_status": exam.get("status"),
+            "instructions": exam.get("instructions", ""),
+            "allowed_websites": exam.get("allowed_websites", []),
+            "allowed_applications": exam.get("allowed_applications", []),
+            "violation_threshold": exam.get("violation_threshold", 10),
+        })
+
+    return result
+
+
+@router.get("")
+async def list_exams(
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    query = {}
+
+    if current_user["role"] == "Examiner":
+        query["examiner_id"] = current_user["user_id"]
+
+    exams = await db.exams.find(query).sort("date", -1).to_list(None)
+    return [_serialize(exam) for exam in exams]
+
+
+@router.post("")
+async def create_exam(
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Exam name is required")
+
+    exam_id = await generate_exam_id()
+    now = datetime.utcnow()
+
+    exam = {
+        "exam_id": exam_id,
+        "examiner_id": current_user["user_id"],
+        "name": name,
+        "description": (body.get("description") or "").strip(),
+        "date": body.get("date", ""),
+        "start_time": body.get("start_time", ""),
+        "end_time": body.get("end_time", ""),
+        "duration_minutes": int(body.get("duration_minutes", 120)),
+        "violation_threshold": int(body.get("violation_threshold", 10)),
+        "instructions": body.get("instructions", ""),
+        "allowed_websites": body.get("allowed_websites", []) or [],
+        "allowed_applications": body.get("allowed_applications", []) or [],
+        "status": body.get("status", "Draft"),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    await db.exams.insert_one(exam)
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": exam_id,
+        "action": "CreateExam",
+        "reason": f"Created exam: {exam['name']}",
+        "timestamp": now,
+    })
+
+    return _serialize(exam)
+
+
+@router.get("/{exam_id}")
+async def get_exam(
+    exam_id: str,
+    current_user=Depends(require_role("Examiner", "Admin", "Candidate"))
+):
+    db = get_db()
+    exam = await db.exams.find_one({"exam_id": exam_id})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user["role"] == "Examiner" and exam.get("examiner_id") != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if current_user["role"] == "Candidate":
+        assignment = await db.assessments.find_one({
+            "exam_id": exam_id,
+            "candidate_id": current_user["user_id"],
+        })
+        if not assignment:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    return _serialize(exam)
+
+
+@router.patch("/{exam_id}/start")
+async def start_exam(
+    exam_id: str,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    now = datetime.utcnow()
+
+    await db.exams.update_one(
+        {"exam_id": exam_id},
+        {"$set": {"status": "Running", "started_at": now, "updated_at": now}},
+    )
+
+    await db.assessments.update_many(
+        {"exam_id": exam_id, "status": {"$in": ["READY", "ASSIGNED", "AVAILABLE"]}},
+        {"$set": {"status": "ACTIVE", "started_at": now, "updated_at": now}},
+    )
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": exam_id,
+        "action": "StartExam",
+        "reason": "Exam manually started",
+        "timestamp": now,
+    })
+
+    return {"message": "Exam started", "exam_id": exam_id}
+
+
+@router.get("/{exam_id}/assessments")
+async def get_exam_assessments(
+    exam_id: str,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    assessments = await db.assessments.find({"exam_id": exam_id}).to_list(None)
+
+    result = []
+    for assessment in assessments:
+        user = await db.users.find_one({"user_id": assessment.get("candidate_id")})
+        result.append({
+            "assessment_id": assessment.get("assessment_id"),
+            "candidate_id": assessment.get("candidate_id"),
+            "candidate_name": user["name"] if user else assessment.get("candidate_id"),
+            "candidate_email": user["email"] if user else "",
+            "status": assessment.get("status", "ASSIGNED"),
+            "violation_count": assessment.get("violation_count", 0),
+            "risk_score": assessment.get("risk_score", 0),
+            "credibility_score": assessment.get("credibility_score", 100),
+            "warning_count": assessment.get("warning_count", 0),
+            "attendance_status": assessment.get("attendance_status", ""),
+        })
+
+    return result
+
+
+@router.post("/{exam_id}/assign")
+async def assign_candidate(
+    exam_id: str,
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    candidate_id = (body.get("candidate_id") or "").strip()
+
+    if not candidate_id:
+        raise HTTPException(status_code=400, detail="candidate_id is required")
+
+    user = await db.users.find_one({"user_id": candidate_id})
+    if not user or user.get("role") != "Candidate":
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    existing = await db.assessments.find_one({
+        "exam_id": exam_id,
+        "candidate_id": candidate_id,
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail="Candidate already assigned")
+
+    assessment_id = await generate_assessment_id()
+    now = datetime.utcnow()
+
+    await db.assessments.insert_one({
+        "assessment_id": assessment_id,
+        "exam_id": exam_id,
+        "candidate_id": candidate_id,
+        "examiner_id": current_user["user_id"],
+        "status": "ASSIGNED",
+        "violation_count": 0,
+        "warning_count": 0,
+        "risk_score": 0,
+        "credibility_score": 100,
+        "integrity_score": 100,
+        "attendance_status": None,
+        "join_time": None,
+        "active_time": None,
+        "exit_time": None,
+        "threshold_reached": False,
+        "re_entry_count": 0,
+        "final_status": None,
+        "created_at": now,
+        "updated_at": now,
+    })
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": exam_id,
+        "assessment_id": assessment_id,
+        "action": "AssignCandidate",
+        "reason": f"Assigned candidate {candidate_id}",
+        "timestamp": now,
+    })
+
+    return {"message": "Candidate assigned", "assessment_id": assessment_id}
+
+
+@router.delete("/{exam_id}/assign/{candidate_id}")
+async def remove_candidate(
+    exam_id: str,
+    candidate_id: str,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    assessment = await db.assessments.find_one({
+        "exam_id": exam_id,
+        "candidate_id": candidate_id,
+    })
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    if assessment.get("status") not in {"ASSIGNED", "AVAILABLE"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Candidate cannot be removed after assessment has started",
+        )
+
+    await db.assessments.delete_one({"assessment_id": assessment["assessment_id"]})
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": exam_id,
+        "assessment_id": assessment["assessment_id"],
+        "action": "RemoveCandidate",
+        "reason": f"Removed candidate {candidate_id}",
+        "timestamp": datetime.utcnow(),
+    })
+
+    return {"message": "Candidate removed from exam"}
+
+
+@router.get("/{exam_id}/requests")
+async def get_requests(
+    exam_id: str,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    requests = await db.requests.find(
+        {"exam_id": exam_id}
+    ).sort("created_at", -1).to_list(None)
+
+    result = []
+    for request in requests:
+        user = await db.users.find_one({"user_id": request.get("candidate_id")})
+        result.append({
+            "request_id": request.get("request_id"),
+            "assessment_id": request.get("assessment_id"),
+            "candidate_id": request.get("candidate_id"),
+            "candidate_name": user["name"] if user else request.get("candidate_id"),
+            "candidate_email": user["email"] if user else "",
+            "reason": request.get("reason", ""),
+            "status": request.get("status", "PENDING"),
+            "type": request.get("type", "REENTRY"),
+            "created_at": request.get("created_at"),
+            "reviewed_by": request.get("reviewed_by"),
+            "reviewed_at": request.get("reviewed_at"),
+        })
+
+    return result
+
+
+@router.delete("/{exam_id}")
+async def delete_exam(
+    exam_id: str,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    exam = await _ensure_exam_access(db, exam_id, current_user)
+
+    if exam.get("status") == "Running":
+        raise HTTPException(status_code=400, detail="Cannot delete a running exam")
+
+    await db.exams.delete_one({"exam_id": exam_id})
+    await db.assessments.delete_many({"exam_id": exam_id})
+    await db.requests.delete_many({"exam_id": exam_id})
+    await db.reentry_requests.delete_many({"exam_id": exam_id})
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": exam_id,
+        "action": "DeleteExam",
+        "reason": f"Deleted exam: {exam.get('name', exam_id)}",
+        "timestamp": datetime.utcnow(),
+    })
+
+    return {"message": "Exam deleted"}
+
+
+
+==================================================
+File Name: notification_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\notification_routes.py
+==================================================
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from config.database import get_db
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
+
+
+def _serialize(document: dict) -> dict:
+    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+
+
+@router.get("/")
+async def get_notifications(
+    current_user=Depends(require_role("Admin", "Examiner", "Candidate"))
+):
+    db = get_db()
+    notifs = (
+        await db.notifications.find({"user_id": current_user["user_id"]})
+        .sort("created_at", -1)
+        .to_list(50)
+    )
+    return [_serialize(n) for n in notifs]
+
+
+@router.patch("/{notification_id}/read")
+async def mark_read(
+    notification_id: str,
+    current_user=Depends(require_role("Admin", "Examiner", "Candidate")),
+):
+    db = get_db()
+
+    notification = await db.notifications.find_one({
+        "notification_id": notification_id,
+        "user_id": current_user["user_id"],
+    })
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    await db.notifications.update_one(
+        {"notification_id": notification_id},
+        {"$set": {"read": True}},
+    )
+    return {"message": "Marked as read"}
+
+
+@router.patch("/read-all")
+async def mark_all_read(
+    current_user=Depends(require_role("Admin", "Examiner", "Candidate")),
+):
+    db = get_db()
+    await db.notifications.update_many(
+        {"user_id": current_user["user_id"], "read": False},
+        {"$set": {"read": True}},
+    )
+    return {"message": "All notifications marked as read"}
+
+
+@router.get("/unread-count")
+async def unread_count(
+    current_user=Depends(require_role("Admin", "Examiner", "Candidate")),
+):
+    db = get_db()
+    count = await db.notifications.count_documents({
+        "user_id": current_user["user_id"],
+        "read": False,
+    })
+    return {"unread_count": count}
+
+
+
+==================================================
+File Name: request_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\request_routes.py
+==================================================
+
+from datetime import datetime
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from config.database import get_db
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/requests", tags=["Requests"])
+
+
+class CreateRequestBody(BaseModel):
+    assessment_id: str
+    exam_id: str
+    type: str
+    reason: str
+
+
+class ReviewBody(BaseModel):
+    decision: str
+
+
+def _serialize(document: dict) -> dict:
+    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+
+
+async def _ensure_exam_access(db, exam_id: str, current_user: dict):
+    exam = await db.exams.find_one({"exam_id": exam_id})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user["role"] == "Examiner" and exam.get("examiner_id") != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return exam
+
+
+@router.post("/")
+async def submit(
+    req: CreateRequestBody,
+    current_user=Depends(require_role("Candidate")),
+):
+    db = get_db()
+
+    assessment = await db.assessments.find_one({
+        "assessment_id": req.assessment_id,
+        "exam_id": req.exam_id,
+        "candidate_id": current_user["user_id"],
+    })
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
+    request_type = req.type.strip().upper()
+    reason = req.reason.strip()
+
+    existing = await db.requests.find_one({
+        "assessment_id": req.assessment_id,
+        "candidate_id": current_user["user_id"],
+        "type": request_type,
+        "status": "PENDING",
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail="A pending request already exists")
+
+    if not reason:
+        raise HTTPException(status_code=400, detail="Reason is required")
+
+    request_id = f"REQ-{uuid.uuid4().hex[:8].upper()}"
+    now = datetime.utcnow()
+
+    request_doc = {
+        "request_id": request_id,
+        "assessment_id": req.assessment_id,
+        "exam_id": req.exam_id,
+        "candidate_id": current_user["user_id"],
+        "type": request_type,
+        "reason": reason,
+        "status": "PENDING",
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "created_at": now,
+    }
+
+    await db.requests.insert_one(request_doc)
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": req.exam_id,
+        "assessment_id": req.assessment_id,
+        "action": "CreateRequest",
+        "reason": f"{request_doc['type']} request submitted",
+        "timestamp": now,
+    })
+
+    return _serialize(request_doc)
+
+
+@router.patch("/{request_id}/review")
+async def review(
+    request_id: str,
+    req: ReviewBody,
+    current_user=Depends(require_role("Examiner", "Admin")),
+):
+    db = get_db()
+
+    decision = req.decision.strip().upper()
+    if decision not in {"APPROVED", "REJECTED"}:
+        raise HTTPException(status_code=400, detail="Decision must be APPROVED or REJECTED")
+
+    request_doc = await db.requests.find_one({"request_id": request_id})
+    if not request_doc:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    if request_doc.get("status") != "PENDING":
+        raise HTTPException(status_code=400, detail="Request has already been reviewed")
+
+    await _ensure_exam_access(db, request_doc["exam_id"], current_user)
+
+    now = datetime.utcnow()
+
+    await db.requests.update_one(
+        {"request_id": request_id},
+        {
+            "$set": {
+                "status": decision,
+                "reviewed_by": current_user["user_id"],
+                "reviewed_at": now,
+            }
+        },
+    )
+
+    assessment_status = "REENTRY_APPROVED" if decision == "APPROVED" else "REENTRY_REJECTED"
+    if request_doc.get("type") == "LATEENTRY":
+        assessment_status = "LATEENTRY_APPROVED" if decision == "APPROVED" else "LATEENTRY_REJECTED"
+
+    await db.assessments.update_one(
+        {"assessment_id": request_doc["assessment_id"]},
+        {"$set": {"status": assessment_status, "updated_at": now}},
+    )
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user["user_id"],
+        "exam_id": request_doc["exam_id"],
+        "assessment_id": request_doc["assessment_id"],
+        "action": "ReviewRequest",
+        "reason": f"{request_doc.get('type', 'REQUEST')} {decision}",
+        "timestamp": now,
+    })
+
+    return {"message": f"Request {decision.lower()}"}
+
+
+@router.get("/exam/{exam_id}/pending")
+async def pending(
+    exam_id: str,
+    current_user=Depends(require_role("Examiner", "Admin")),
+):
+    db = get_db()
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    requests = await db.requests.find(
+        {"exam_id": exam_id, "status": "PENDING"}
+    ).sort("created_at", -1).to_list(None)
+
+    result = []
+    for request in requests:
+        user = await db.users.find_one({"user_id": request.get("candidate_id")})
+        result.append({
+            "request_id": request.get("request_id"),
+            "assessment_id": request.get("assessment_id"),
+            "exam_id": request.get("exam_id"),
+            "candidate_id": request.get("candidate_id"),
+            "candidate_name": user["name"] if user else request.get("candidate_id"),
+            "candidate_email": user["email"] if user else "",
+            "type": request.get("type"),
+            "reason": request.get("reason"),
+            "status": request.get("status"),
+            "created_at": request.get("created_at"),
+        })
+
+    return result
+
+
+
+==================================================
+File Name: user_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\user_routes.py
+==================================================
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+
+from controllers.user_controller import (
+    create_user_in_keycloak,
+    disable_user,
+    enable_user,
+    get_all_users,
+    get_user_by_id,
+    send_password_setup_email,
+)
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/users", tags=["Users"])
+
+
+class CreateUserRequest(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
+    password: Optional[str] = None
+
+
+@router.get("")
+async def list_users(
+    role: str | None = None,
+    current_user=Depends(require_role("Admin", "Examiner")),
+):
+    if current_user["role"] == "Examiner" and role != "Candidate":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return await get_all_users(role)
+
+
+@router.get("/{user_id}")
+async def get_user(
+    user_id: str,
+    current_user=Depends(require_role("Admin", "Examiner")),
+):
+    user = await get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if current_user["role"] == "Examiner" and user.get("role") != "Candidate":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return user
+
+
+@router.post("")
+async def create_user(
+    req: CreateUserRequest,
+    current_user=Depends(require_role("Admin")),
+):
+    return await create_user_in_keycloak(req.name, req.email, req.role, req.password)
+
+
+@router.post("/{user_id}/disable")
+async def disable_user_route(
+    user_id: str,
+    current_user=Depends(require_role("Admin")),
+):
+    return await disable_user(user_id)
+
+
+@router.post("/{user_id}/enable")
+async def enable_user_route(
+    user_id: str,
+    current_user=Depends(require_role("Admin")),
+):
+    return await enable_user(user_id)
+
+
+@router.post("/{user_id}/send-password-email")
+async def send_password_email_route(
+    user_id: str,
+    current_user=Depends(require_role("Admin")),
+):
+    return await send_password_setup_email(user_id)
+
+
+
+==================================================
+File Name: violation_routes.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\violation_routes.py
+==================================================
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from config.database import get_db
+from middleware.auth import require_role
+
+router = APIRouter(prefix="/api/violations", tags=["Violations"])
+
+
+def _serialize(document: dict) -> dict:
+    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+
+
+async def _ensure_exam_access(db, exam_id: str, current_user: dict):
+    exam = await db.exams.find_one({"exam_id": exam_id})
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    if current_user["role"] == "Examiner" and exam.get("examiner_id") != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return exam
+
+
+@router.get("/{exam_id}/{candidate_id}")
+async def get_violations(
+    exam_id: str,
+    candidate_id: str,
+    current_user=Depends(require_role("Examiner", "Admin", "Candidate")),
+):
+    db = get_db()
+
+    if current_user["role"] == "Candidate":
+        if current_user["user_id"] != candidate_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        assessment = await db.assessments.find_one({
+            "exam_id": exam_id,
+            "candidate_id": candidate_id,
+        })
+        if not assessment:
+            raise HTTPException(status_code=404, detail="Assessment not found")
+    else:
+        await _ensure_exam_access(db, exam_id, current_user)
+
+    violations = (
+        await db.violations.find({"exam_id": exam_id, "candidate_id": candidate_id})
+        .sort("timestamp", -1)
+        .to_list(None)
+    )
+    return [_serialize(v) for v in violations]
+
+
+@router.get("/assessment/{assessment_id}")
+async def get_violations_by_assessment(
+    assessment_id: str,
+    current_user=Depends(require_role("Examiner", "Admin", "Candidate")),
+):
+    db = get_db()
+
+    assessment = await db.assessments.find_one({"assessment_id": assessment_id})
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
+    if current_user["role"] == "Candidate":
+        if assessment.get("candidate_id") != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user["role"] == "Examiner":
+        exam = await db.exams.find_one({"exam_id": assessment.get("exam_id")})
+        if not exam or exam.get("examiner_id") != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    violations = (
+        await db.violations.find({"assessment_id": assessment_id})
+        .sort("timestamp", -1)
+        .to_list(None)
+    )
+    return [_serialize(v) for v in violations]
+
+
+@router.patch("/{violation_id}/review")
+async def review_violation(
+    violation_id: str,
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin")),
+):
+    db = get_db()
+
+    violation = await db.violations.find_one({"violation_id": violation_id})
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    if current_user["role"] == "Examiner":
+        exam = await db.exams.find_one({"exam_id": violation.get("exam_id")})
+        if not exam or exam.get("examiner_id") != current_user["user_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    note = (body.get("note") or "").strip()
+    status = (body.get("status") or "Reviewed").strip()
+
+    await db.violations.update_one(
+        {"violation_id": violation_id},
+        {
+            "$set": {
+                "reviewed": True,
+                "reviewed_by": current_user["user_id"],
+                "review_note": note,
+                "status": status,
+            }
+        },
+    )
+    return {"message": "Violation reviewed"}
+
+
+
+==================================================
+File Name: __init__.py
+File Path: D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\__init__.py
+==================================================
+
+
+
+

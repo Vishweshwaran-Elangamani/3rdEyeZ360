@@ -5105,8 +5105,12 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
   sendFrame: (data) => ipcRenderer.send('webcam-frame', data),
-  startWebcamCapture: (callback) => ipcRenderer.on('start-webcam-capture', (_, d) => callback(d)),
-  stopWebcamCapture: (callback) => ipcRenderer.on('stop-webcam-capture', () => callback()),
+
+  startWebcamCapture: (callback) =>
+    ipcRenderer.on('start-webcam-capture', (_, d) => callback(d)),
+
+  stopWebcamCapture: (callback) =>
+    ipcRenderer.on('stop-webcam-capture', () => callback()),
 
   enableLockdown: () => ipcRenderer.invoke('enable-lockdown'),
   disableLockdown: () => ipcRenderer.invoke('disable-lockdown'),
@@ -5114,16 +5118,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startCapture: (data) => ipcRenderer.invoke('start-capture', data),
   stopCapture: () => ipcRenderer.invoke('stop-capture'),
 
-  onDetectionResult: (callback) => ipcRenderer.on('detection-result', (_, data) => callback(data)),
-  removeDetectionListener: () => ipcRenderer.removeAllListeners('detection-result'),
+  onDetectionResult: (callback) =>
+    ipcRenderer.on('detection-result', (_, data) => callback(data)),
+
+  removeDetectionListener: () =>
+    ipcRenderer.removeAllListeners('detection-result'),
 
   openBrowser: (data) => ipcRenderer.invoke('open-browser', data),
   closeBrowser: () => ipcRenderer.invoke('close-browser'),
+  navigateBrowser: (url) => ipcRenderer.invoke('navigate-browser', url),
 
-  onExamControl: (callback) => ipcRenderer.on('exam-control', (_, data) => callback(data)),
-  removeExamControlListener: () => ipcRenderer.removeAllListeners('exam-control'),
+  onExamControl: (callback) =>
+    ipcRenderer.on('exam-control', (_, data) => callback(data)),
 
-  setClosable: (val) => ipcRenderer.invoke('set-closable', val)
+  removeExamControlListener: () =>
+    ipcRenderer.removeAllListeners('exam-control'),
+
+  setClosable: (val) => ipcRenderer.invoke('set-closable', val),
 })
 
 ===== FILE END =====
@@ -5142,8 +5153,6 @@ const axios = require('axios')
 const BACKEND_URL = 'http://localhost:3000'
 
 function registerIpcHandlers(mainWindow) {
-
-  // Lockdown
   ipcMain.handle('enable-lockdown', () => {
     setupLockdown(mainWindow)
     return { success: true }
@@ -5154,25 +5163,26 @@ function registerIpcHandlers(mainWindow) {
     return { success: true }
   })
 
-  // Window closable toggle
   ipcMain.handle('set-closable', (_, val) => {
     mainWindow.setClosable(val)
     return { success: true }
   })
 
-  // Open locked browser
   ipcMain.handle('open-browser', (_, data) => {
-    createBrowserView(mainWindow, data.allowedWebsites)
+    createBrowserView(mainWindow, data.allowedWebsites || [])
     return { success: true }
   })
 
-  // Close browser
   ipcMain.handle('close-browser', () => {
     destroyBrowserView(mainWindow)
     return { success: true }
   })
 
-  // Webcam frame received from renderer → send to Python → send result to renderer
+  ipcMain.handle('navigate-browser', (_, url) => {
+    navigateTo(url)
+    return { success: true }
+  })
+
   ipcMain.handle('start-capture', (_, data) => {
     startCapture(data, mainWindow)
     return { success: true }
@@ -5183,27 +5193,34 @@ function registerIpcHandlers(mainWindow) {
     return { success: true }
   })
 
-  // Receive frame from renderer, run detection, send back result
   ipcMain.on('webcam-frame', async (_, data) => {
     try {
       const results = await runDetection(
-        data.frame, data.assessmentId, data.candidateId, data.examId
+        data.frame,
+        data.assessmentId,
+        data.candidateId,
+        data.examId
       )
-      // Post each detection to backend for processing
+
       for (const result of results) {
         if (result.detail !== 'ok' && result.detail !== 'no_face') {
           try {
-            const response = await axios.post(`${BACKEND_URL}/api/assessments/detect`, {
-              assessment_id: data.assessmentId,
-              candidate_id: data.candidateId,
-              exam_id: data.examId,
-              detection_type: result.type,
-              detail: result.detail,
-              confidence: result.confidence,
-              screenshot_b64: data.frame
-            }, {
-              headers: { Authorization: `Bearer ${data.token}` }
-            })
+            const response = await axios.post(
+              `${BACKEND_URL}/api/assessments/detect`,
+              {
+                assessmentid: data.assessmentId,
+                candidateid: data.candidateId,
+                examid: data.examId,
+                detectiontype: result.type,
+                detail: result.detail,
+                confidence: result.confidence,
+                screenshotb64: data.frame,
+              },
+              {
+                headers: { Authorization: `Bearer ${data.token}` },
+              }
+            )
+
             mainWindow.webContents.send('detection-result', response.data)
           } catch (e) {
             console.log('Detection post error:', e.message)
@@ -5225,57 +5242,127 @@ NAME : browser-view.js
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\main\lockdown\browser-view.js
 =====================
 
-const { BrowserView, session } = require('electron')
+const { BrowserView } = require('electron')
 
 let browserView = null
 let allowedDomains = []
 
-function createBrowserView(mainWindow, websites) {
-  allowedDomains = websites.map(url => {
-    try { return new URL(url.startsWith('http') ? url : `https://${url}`).hostname }
-    catch { return url }
+function normalizeUrl(url) {
+  if (!url) return null
+  return url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`
+}
+
+function getHostname(url) {
+  try {
+    return new URL(normalizeUrl(url)).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function isAllowedHost(hostname) {
+  if (!hostname) return false
+  return allowedDomains.some(
+    (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+  )
+}
+
+function applyBounds(mainWindow) {
+  if (!browserView || !mainWindow) return
+
+  const bounds = mainWindow.getContentBounds()
+  const topBarHeight = 50
+  const allowedSitesBarHeight = 42
+  const bottomBarHeight = 32
+  const topOffset = topBarHeight + allowedSitesBarHeight
+  const height = Math.max(0, bounds.height - topOffset - bottomBarHeight)
+
+  browserView.setBounds({
+    x: 0,
+    y: topOffset,
+    width: bounds.width,
+    height,
   })
+
+  browserView.setAutoResize({ width: true, height: true })
+}
+
+function destroyBrowserView(mainWindow) {
+  if (!browserView) return
+
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBrowserView(null)
+    }
+  } catch (e) {
+    console.log('Error detaching BrowserView:', e.message)
+  }
+
+  try {
+    if (!browserView.webContents.isDestroyed()) {
+      browserView.webContents.destroy()
+    }
+  } catch (e) {
+    console.log('Error destroying BrowserView:', e.message)
+  }
+
+  browserView = null
+  allowedDomains = []
+  console.log('🌐 Locked browser closed')
+}
+
+function createBrowserView(mainWindow, websites = []) {
+  if (!mainWindow || mainWindow.isDestroyed()) return null
+
+  destroyBrowserView(mainWindow)
+
+  allowedDomains = websites
+    .map((url) => getHostname(url))
+    .filter(Boolean)
 
   browserView = new BrowserView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      // Block navigation to non-allowed domains
-    }
+      sandbox: true,
+    },
   })
 
   mainWindow.setBrowserView(browserView)
+  applyBounds(mainWindow)
 
-  // Position: below top bar (80px), full width, above bottom bar (40px)
-  const bounds = mainWindow.getBounds()
-  browserView.setBounds({
-    x: 0,
-    y: 80,
-    width: bounds.width,
-    height: bounds.height - 120
-  })
-  browserView.setAutoResize({ width: true, height: true })
-
-  // Block navigation to non-allowed domains
   browserView.webContents.on('will-navigate', (event, url) => {
-    const hostname = new URL(url).hostname
-    if (!allowedDomains.some(d => hostname.includes(d))) {
+    const hostname = getHostname(url)
+    if (!isAllowedHost(hostname)) {
       event.preventDefault()
       console.log(`🚫 Blocked navigation to: ${url}`)
     }
   })
 
-  browserView.webContents.on('new-window', (event) => {
+  browserView.webContents.setWindowOpenHandler(({ url }) => {
+    const hostname = getHostname(url)
+    if (!isAllowedHost(hostname)) {
+      console.log(`🚫 Blocked popup to: ${url}`)
+      return { action: 'deny' }
+    }
+
+    navigateTo(url)
+    return { action: 'deny' }
+  })
+
+  browserView.webContents.on('context-menu', (event) => {
     event.preventDefault()
   })
 
-  // Disable context menu
-  browserView.webContents.on('context-menu', (e) => e.preventDefault())
+  mainWindow.on('resize', () => applyBounds(mainWindow))
+  mainWindow.on('maximize', () => applyBounds(mainWindow))
+  mainWindow.on('unmaximize', () => applyBounds(mainWindow))
 
-  // Load first allowed website
   if (websites.length > 0) {
-    const url = websites[0].startsWith('http') ? websites[0] : `https://${websites[0]}`
-    browserView.webContents.loadURL(url)
+    const firstUrl = normalizeUrl(websites[0])
+    if (firstUrl) {
+      browserView.webContents.loadURL(firstUrl)
+    }
   }
 
   console.log('🌐 Locked browser opened')
@@ -5283,21 +5370,18 @@ function createBrowserView(mainWindow, websites) {
 }
 
 function navigateTo(url) {
-  if (browserView) {
-    const hostname = new URL(url.startsWith('http') ? url : `https://${url}`).hostname
-    if (allowedDomains.some(d => hostname.includes(d))) {
-      browserView.webContents.loadURL(url.startsWith('http') ? url : `https://${url}`)
-    }
-  }
-}
+  if (!browserView) return false
 
-function destroyBrowserView(mainWindow) {
-  if (browserView) {
-    mainWindow.setBrowserView(null)
-    browserView.webContents.destroy()
-    browserView = null
-    console.log('🌐 Locked browser closed')
+  const normalizedUrl = normalizeUrl(url)
+  const hostname = getHostname(normalizedUrl)
+
+  if (!isAllowedHost(hostname)) {
+    console.log(`🚫 Blocked direct navigation to: ${url}`)
+    return false
   }
+
+  browserView.webContents.loadURL(normalizedUrl)
+  return true
 }
 
 module.exports = { createBrowserView, destroyBrowserView, navigateTo }
@@ -5542,421 +5626,844 @@ NAME : index.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\index.jsx
 =====================
 
-import React, { useState, useEffect } from "react";
-import { createRoot } from "react-dom/client";
-import "./styles/global.css";
-import Login from "./pages/Login";
-import PreCheck from "./pages/candidate/PreCheck";
-import Instructions from "./pages/candidate/Instructions";
-import WaitScreen from "./pages/candidate/WaitScreen";
-import ActiveExam from "./pages/candidate/ActiveExam";
-import ExaminerDashboard from "./pages/examiner/ExaminerDashboard";
-import AdminPanel from "./pages/admin/AdminPanel";
-import useAuthStore from "./store/authStore";
-import useExamStore from "./store/examStore";
-import { useSocket } from "./hooks/useSocket";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import appLogo from "../dist-renderer/assets/icons/app-icon.ico";
+import useAuthStore from "../../store/authStore";
+import { useSocket } from "../../hooks/useSocket";
+import ChatWindow from "../../components/common/ChatWindow";
+import CreateExam from "./CreateExam";
+import AssignCandidates from "./AssignCandidates";
 
 const API = "http://localhost:3000";
-const SCREEN_STORAGE_KEY = "app-screen";
-const SPLASH_DURATION = 10000;
 
-if (typeof window.__HIDE_SPLASH_FOREVER__ === "undefined") {
-  window.__HIDE_SPLASH_FOREVER__ = false;
-}
+const STATUS_COLORS = {
+  ACTIVE: "#34c97a",
+  READY: "#4f8ef7",
+  INTERRUPTED: "#f5a623",
+  LOCKED: "#f75f5f",
+  COMPLETED: "#8b90a0",
+  TERMINATED: "#f75f5f",
+  ASSIGNED: "#555a6e",
+  AVAILABLE: "#7c5ce7",
+  PAUSED: "#f5a623",
+};
 
-function AppLogo({ size = 56 }) {
+function StatBox({ label, value, color }) {
   return (
-    <img
-      src={appLogo}
-      alt="3rdEyeZ360 logo"
-      width={size}
-      height={size}
-      style={{
-        width: size,
-        height: size,
-        objectFit: "contain",
-        display: "block",
-      }}
-    />
-  );
-}
-
-function SplashScreen() {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 99999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background:
-          "radial-gradient(circle at top, rgba(79,152,163,0.10), transparent 38%), linear-gradient(180deg, #0b1114 0%, #0f1418 100%)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          width: "min(520px, calc(100vw - 48px))",
-          padding: "36px 30px",
-          borderRadius: 28,
-          background: "rgba(18, 25, 30, 0.88)",
-          border: "1px solid rgba(79, 152, 163, 0.16)",
-          boxShadow: "0 20px 70px rgba(0,0,0,0.38)",
-          textAlign: "center",
-          backdropFilter: "blur(10px)",
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            width: 180,
-            height: 180,
-            margin: "0 auto 24px",
-            display: "grid",
-            placeItems: "center",
-            position: "relative",
-            animation: "logoPulse 2.8s ease-in-out infinite",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle, rgba(79,152,163,0.24) 0%, rgba(79,152,163,0.10) 42%, rgba(79,152,163,0.00) 72%)",
-              filter: "blur(10px)",
-              animation: "glowBreath 2.8s ease-in-out infinite",
-            }}
-          />
-          <AppLogo size={140} />
-        </div>
-
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 30,
-            fontWeight: 700,
-            letterSpacing: "0.02em",
-            color: "#eaf4f6",
-          }}
-        >
-          3rdEyeZ360
-        </h1>
-
-        <div
-          style={{
-            margin: "10px 0 22px",
-            fontSize: 13,
-            color: "rgba(212, 232, 236, 0.72)",
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-          }}
-        >
-          Secure Assessment Monitoring
-        </div>
-
-        <div
-          style={{
-            width: "100%",
-            height: 6,
-            borderRadius: 999,
-            overflow: "hidden",
-            background: "rgba(255,255,255,0.08)",
-          }}
-        >
-          <div
-            style={{
-              width: "42%",
-              height: "100%",
-              borderRadius: 999,
-              background: "linear-gradient(90deg, #4f98a3, #86d1dd)",
-              boxShadow: "0 0 16px rgba(79,152,163,0.30)",
-              animation: "bootLoad 1.35s ease-in-out infinite",
-            }}
-          />
-        </div>
-
-        <div
-          style={{
-            marginTop: 14,
-            fontSize: 12,
-            color: "rgba(212, 232, 236, 0.72)",
-          }}
-        >
-          Preparing desktop workspace…
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes logoPulse {
-          0% {
-            opacity: 0.78;
-            transform: scale(0.985);
-          }
-          50% {
-            opacity: 1;
-            transform: scale(1.02);
-          }
-          100% {
-            opacity: 0.78;
-            transform: scale(0.985);
-          }
-        }
-
-        @keyframes glowBreath {
-          0% {
-            opacity: 0.35;
-            transform: scale(0.92);
-          }
-          50% {
-            opacity: 0.85;
-            transform: scale(1.08);
-          }
-          100% {
-            opacity: 0.35;
-            transform: scale(0.92);
-          }
-        }
-
-        @keyframes bootLoad {
-          0% { transform: translateX(-110%); }
-          100% { transform: translateX(310%); }
-        }
-      `}</style>
+    <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
+      <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
 
-function AppShell() {
-  const { user, accessToken } = useAuthStore();
-  const { currentExam, currentAssessment, setExam, setAssessment } = useExamStore();
-  const [screen, setScreenState] = useState(
-    localStorage.getItem(SCREEN_STORAGE_KEY) || "login"
-  );
-
-  const socket = useSocket(accessToken);
-
-  const setScreen = (nextScreen) => {
-    setScreenState(nextScreen);
-    localStorage.setItem(SCREEN_STORAGE_KEY, nextScreen);
-  };
-
-  const resetToLogin = () => {
-    useAuthStore.getState().clearAuth();
-    useExamStore.getState().reset();
-    localStorage.removeItem("auth-storage");
-    localStorage.removeItem("exam-storage");
-    localStorage.setItem(SCREEN_STORAGE_KEY, "login");
-    setScreenState("login");
-  };
+function LogoutButton() {
+  const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
+    if (loading) return;
+    setLoading(true);
+
     try {
-      const refreshToken = useAuthStore.getState().refreshToken;
+      const { refreshToken } = useAuthStore.getState();
+
       if (refreshToken) {
         try {
-          await axios.post(`${API}/api/auth/logout`, {
-            refresh_token: refreshToken,
-          });
+          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
         } catch (e) {
           console.log("Logout API failed, clearing local session anyway", e);
         }
       }
     } finally {
-      resetToLogin();
+      localStorage.removeItem("app-screen");
+      localStorage.removeItem("auth-storage");
+      localStorage.removeItem("exam-storage");
+      useAuthStore.getState().clearAuth();
     }
   };
 
-  const handleLogin = async (loggedUser) => {
-    if (loggedUser.role === "Admin") {
-      setScreen("admin");
-    } else if (loggedUser.role === "Examiner") {
-      setScreen("examiner");
-    } else {
-      await loadCandidateExam();
-      setScreen("precheck");
-    }
-  };
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="btn btn-ghost"
+      style={{ padding: "7px 14px", fontSize: 13 }}
+    >
+      {loading ? "Signing out..." : "Logout"}
+    </button>
+  );
+}
 
-  const loadCandidateExam = async () => {
+export default function ExaminerDashboard() {
+  const [monitorTab, setMonitorTab] = useState("grid");
+  const [reentryRequests, setReentryRequests] = useState([]);
+  const { user, accessToken } = useAuthStore();
+  const socket = useSocket(accessToken);
+
+  const [view, setView] = useState("list");
+  const [exams, setExams] = useState([]);
+  const [selectedExam, setSelectedExam] = useState(null);
+  const [candidates, setCandidates] = useState([]);
+  const [liveData, setLiveData] = useState({});
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [violations, setViolations] = useState([]);
+  const [broadcastMsg, setBroadcastMsg] = useState("");
+  const [loadingExams, setLoadingExams] = useState(false);
+  const [actionMsg, setActionMsg] = useState("");
+
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  const loadExams = useCallback(async () => {
+    setLoadingExams(true);
     try {
-      const token = useAuthStore.getState().accessToken;
-      if (!token) return;
-
-      const res = await axios.get(`${API}/api/exams/candidate/upcoming`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (Array.isArray(res.data) && res.data.length > 0) {
-        const firstExam = res.data[0];
-        setExam(firstExam);
-        setAssessment({
-          assessment_id: firstExam.assessment_id,
-        });
-      }
+      const res = await axios.get(`${API}/api/exams`, { headers });
+      setExams(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      console.log("No exam found", e);
+      console.error("loadExams:", e.message);
+    } finally {
+      setLoadingExams(false);
     }
-  };
+  }, [accessToken]);
 
-  useEffect(() => {
-    document.body.style.margin = "0";
-    document.body.style.background = "#0b1114";
-    document.documentElement.style.background = "#0b1114";
-  }, []);
-
-  useEffect(() => {
-    const bootstrap = async () => {
-      if (!user || !accessToken) {
-        setScreen("login");
-        return;
-      }
-
+  const loadCandidates = useCallback(
+    async (examid) => {
+      if (!examid) return;
       try {
-        if (user.role === "Admin") {
-          if (screen === "login") setScreen("admin");
-          return;
-        }
-
-        if (user.role === "Examiner") {
-          if (screen === "login") setScreen("examiner");
-          return;
-        }
-
-        if (user.role === "Candidate") {
-          if (!currentExam) await loadCandidateExam();
-          const savedScreen = localStorage.getItem(SCREEN_STORAGE_KEY);
-          if (savedScreen && savedScreen !== "login") setScreen(savedScreen);
-          else setScreen("precheck");
-        }
+        const res = await axios.get(`${API}/api/exams/${examid}/assessments`, { headers });
+        setCandidates(Array.isArray(res.data) ? res.data : []);
       } catch (e) {
-        console.log("Bootstrap failed", e);
-        resetToLogin();
+        console.error("loadCandidates:", e.message);
       }
-    };
+    },
+    [accessToken]
+  );
 
-    bootstrap();
-  }, [user, accessToken]);
-
-  const handlePreCheckPass = () => setScreen("instructions");
-
-  const handleStartMonitoring = () => {
-    if (socket && currentExam) {
-      socket.emit("join_exam", {
-        exam_id: currentExam.exam_id,
-        candidate_id: user?.user_id,
-        role: "Candidate",
-      });
-    }
-    setScreen("wait");
-  };
+  const loadViolations = useCallback(
+    async (candidateid, examid) => {
+      if (!candidateid || !examid) return;
+      try {
+        const res = await axios.get(`${API}/api/violations/${examid}/${candidateid}`, { headers });
+        setViolations(Array.isArray(res.data) ? res.data : []);
+      } catch (e) {
+        console.error("loadViolations:", e.message);
+      }
+    },
+    [accessToken]
+  );
 
   useEffect(() => {
-    if (!socket) return;
+    loadExams();
+  }, [loadExams]);
 
-    const onExamStarted = () => setScreen("exam");
-    const onControlCommand = ({ action }) => {
-      if (action === "terminate") setScreen("complete");
+  useEffect(() => {
+    if (!socket || view !== "monitor" || !selectedExam?.examid) return;
+
+    socket.emit("joinexam", {
+      examid: selectedExam.examid,
+      role: "Examiner",
+      userid: user?.userid,
+    });
+
+    const onCandidateUpdate = (data) => {
+      const candidateid = data?.candidateid;
+      if (!candidateid) return;
+      setLiveData((prev) => ({ ...prev, [candidateid]: data }));
     };
 
-    socket.on("exam_started", onExamStarted);
-    socket.on("control_command", onControlCommand);
+    const onViolationAlert = ({ candidateid, violation }) => {
+      if (!candidateid) return;
+      setLiveData((prev) => ({
+        ...prev,
+        [candidateid]: { ...(prev[candidateid] || {}), latestViolation: violation },
+      }));
+    };
+
+    const onAssessmentUpdate = () => {
+      loadCandidates(selectedExam.examid);
+    };
+
+    socket.on("candidate_update", onCandidateUpdate);
+    socket.on("violation_alert", onViolationAlert);
+    socket.on("assessment_updated", onAssessmentUpdate);
 
     return () => {
-      socket.off("exam_started", onExamStarted);
-      socket.off("control_command", onControlCommand);
+      socket.off("candidate_update", onCandidateUpdate);
+      socket.off("violation_alert", onViolationAlert);
+      socket.off("assessment_updated", onAssessmentUpdate);
     };
-  }, [socket]);
+  }, [socket, view, selectedExam, user, loadCandidates]);
 
-  const handleExamComplete = () => setScreen("complete");
+  const openMonitor = (exam) => {
+    setSelectedExam(exam);
+    setSelectedCandidate(null);
+    setViolations([]);
+    setLiveData({});
+    loadCandidates(exam.examid);
+    setView("monitor");
+  };
 
-  if (screen === "login") return <Login onLogin={handleLogin} />;
-  if (screen === "admin") return <AdminPanel />;
-  if (screen === "examiner") return <ExaminerDashboard />;
-  if (screen === "precheck") return <PreCheck onPass={handlePreCheckPass} />;
-  if (screen === "instructions") {
-    return <Instructions exam={currentExam} onStart={handleStartMonitoring} />;
-  }
-  if (screen === "wait") {
-    return <WaitScreen exam={currentExam} onExamStart={() => setScreen("exam")} />;
-  }
-  if (screen === "exam") {
+  const startExam = async () => {
+    if (!selectedExam?.examid) return;
+
+    try {
+      await axios.patch(`${API}/api/exams/${selectedExam.examid}/start`, {}, { headers });
+
+      if (socket) {
+        socket.emit("start_exam", {
+          examid: selectedExam.examid,
+          examinerid: user?.userid,
+        });
+      }
+
+      setActionMsg("✅ Exam started — candidates are being notified");
+      setTimeout(() => setActionMsg(""), 4000);
+      loadCandidates(selectedExam.examid);
+      loadExams();
+    } catch (e) {
+      setActionMsg("❌ Failed to start exam");
+      setTimeout(() => setActionMsg(""), 4000);
+    }
+  };
+
+  const doAction = async (assessmentid, action) => {
+    const reason = window.prompt(`Reason for "${action}" (required):`);
+    if (!reason || !reason.trim()) return;
+
+    try {
+      await axios.post(
+        `${API}/api/assessments/${assessmentid}/action`,
+        { action, reason: reason.trim() },
+        { headers }
+      );
+
+      if (socket && selectedExam?.examid && selectedCandidate?.candidateid) {
+        socket.emit("examiner_control", {
+          examid: selectedExam.examid,
+          candidateid: selectedCandidate.candidateid,
+          action,
+        });
+      }
+
+      setActionMsg(`✅ ${action} applied`);
+      setTimeout(() => setActionMsg(""), 3000);
+      loadCandidates(selectedExam.examid);
+    } catch (e) {
+      setActionMsg(`❌ Action failed: ${e.response?.data?.detail || e.message}`);
+      setTimeout(() => setActionMsg(""), 4000);
+    }
+  };
+
+  const sendBroadcast = () => {
+    if (!broadcastMsg.trim() || !socket || !selectedExam?.examid) return;
+
+    socket.emit("broadcast_message", {
+      examid: selectedExam.examid,
+      examinerid: user?.userid,
+      message: broadcastMsg.trim(),
+    });
+
+    setBroadcastMsg("");
+    setActionMsg("📢 Broadcast sent to all candidates");
+    setTimeout(() => setActionMsg(""), 3000);
+  };
+
+  const goBack = () => {
+    setView("list");
+    setSelectedExam(null);
+    setSelectedCandidate(null);
+    setCandidates([]);
+    setLiveData({});
+    setViolations([]);
+    loadExams();
+  };
+
+  const loadReentryRequests = useCallback(async () => {
+    try {
+      if (!selectedExam?.examid) return;
+
+      const res = await axios.get(`${API}/api/exams/${selectedExam.examid}/requests`, {
+        headers,
+      });
+
+      setReentryRequests(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [selectedExam, accessToken]);
+
+  const handleReentry = async (assessmentid, requestid, approve) => {
+    try {
+      const url = `${API}/api/assessments/${assessmentid}/reentry/${requestid}/${approve ? "approve" : "reject"}`;
+
+      const body = approve
+        ? {}
+        : {
+            reason: window.prompt("Rejection reason:") || "Not approved",
+          };
+
+      await axios.post(url, body, { headers });
+
+      if (socket && selectedExam?.examid) {
+        socket.emit("reentry_decision", {
+          assessmentid,
+          approved: approve,
+          examid: selectedExam.examid,
+        });
+      }
+
+      await loadReentryRequests();
+      await loadCandidates(selectedExam.examid);
+
+      setActionMsg(approve ? "✅ Re-entry approved" : "❌ Re-entry rejected");
+      setTimeout(() => setActionMsg(""), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  if (view === "create") {
     return (
-      <ActiveExam
-        exam={currentExam}
-        assessment={currentAssessment}
-        onComplete={handleExamComplete}
+      <CreateExam
+        onBack={() => setView("list")}
+        onCreated={(newExam) => {
+          setSelectedExam(newExam);
+          loadExams();
+          setView("assign");
+        }}
       />
     );
   }
 
-  if (screen === "complete") {
+  if (view === "assign") {
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117", color: "#fff", fontFamily: "Inter, sans-serif" }}>
-        <div style={{ height: 56, background: "#1a1d27", borderBottom: "1px solid #2e3347", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <AppLogo size={22} />
-            <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
+      <AssignCandidates
+        exam={selectedExam}
+        onBack={() => {
+          loadExams();
+          setView("list");
+        }}
+      />
+    );
+  }
+
+  if (view === "list") {
+    return (
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
+        <div
+          style={{
+            height: 56,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 24px",
+            gap: 12,
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: 20 }}>👁️</span>
+          <span style={{ fontWeight: 700, fontSize: 16 }}>3rdEyeZ360</span>
+          <span style={{ fontSize: 12, color: "#8b90a0" }}>— {user?.role} Dashboard</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "#8b90a0" }}>{user?.name}</span>
+            <LogoutButton />
+            <button
+              onClick={() => setView("create")}
+              className="btn btn-primary"
+              style={{ padding: "7px 18px", fontSize: 13 }}
+            >
+              + Create Exam
+            </button>
           </div>
-          <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }}>
-            Logout
-          </button>
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div style={{ marginBottom: 18 }}>
-            <AppLogo size={72} />
-          </div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Exam Completed</h2>
-          <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 20, textAlign: "center" }}>
-            Your assessment has ended. You may now close this application.
-          </p>
-          <button onClick={handleLogout} className="btn btn-primary" style={{ padding: "10px 20px", fontSize: 14 }}>
-            Finish and Logout
-          </button>
+        <div style={{ flex: 1, overflowY: "auto", padding: 28 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Your Exams</h2>
+
+          {loadingExams ? (
+            <div style={{ textAlign: "center", color: "#8b90a0", padding: 60 }}>Loading exams...</div>
+          ) : exams.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#8b90a0", padding: "60px 0" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+              <p style={{ marginBottom: 16 }}>No exams yet.</p>
+              <button
+                onClick={() => setView("create")}
+                className="btn btn-primary"
+                style={{ padding: "10px 24px", fontSize: 14 }}
+              >
+                Create your first exam
+              </button>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                gap: 16,
+              }}
+            >
+              {exams.map((exam) => (
+                <div
+                  key={exam.examid}
+                  style={{
+                    background: "#1a1d27",
+                    border: "1px solid #2e3347",
+                    borderRadius: 12,
+                    padding: 20,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>{exam.name}</div>
+                  <div style={{ fontSize: 12, color: "#8b90a0" }}>
+                    {exam.date} &nbsp;·&nbsp; {exam.starttime} – {exam.endtime}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        background: exam.status === "Running" ? "#0f2a1a" : "#22263a",
+                        color: exam.status === "Running" ? "#34c97a" : "#8b90a0",
+                        padding: "3px 10px",
+                        borderRadius: 20,
+                        fontSize: 12,
+                      }}
+                    >
+                      {exam.status}
+                    </span>
+                    <span style={{ fontSize: 12, color: "#555a6e" }}>⏱ {exam.durationminutes} min</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                    <button
+                      onClick={() => openMonitor(exam)}
+                      className="btn btn-primary"
+                      style={{ flex: 1, fontSize: 13, padding: "7px 0" }}
+                    >
+                      🖥 Monitor
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedExam(exam);
+                        setView("assign");
+                      }}
+                      className="btn btn-ghost"
+                      style={{ flex: 1, fontSize: 13, padding: "7px 0" }}
+                    >
+                      👥 Assign
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+      </div>
+    );
+  }
+
+  if (view === "monitor") {
+    return (
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
+        <div
+          style={{
+            height: 52,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 20px",
+            gap: 12,
+            flexShrink: 0,
+            flexWrap: "wrap",
+          }}
+        >
+          <button onClick={goBack} className="btn btn-ghost" style={{ padding: "5px 12px", fontSize: 12 }}>
+            ← Back
+          </button>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>{selectedExam?.name}</span>
+          <span style={{ fontSize: 12, color: "#8b90a0" }}>
+            · {candidates.length} candidate{candidates.length !== 1 ? "s" : ""}
+          </span>
+
+          {actionMsg && (
+            <span style={{ fontSize: 12, color: "#34c97a", marginLeft: 8 }}>
+              {actionMsg}
+            </span>
+          )}
+
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+            <LogoutButton />
+            <input
+              value={broadcastMsg}
+              onChange={(e) => setBroadcastMsg(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendBroadcast()}
+              placeholder="Broadcast to all candidates..."
+              style={{ width: 220, padding: "6px 10px", fontSize: 12 }}
+            />
+            <button onClick={sendBroadcast} className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }}>
+              📢 Send
+            </button>
+            <button onClick={startExam} className="btn btn-success" style={{ padding: "6px 16px", fontSize: 12 }}>
+              ▶ Start Exam
+            </button>
+            <button
+              onClick={() => {
+                setSelectedExam(selectedExam);
+                setView("assign");
+              }}
+              className="btn btn-ghost"
+              style={{ padding: "6px 12px", fontSize: 12 }}
+            >
+              👥 Assign
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            height: 40,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 16px",
+            gap: 4,
+            flexShrink: 0,
+          }}
+        >
+          {[
+            { key: "grid", label: "🖥 Live Grid" },
+            {
+              key: "requests",
+              label: `📬 Requests${
+                reentryRequests.filter((r) => r.status === "Pending").length > 0
+                  ? ` (${reentryRequests.filter((r) => r.status === "Pending").length})`
+                  : ""
+              }`,
+            },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => {
+                setMonitorTab(t.key);
+                if (t.key === "requests") loadReentryRequests();
+              }}
+              style={{
+                padding: "5px 14px",
+                borderRadius: 6,
+                fontSize: 12,
+                cursor: "pointer",
+                background: monitorTab === t.key ? "#22263a" : "transparent",
+                color: monitorTab === t.key ? "#e8eaf0" : "#8b90a0",
+                border: monitorTab === t.key ? "1px solid #2e3347" : "1px solid transparent",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: 16,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+              gap: 12,
+              alignContent: "start",
+            }}
+          >
+            {candidates.length === 0 && (
+              <div
+                style={{
+                  gridColumn: "1 / -1",
+                  textAlign: "center",
+                  color: "#8b90a0",
+                  padding: "60px 0",
+                  fontSize: 13,
+                }}
+              >
+                No candidates assigned yet.{" "}
+                <span onClick={() => setView("assign")} style={{ color: "#4f8ef7", cursor: "pointer" }}>
+                  Assign candidates →
+                </span>
+              </div>
+            )}
+
+            {candidates.map((c) => {
+              const live = liveData[c.candidateid] || {};
+              const color = STATUS_COLORS[c.status] || "#555a6e";
+              const isAlert = !!live.latestViolation;
+              const isActive = c.candidateid === selectedCandidate?.candidateid;
+
+              return (
+                <div
+                  key={c.candidateid}
+                  onClick={() => {
+                    setSelectedCandidate(c);
+                    loadViolations(c.candidateid, selectedExam.examid);
+                  }}
+                  style={{
+                    background: isActive ? "#1e2235" : "#1a1d27",
+                    border: `2px solid ${isAlert ? "#f75f5f" : isActive ? "#4f8ef7" : color}`,
+                    borderRadius: 10,
+                    padding: 14,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                    outline: isActive ? "1px solid #4f8ef7" : "none",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "#555a6e",
+                        maxWidth: 120,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {c.candidateid}
+                    </span>
+                    <span
+                      style={{
+                        width: 9,
+                        height: 9,
+                        borderRadius: "50%",
+                        background: color,
+                        display: "inline-block",
+                        flexShrink: 0,
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 13,
+                      marginBottom: 3,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {c.candidatename || "Candidate"}
+                  </div>
+
+                  <div style={{ fontSize: 11, color, marginBottom: 8, fontWeight: 500 }}>{c.status}</div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8b90a0" }}>
+                    <span>⚠️ {c.violationcount || 0}</span>
+                    <span>📊 {c.riskscore || 0}</span>
+                    <span>💯 {c.credibilityscore ?? 100}</span>
+                  </div>
+
+                  {isAlert && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 10,
+                        background: "#2a1010",
+                        borderRadius: 5,
+                        padding: "4px 8px",
+                        color: "#f75f5f",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      🚨 {live.latestViolation.type}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {selectedCandidate && (
+            <div
+              style={{
+                width: 320,
+                background: "#1a1d27",
+                borderLeft: "1px solid #2e3347",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid #2e3347", flexShrink: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {selectedCandidate.candidatename || selectedCandidate.candidateid}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#8b90a0", marginTop: 2 }}>{selectedCandidate.status}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedCandidate(null);
+                      setViolations([]);
+                    }}
+                    style={{ background: "none", color: "#8b90a0", fontSize: 20, cursor: "pointer" }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <StatBox label="Violations" value={selectedCandidate.violationcount || 0} color="#f75f5f" />
+                  <StatBox label="Risk Score" value={selectedCandidate.riskscore || 0} color="#f5a623" />
+                  <StatBox label="Credibility" value={`${selectedCandidate.credibilityscore ?? 100}%`} color="#34c97a" />
+                  <StatBox label="Warnings" value={selectedCandidate.warningcount || 0} color="#8b90a0" />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => doAction(selectedCandidate.assessmentid, "pause")}
+                      className="btn btn-ghost"
+                      style={{ flex: 1, fontSize: 12 }}
+                    >
+                      ⏸ Pause
+                    </button>
+                    <button
+                      onClick={() => doAction(selectedCandidate.assessmentid, "resume")}
+                      className="btn btn-ghost"
+                      style={{ flex: 1, fontSize: 12 }}
+                    >
+                      ▶ Resume
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => doAction(selectedCandidate.assessmentid, "terminate")}
+                    className="btn btn-danger"
+                    style={{ width: "100%", fontSize: 12 }}
+                  >
+                    🛑 Terminate Assessment
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                <div style={{ padding: "14px 20px", borderBottom: "1px solid #2e3347" }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
+                    Violations ({violations.length})
+                  </div>
+                  {violations.length === 0 ? (
+                    <p style={{ fontSize: 12, color: "#8b90a0" }}>No violations recorded.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {violations.map((v, i) => (
+                        <div
+                          key={v.violationid || i}
+                          style={{
+                            background: "#22263a",
+                            borderRadius: 8,
+                            padding: "10px 12px",
+                            borderLeft: "3px solid #f75f5f",
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{v.type}</div>
+                          <div style={{ fontSize: 11, color: "#8b90a0" }}>
+                            {v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : "—"}
+                            {v.confidence != null ? ` · ${Math.round(v.confidence * 100)}% confidence` : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ padding: "14px 20px" }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Chat with Candidate</div>
+                  <ChatWindow
+                    examId={selectedExam.examid}
+                    candidateId={selectedCandidate.candidateid}
+                    currentUser={{ user_id: user?.userid, role: user?.role }}
+                    token={accessToken}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {monitorTab === "requests" && (
+          <div
+            style={{
+              position: "absolute",
+              top: 92,
+              right: 16,
+              width: 420,
+              maxHeight: "calc(100vh - 120px)",
+              overflowY: "auto",
+              background: "#1a1d27",
+              border: "1px solid #2e3347",
+              borderRadius: 12,
+              padding: 16,
+              boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Re-entry Requests</div>
+
+            {reentryRequests.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#8b90a0" }}>No requests found.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {reentryRequests.map((req) => (
+                  <div
+                    key={req.requestid}
+                    style={{
+                      background: "#22263a",
+                      borderRadius: 10,
+                      padding: 12,
+                      border: "1px solid #2e3347",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                      {req.candidatename || req.candidateid}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 6 }}>
+                      {req.reason || "No reason provided"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 10 }}>
+                      Status: {req.status}
+                    </div>
+
+                    {req.status === "Pending" && (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          onClick={() => handleReentry(req.assessmentid, req.requestid, true)}
+                          className="btn btn-success"
+                          style={{ flex: 1, fontSize: 12 }}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleReentry(req.assessmentid, req.requestid, false)}
+                          className="btn btn-danger"
+                          style={{ flex: 1, fontSize: 12 }}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
 
   return null;
 }
-
-function Root() {
-  const [showSplash, setShowSplash] = useState(!window.__HIDE_SPLASH_FOREVER__);
-
-  useEffect(() => {
-    if (window.__HIDE_SPLASH_FOREVER__) return;
-
-    const timer = setTimeout(() => {
-      window.__HIDE_SPLASH_FOREVER__ = true;
-      setShowSplash(false);
-    }, SPLASH_DURATION);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (window.__HIDE_SPLASH_FOREVER__) {
-    return <AppShell />;
-  }
-
-  if (showSplash) {
-    return <SplashScreen />;
-  }
-
-  return <AppShell />;
-}
-
-createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>
-);
 
 ===== FILE END =====
 
@@ -5987,8 +6494,8 @@ export default function LogoutButton({ onLoggedOut, style = {} }) {
       if (refreshToken) {
         try {
           await axios.post(`${API}/api/auth/logout`, {
-            refreshtoken: refreshToken,
-          })
+  refresh_token: refreshToken,
+})
         } catch (e) {
           console.log('Logout API failed, clearing local session anyway', e)
         }
@@ -6540,12 +7047,11 @@ function LogoutButton() {
         }
       }
     } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-      window.location.reload()
-    }
+  localStorage.removeItem('app-screen')
+  localStorage.removeItem('auth-storage')
+  localStorage.removeItem('exam-storage')
+  useAuthStore.getState().clearAuth()
+}
   }
 
   return (
@@ -7220,259 +7726,710 @@ NAME : ActiveExam.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\ActiveExam.jsx
 =====================
 
-import React, { useEffect, useRef, useState } from 'react'
-import axios from 'axios'
-import useAuthStore from '../../store/authStore'
-import useExamStore from '../../store/examStore'
-import { useTimer } from '../../hooks/useTimer'
-import { useToaster } from '../../hooks/useToaster'
-import { getSocket } from '../../hooks/useSocket'
-import Toaster from '../../components/common/Toaster'
-import ChatWindow from '../../components/common/ChatWindow'
+import React, { useEffect, useRef, useState } from "react";
+import axios from "axios";
+import useAuthStore from "../../store/authStore";
+import useExamStore from "../../store/examStore";
+import { useTimer } from "../../hooks/useTimer";
+import { useToaster } from "../../hooks/useToaster";
+import { getSocket } from "../../hooks/useSocket";
+import Toaster from "../../components/common/Toaster";
+import ChatWindow from "../../components/common/ChatWindow";
 
-const API = 'http://localhost:3000'
-
-function LogoutButton() {
-  const [loading, setLoading] = useState(false)
-
-  const handleLogout = async () => {
-    if (loading) return
-    setLoading(true)
-
-    try {
-      const { refreshToken } = useAuthStore.getState()
-
-      if (refreshToken) {
-        try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
-        } catch (e) {
-          console.log('Logout API failed, clearing local session anyway', e)
-        }
-      }
-    } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-      window.location.reload()
-    }
-  }
-
-  return (
-    <button
-      onClick={handleLogout}
-      disabled={loading}
-      className="btn btn-ghost"
-      style={{ padding: '6px 12px', fontSize: 12 }}
-    >
-      {loading ? 'Signing out...' : 'Logout'}
-    </button>
-  )
-}
+const API = "http://localhost:3000";
 
 export default function ActiveExam({ exam, assessment, onComplete }) {
-  const { user, accessToken } = useAuthStore()
-  const { violationCount, incrementViolation, setLocked, isLocked } = useExamStore()
-  const { toasts, addToast, removeToast } = useToaster()
-  const { formatted } = useTimer(exam.duration_minutes, onComplete)
-  const videoRef = useRef(null)
-  const captureIntervalRef = useRef(null)
-  const streamRef = useRef(null)
-  const [warningCounts, setWarningCounts] = useState({})
+  const { user, accessToken } = useAuthStore();
+  const { violationCount, incrementViolation, setLocked, isLocked } = useExamStore();
+  const { toasts, addToast, removeToast } = useToaster();
+
+  // Always prefer assessment for normalized fields
+  const examId = assessment?.examid || exam?.examid;
+  const assessmentId = assessment?.assessmentid || exam?.assessmentid;
+  const examName = assessment?.name || exam?.name || "Exam";
+  const durationMinutes = assessment?.durationminutes || exam?.durationminutes || 0;
+  const allowedSites = assessment?.allowedwebsites?.length
+    ? assessment.allowedwebsites
+    : (exam?.allowedwebsites || []);
+
+  const { formatted } = useTimer(durationMinutes, onComplete);
+
+  const videoRef = useRef(null);
+  const captureIntervalRef = useRef(null);
+  const streamRef = useRef(null);
+  const socketRef = useRef(null);
+
+  const [activeSite, setActiveSite] = useState(allowedSites[0] || "");
+
+  const handleExamComplete = async () => {
+    try {
+      if (window.electronAPI) {
+        await window.electronAPI.stopCapture?.();
+        await window.electronAPI.closeBrowser?.();
+        await window.electronAPI.disableLockdown?.();
+        await window.electronAPI.setClosable?.(true);
+      }
+    } catch (e) {
+      console.log("Cleanup on complete failed", e);
+    }
+    onComplete?.();
+  };
 
   useEffect(() => {
-    startMonitoring()
-    setupSocketListeners()
-    window.electronAPI?.enableLockdown()
-    window.electronAPI?.setClosable(false)
-    window.electronAPI?.openBrowser({ allowedWebsites: exam.allowed_websites })
+    startMonitoring();
+    setupSocketListeners();
+
+    // DO NOT re-open browser or re-enable lockdown here —
+    // handleStartMonitoring in index.jsx already did that.
+    // Only start webcam capture session via IPC if not already running.
+    if (window.electronAPI && examId && assessmentId && user?.userid) {
+      window.electronAPI.startCapture?.({
+        assessmentId,
+        examId,
+        candidateId: user.userid,
+        token: accessToken,
+      });
+    }
 
     return () => {
-      stopMonitoring()
-      window.electronAPI?.disableLockdown()
-      window.electronAPI?.setClosable(true)
-      window.electronAPI?.closeBrowser()
-    }
-  }, [])
+      stopMonitoring();
+      teardownSocketListeners();
+      window.electronAPI?.stopCapture?.();
+      window.electronAPI?.closeBrowser?.();
+      window.electronAPI?.disableLockdown?.();
+      window.electronAPI?.setClosable?.(true);
+      window.electronAPI?.removeDetectionListener?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startMonitoring = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-      streamRef.current = stream
-      if (videoRef.current) videoRef.current.srcObject = stream
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
 
-      captureIntervalRef.current = setInterval(() => {
-        captureAndSendFrame()
-      }, 4000)
+      captureIntervalRef.current = setInterval(() => captureAndSendFrame(), 4000);
     } catch (e) {
-      addToast('⚠️ Camera access lost — please reconnect your camera', 'error', 8000)
+      addToast("⚠️ Camera access lost — please reconnect your camera", "error", 8000);
     }
-  }
+  };
 
   const captureAndSendFrame = () => {
-    if (!videoRef.current || !window.electronAPI) return
-    const canvas = document.createElement('canvas')
-    canvas.width = 640
-    canvas.height = 480
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(videoRef.current, 0, 0, 640, 480)
-    const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
+    if (!videoRef.current || !window.electronAPI) return;
+    if (!assessmentId || !user?.userid || !examId) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+    const base64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
 
     window.electronAPI.sendFrame({
       frame: base64,
-      assessmentId: assessment.assessment_id,
-      candidateId: user.user_id,
-      examId: exam.exam_id,
-      token: accessToken
-    })
-  }
+      assessmentId,
+      candidateId: user.userid,
+      examId,
+      token: accessToken,
+    });
+  };
 
   const stopMonitoring = () => {
-    if (captureIntervalRef.current) clearInterval(captureIntervalRef.current)
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
-  }
+    if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
+    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+  };
 
   const setupSocketListeners = () => {
     window.electronAPI?.onDetectionResult((result) => {
-      if (result.action === 'toast' || result.action === 'violation') {
-        addToast(result.message, result.action === 'violation' ? 'error' : 'warning', 6000)
-        if (result.action === 'violation') incrementViolation()
+      if (result.action === "toast" || result.action === "violation") {
+        addToast(result.message, result.action === "violation" ? "error" : "warning", 6000);
+        if (result.action === "violation") incrementViolation();
         if (result.locked) {
-          setLocked(true)
-          addToast('🔒 Your assessment has been locked. Contact your examiner.', 'error', 0)
+          setLocked(true);
+          addToast("🔒 Your assessment has been locked. Contact your examiner.", "error", 0);
         }
       }
-    })
+    });
 
-    const socket = getSocket()
+    const socket = getSocket();
+    socketRef.current = socket;
     if (socket) {
-      socket.on('control_command', ({ action }) => {
-        if (action === 'pause') {
-          addToast('⏸️ Your assessment has been paused by the examiner.', 'warning', 0)
-        } else if (action === 'resume') {
-          addToast('▶️ Your assessment has been resumed.', 'success', 5000)
-        } else if (action === 'terminate') {
-          addToast('🛑 Your assessment has been terminated by the examiner.', 'error', 0)
-          setTimeout(onComplete, 3000)
+      socket.on("control_command", ({ action }) => {
+        if (action === "pause") {
+          addToast("⏸️ Your assessment has been paused by the examiner.", "warning", 0);
+        } else if (action === "resume") {
+          addToast("▶️ Your assessment has been resumed.", "success", 5000);
+        } else if (action === "terminate") {
+          addToast("🛑 Your assessment has been terminated by the examiner.", "error", 0);
+          setTimeout(handleExamComplete, 3000);
         }
-      })
-
-      socket.on('you_are_locked', () => {
-        setLocked(true)
-        addToast('🔒 Assessment locked due to violations. Waiting for examiner.', 'error', 0)
-      })
+      });
+      socket.on("you_are_locked", () => {
+        setLocked(true);
+        addToast("🔒 Assessment locked due to violations. Waiting for examiner.", "error", 0);
+      });
     }
-  }
+  };
+
+  const teardownSocketListeners = () => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    socket.off("control_command");
+    socket.off("you_are_locked");
+  };
+
+  const handleSiteClick = (site) => {
+    setActiveSite(site);
+    window.electronAPI?.navigateBrowser?.(site);
+  };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
+      {/* Top bar */}
       <div style={{
-        height: 50, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16, flexShrink: 0
+        height: 50, background: "#1a1d27", borderBottom: "1px solid #2e3347",
+        display: "flex", alignItems: "center", padding: "0 16px", gap: 16, flexShrink: 0,
       }}>
-        <span style={{ fontWeight: 700, fontSize: 14 }}>👁️ 3rdEyeZ360</span>
-        <span style={{ color: '#8b90a0', fontSize: 13 }}>|</span>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{exam.name}</span>
+        <span style={{ fontWeight: 700, fontSize: 14, color: "#e8eaf0" }}>👁️ 3rdEyeZ360</span>
+        <span style={{ color: "#8b90a0", fontSize: 13 }}>|</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#e8eaf0" }}>{examName}</span>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <LogoutButton />
-
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{
-            background: '#22263a', padding: '5px 14px', borderRadius: 8,
+            background: "#22263a", padding: "5px 14px", borderRadius: 8,
             fontSize: 15, fontWeight: 700,
-            color: parseInt(formatted().split(':')[0]) < 5 ? '#f75f5f' : '#34c97a'
+            color: parseInt(formatted.split(":")[0], 10) < 5 ? "#f75f5f" : "#34c97a",
           }}>
-            ⏱ {formatted()}
+            ⏱ {formatted}
           </div>
 
           <div style={{
-            background: violationCount > 0 ? '#2a1010' : '#22263a',
-            padding: '5px 12px', borderRadius: 8, fontSize: 13,
-            color: violationCount > 0 ? '#f75f5f' : '#8b90a0'
+            background: violationCount > 0 ? "#2a1010" : "#22263a",
+            padding: "5px 12px", borderRadius: 8, fontSize: 13,
+            color: violationCount > 0 ? "#f75f5f" : "#8b90a0",
           }}>
-            ⚠️ {violationCount} violation{violationCount !== 1 ? 's' : ''}
+            ⚠️ {violationCount} violation{violationCount !== 1 ? "s" : ""}
           </div>
 
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: 12, color: '#34c97a'
-          }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#34c97a" }}>
             <span style={{
-              width: 8, height: 8, background: '#34c97a',
-              borderRadius: '50%', animation: 'pulse 1.5s infinite'
+              width: 8, height: 8, background: "#34c97a", borderRadius: "50%",
+              animation: "pulse 1.5s infinite",
             }} />
             Monitoring Active
           </div>
         </div>
       </div>
 
-      {exam.allowed_websites?.length > 0 && (
+      {/* Allowed sites bar */}
+      {allowedSites.length > 0 && (
         <div style={{
-          height: 36, background: '#22263a', borderBottom: '1px solid #2e3347',
-          display: 'flex', alignItems: 'center', padding: '0 16px', gap: 8, flexShrink: 0
+          minHeight: 42, background: "#22263a", borderBottom: "1px solid #2e3347",
+          display: "flex", alignItems: "center", padding: "6px 12px",
+          gap: 8, flexWrap: "wrap", flexShrink: 0,
         }}>
-          <span style={{ fontSize: 11, color: '#8b90a0', marginRight: 4 }}>Allowed:</span>
-          {exam.allowed_websites.map((site, i) => (
-            <button
-              key={i}
-              style={{
-                background: '#1a1d27', border: '1px solid #2e3347',
-                borderRadius: 6, padding: '3px 10px', fontSize: 12, color: '#4f8ef7',
-                cursor: 'pointer'
-              }}
-            >
-              🔗 {site}
-            </button>
-          ))}
+          <span style={{ fontSize: 11, color: "#8b90a0", marginRight: 4 }}>Allowed websites:</span>
+          {allowedSites.map((site, i) => {
+            const isActive = site === activeSite;
+            return (
+              <button key={i} onClick={() => handleSiteClick(site)} style={{
+                background: isActive ? "#10243a" : "#1a1d27",
+                border: `1px solid ${isActive ? "#4f8ef7" : "#2e3347"}`,
+                borderRadius: 6, padding: "5px 10px", fontSize: 12,
+                color: isActive ? "#8fc2ff" : "#c8cad0", cursor: "pointer",
+              }}>
+                🌐 {site}
+              </button>
+            );
+          })}
         </div>
       )}
 
-      <div style={{ flex: 1, background: '#0a0c14', position: 'relative' }}>
+      {/* Main content area — BrowserView renders here via Electron */}
+      <div style={{ flex: 1, background: "#0a0c14", position: "relative" }}>
         {isLocked && (
           <div style={{
-            position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', zIndex: 100
+            position: "absolute", inset: 0, background: "rgba(0,0,0,0.85)",
+            display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", zIndex: 100,
           }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Assessment Locked</h2>
-            <p style={{ color: '#8b90a0', fontSize: 14, textAlign: 'center', maxWidth: 320 }}>
-              Your assessment has been locked due to repeated violations.<br />
-              Please wait for your examiner to take action.
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: "#fff" }}>
+              Assessment Locked
+            </h2>
+            <p style={{ color: "#8b90a0", fontSize: 14, textAlign: "center", maxWidth: 320 }}>
+              Your assessment has been locked due to repeated violations.
+              <br />Please wait for your examiner to take action.
             </p>
           </div>
         )}
       </div>
 
+      {/* Status bar */}
       <div style={{
-        height: 32, background: '#1a1d27', borderTop: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', padding: '0 16px', gap: 20,
-        fontSize: 11, color: '#8b90a0', flexShrink: 0
+        height: 32, background: "#1a1d27", borderTop: "1px solid #2e3347",
+        display: "flex", alignItems: "center", padding: "0 16px",
+        gap: 20, fontSize: 11, color: "#8b90a0", flexShrink: 0,
       }}>
         <span>📷 Camera Active</span>
         <span>🌐 Connected</span>
         <span>🔴 Recording</span>
-        <span style={{ marginLeft: 'auto', color: '#f75f5f', fontSize: 11 }}>
+        <span style={{ marginLeft: "auto", color: "#f75f5f", fontSize: 11 }}>
           ⚠️ Do not close this window during the exam
         </span>
       </div>
 
-      <video ref={videoRef} autoPlay muted style={{ display: 'none' }} />
-
+      <video ref={videoRef} autoPlay muted style={{ display: "none" }} />
       <Toaster toasts={toasts} onRemove={removeToast} />
-
       <ChatWindow
-        examId={exam.exam_id}
-        candidateId={user.user_id}
+        examId={examId}
+        candidateId={user?.userid}
         currentUser={user}
         token={accessToken}
       />
 
-      <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-      `}</style>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
     </div>
-  )
+  );
+}
+
+===== FILE END =====
+
+===== FILE START =====
+NAME : CandidateDashboard.jsx
+PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\CandidateDashboard.jsx
+=====================
+
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import useAuthStore from "../../store/authStore";
+
+const API = "http://localhost:3000";
+
+function LogoutButton() {
+  const [loading, setLoading] = useState(false);
+
+  const handleLogout = async () => {
+    if (loading) return;
+    setLoading(true);
+
+    try {
+      const { refreshToken } = useAuthStore.getState();
+
+      if (refreshToken) {
+        try {
+          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
+        } catch (e) {
+          console.log("Logout API failed, clearing local session anyway", e);
+        }
+      }
+    } finally {
+      localStorage.removeItem("app-screen");
+      localStorage.removeItem("auth-storage");
+      localStorage.removeItem("exam-storage");
+      useAuthStore.getState().clearAuth();
+    }
+  };
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="btn btn-ghost"
+      style={{ padding: "8px 14px", fontSize: 12 }}
+    >
+      {loading ? "Signing out..." : "Logout"}
+    </button>
+  );
+}
+
+function StatCard({ label, value, color }) {
+  return (
+    <div
+      style={{
+        background: "#1a1d27",
+        border: "1px solid #2e3347",
+        borderRadius: 14,
+        padding: 18,
+      }}
+    >
+      <div style={{ fontSize: 12, color: "#8b90a0", marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color }}>{value}</div>
+    </div>
+  );
+}
+
+function getStatusChip(status, examStatus) {
+  const normalized = String(status || "").toUpperCase();
+  const normalizedExam = String(examStatus || "").toLowerCase();
+
+  if (normalized === "COMPLETED") {
+    return { label: "Completed", bg: "#0f2a1a", color: "#34c97a" };
+  }
+
+  if (normalized === "TERMINATED") {
+    return { label: "Terminated", bg: "#2a1010", color: "#f75f5f" };
+  }
+
+  if (normalized === "ACTIVE" || normalizedExam === "running") {
+    return { label: "Ready to Enter", bg: "#10243a", color: "#4f8ef7" };
+  }
+
+  if (normalized === "PAUSED") {
+    return { label: "Paused", bg: "#2a2010", color: "#f5a623" };
+  }
+
+  if (normalized === "LOCKED") {
+    return { label: "Locked", bg: "#2a1010", color: "#f75f5f" };
+  }
+
+  if (normalized === "ASSIGNED" || normalized === "AVAILABLE" || normalized === "READY") {
+    return { label: "Assigned", bg: "#22263a", color: "#c8cad0" };
+  }
+
+  return { label: status || "Unknown", bg: "#22263a", color: "#c8cad0" };
+}
+
+function canEnterExam(exam) {
+  const status = String(exam?.status || "").toUpperCase();
+  const examStatus = String(exam?.examstatus || "").toLowerCase();
+
+  if (status === "COMPLETED" || status === "TERMINATED") return false;
+  if (status === "LOCKED") return false;
+
+  return ["assigned", "running", "draft"].includes(examStatus) ||
+    ["ASSIGNED", "AVAILABLE", "READY", "ACTIVE", "PAUSED"].includes(status);
+}
+
+export default function CandidateDashboard({ onEnterExam }) {
+  const { user, accessToken } = useAuthStore();
+  const [assessments, setAssessments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const headers = useMemo(
+    () => ({
+      Authorization: `Bearer ${accessToken}`,
+    }),
+    [accessToken]
+  );
+
+  const loadAssessments = async () => {
+    if (!accessToken) return;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await axios.get(`${API}/api/exams/candidate/upcoming`, { headers });
+      setAssessments(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      console.error("load candidate assessments:", e);
+      setError(e?.response?.data?.detail || "Failed to load your assessments.");
+      setAssessments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAssessments();
+  }, [accessToken]);
+
+  const allottedCount = assessments.length;
+  const completedCount = assessments.filter(
+    (item) => String(item.status || "").toUpperCase() === "COMPLETED"
+  ).length;
+  const activeCount = assessments.filter((item) => canEnterExam(item)).length;
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+      }}
+    >
+      <div
+        style={{
+          height: 56,
+          background: "#1a1d27",
+          borderBottom: "1px solid #2e3347",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 20 }}>👁️</span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>
+            3rdEyeZ360
+          </span>
+          <span style={{ fontSize: 12, color: "#8b90a0" }}>— Candidate Dashboard</span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 13, color: "#8b90a0" }}>{user?.name}</span>
+          <LogoutButton />
+        </div>
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: 24,
+        }}
+      >
+        <div style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: "#e8eaf0" }}>
+            Welcome back
+          </h2>
+          <p style={{ fontSize: 14, color: "#8b90a0", margin: 0 }}>
+            Choose an allotted assessment to enter the exam hall and begin your checks.
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 16,
+            marginBottom: 28,
+          }}
+        >
+          <StatCard label="Assessments Allotted" value={allottedCount} color="#4f8ef7" />
+          <StatCard label="Ready / Active" value={activeCount} color="#34c97a" />
+          <StatCard label="Completed" value={completedCount} color="#f5a623" />
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 16,
+            gap: 12,
+          }}
+        >
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: "#e8eaf0", margin: 0 }}>
+            Your Assessments
+          </h3>
+
+          <button
+            onClick={loadAssessments}
+            className="btn btn-ghost"
+            style={{ padding: "8px 14px", fontSize: 12 }}
+          >
+            Refresh
+          </button>
+        </div>
+
+        {loading ? (
+          <div
+            style={{
+              textAlign: "center",
+              color: "#8b90a0",
+              padding: "60px 0",
+              background: "#1a1d27",
+              border: "1px solid #2e3347",
+              borderRadius: 16,
+            }}
+          >
+            Loading your assessments...
+          </div>
+        ) : error ? (
+          <div
+            style={{
+              background: "#2a1010",
+              border: "1px solid #f75f5f",
+              color: "#f3c2c2",
+              borderRadius: 12,
+              padding: 16,
+              fontSize: 14,
+            }}
+          >
+            {error}
+          </div>
+        ) : assessments.length === 0 ? (
+          <div
+            style={{
+              textAlign: "center",
+              color: "#8b90a0",
+              padding: "60px 24px",
+              background: "#1a1d27",
+              border: "1px solid #2e3347",
+              borderRadius: 16,
+            }}
+          >
+            <div style={{ fontSize: 44, marginBottom: 14 }}>📝</div>
+            <div style={{ fontSize: 16, color: "#e8eaf0", marginBottom: 8 }}>
+              No assessments assigned yet
+            </div>
+            <div style={{ fontSize: 13 }}>
+              Your allotted assessments will appear here once an examiner assigns them.
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {assessments.map((exam) => {
+              const chip = getStatusChip(exam.status, exam.examstatus);
+              const enterable = canEnterExam(exam);
+
+              return (
+                <div
+                  key={exam.assessmentid}
+                  style={{
+                    background: "#1a1d27",
+                    border: "1px solid #2e3347",
+                    borderRadius: 16,
+                    padding: 20,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                    boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 17,
+                          fontWeight: 700,
+                          color: "#e8eaf0",
+                          marginBottom: 6,
+                        }}
+                      >
+                        {exam.name}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#8b90a0", lineHeight: 1.6 }}>
+                        {exam.date} · {exam.starttime} – {exam.endtime}
+                      </div>
+                    </div>
+
+                    <span
+                      style={{
+                        background: chip.bg,
+                        color: chip.color,
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {chip.label}
+                    </span>
+                  </div>
+
+                  {exam.description ? (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "#c8cad0",
+                        lineHeight: 1.6,
+                        minHeight: 42,
+                      }}
+                    >
+                      {exam.description}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "#8b90a0",
+                        lineHeight: 1.6,
+                        minHeight: 42,
+                      }}
+                    >
+                      No additional description provided for this assessment.
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: "#22263a",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
+                        Duration
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>
+                        {exam.durationminutes} mins
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        background: "#22263a",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
+                        Allowed Sites
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>
+                        {Array.isArray(exam.allowedwebsites) ? exam.allowedwebsites.length : 0}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: "#22263a",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      fontSize: 12,
+                      color: "#8b90a0",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Assessment ID: <span style={{ color: "#c8cad0" }}>{exam.assessmentid}</span>
+                    <br />
+                    Exam Status: <span style={{ color: "#c8cad0" }}>{exam.examstatus || "—"}</span>
+                  </div>
+
+                  <button
+                    onClick={() => onEnterExam(exam)}
+                    disabled={!enterable}
+                    className="btn btn-primary"
+                    style={{
+                      width: "100%",
+                      padding: "12px 0",
+                      fontSize: 14,
+                      opacity: enterable ? 1 : 0.45,
+                      cursor: enterable ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    {enterable ? "Enter Exam Hall →" : "Not Available"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 ===== FILE END =====
@@ -7482,156 +8439,415 @@ NAME : Instructions.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\Instructions.jsx
 =====================
 
-import React, { useState } from 'react'
-import axios from 'axios'
-import useAuthStore from '../../store/authStore'
-
-const API = 'http://localhost:3000'
+import React, { useMemo, useState } from "react";
 
 const RULES = [
-  '👁️  Keep your face clearly visible in the camera at all times',
-  '📵  No mobile phones or secondary devices on your desk',
-  '👥  Ensure you are alone — no other person should be visible',
-  '🔇  Stay in a quiet room — background voices will be flagged',
-  '🖥️  Only the allowed exam websites will be accessible',
-  '⚡  Keep your laptop charger connected throughout',
-  '🚫  Do not attempt to close, minimize, or switch windows',
-  '👀  Keep your eyes focused on the screen',
-  '💬  Use the chat button if you need to contact the examiner',
-  '⏳  You will receive friendly guidance before any violation is recorded',
-]
+  "👁️  Keep your face clearly visible in the camera at all times",
+  "📵  No mobile phones or secondary devices on your desk",
+  "👥  Ensure you are alone — no other person should be visible",
+  "🔇  Stay in a quiet room — background voices will be flagged",
+  "🖥️  Only the allowed exam websites will be accessible",
+  "⚡  Keep your laptop charger connected throughout",
+  "🚫  Do not attempt to close, minimize, or switch windows",
+  "👀  Keep your eyes focused on the screen",
+  "💬  Use the chat button if you need to contact the examiner",
+  "⏳  You will receive friendly guidance before any violation is recorded",
+];
 
-function LogoutButton() {
-  const [loading, setLoading] = useState(false)
+function LogoutButton({ onLogout }) {
+  const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
-    if (loading) return
-    setLoading(true)
+    if (loading) return;
+    setLoading(true);
 
     try {
-      const { refreshToken } = useAuthStore.getState()
-
-      if (refreshToken) {
-        try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
-        } catch (e) {
-          console.log('Logout API failed, clearing local session anyway', e)
-        }
-      }
+      await onLogout?.();
     } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-      window.location.reload()
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <button
       onClick={handleLogout}
       disabled={loading}
       className="btn btn-ghost"
-      style={{ padding: '8px 14px', fontSize: 12 }}
+      style={{ padding: "8px 14px", fontSize: 12 }}
     >
-      {loading ? 'Signing out...' : 'Logout'}
+      {loading ? "Signing out..." : "Logout"}
     </button>
-  )
+  );
 }
 
-export default function Instructions({ exam, onStart }) {
-  const [agreed, setAgreed] = useState(false)
+export default function Instructions({
+  exam,
+  assessment,
+  onStart,
+  onBack,
+  onLogout,
+}) {
+  const [agreed, setAgreed] = useState(false);
+
+  const sites = useMemo(() => {
+    if (Array.isArray(exam?.allowedwebsites)) return exam.allowedwebsites;
+    if (Array.isArray(assessment?.allowedwebsites)) return assessment.allowedwebsites;
+    return [];
+  }, [exam, assessment]);
+
+  const apps = useMemo(() => {
+    if (Array.isArray(exam?.allowedapplications)) return exam.allowedapplications;
+    if (Array.isArray(assessment?.allowedapplications)) return assessment.allowedapplications;
+    return [];
+  }, [exam, assessment]);
+
+  const examName = exam?.name || assessment?.name || "Upcoming Exam";
+  const examDate = exam?.date || assessment?.date || "-";
+  const startTime = exam?.starttime || assessment?.starttime || "-";
+  const endTime = exam?.endtime || assessment?.endtime || "-";
+  const duration = exam?.durationminutes || assessment?.durationminutes || "-";
+  const instructions = exam?.instructions || assessment?.instructions || "";
+  const examId = exam?.examid || assessment?.examid || "-";
+  const assessmentId = assessment?.assessmentid || exam?.assessmentid || "-";
+  const examStatus = exam?.status || assessment?.status || "-";
+  const violationThreshold =
+    exam?.violationthreshold || assessment?.violationthreshold || "-";
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      background: '#0f1117'
-    }}>
-      <div style={{
-        height: 56, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', flexShrink: 0
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+      }}
+    >
+      <div
+        style={{
+          height: 56,
+          background: "#1a1d27",
+          borderBottom: "1px solid #2e3347",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>👁️</span>
-          <span style={{ fontWeight: 700, fontSize: 15, color: '#e8eaf0' }}>3rdEyeZ360</span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>
+            3rdEyeZ360
+          </span>
         </div>
-        <LogoutButton />
+        <LogoutButton onLogout={onLogout} />
       </div>
 
-      <div style={{
-        flex: 1, overflowY: 'auto',
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20
-      }}>
-        <div style={{
-          background: '#1a1d27', border: '1px solid #2e3347',
-          borderRadius: 16, padding: 40, width: 560,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
-        }}>
-          <div style={{
-            background: '#0f2a1a', border: '1px solid #34c97a',
-            borderRadius: 10, padding: '12px 16px', marginBottom: 24,
-            display: 'flex', alignItems: 'center', gap: 10
-          }}>
-            <span style={{ fontSize: 18 }}>📋</span>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 15 }}>{exam?.name}</div>
-              <div style={{ fontSize: 12, color: '#8b90a0' }}>
-                {exam?.date} · {exam?.start_time} – {exam?.end_time} · {exam?.duration_minutes} mins
-              </div>
-            </div>
-          </div>
-
-          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Exam Instructions</h2>
-
-          {exam?.instructions && (
-            <div style={{
-              background: '#22263a', borderRadius: 8, padding: '12px 16px',
-              fontSize: 13, color: '#c8cad0', marginBottom: 16, lineHeight: 1.7
-            }}>
-              {exam.instructions}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            {RULES.map((rule, i) => (
-              <div key={i} style={{
-                fontSize: 13, color: '#c8cad0', padding: '8px 12px',
-                background: '#22263a', borderRadius: 6, lineHeight: 1.5
-              }}>{rule}</div>
-            ))}
-          </div>
-
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            cursor: 'pointer', marginBottom: 24, fontSize: 14
-          }}>
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={e => setAgreed(e.target.checked)}
-              style={{ width: 18, height: 18, cursor: 'pointer' }}
-            />
-            <span>I have read and understood all the instructions</span>
-          </label>
-
-          <button
-            onClick={onStart}
-            disabled={!agreed}
-            className="btn btn-primary"
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 20,
+        }}
+      >
+        <div
+          style={{
+            background: "#1a1d27",
+            border: "1px solid #2e3347",
+            borderRadius: 16,
+            width: "min(760px, 100%)",
+            maxHeight: "calc(100vh - 96px)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+          }}
+        >
+          <div
             style={{
-              width: '100%', padding: '12px 0', fontSize: 15,
-              opacity: agreed ? 1 : 0.4, cursor: agreed ? 'pointer' : 'not-allowed'
+              padding: 32,
+              overflowY: "auto",
+              minHeight: 0,
             }}
           >
-            Start Monitoring →
-          </button>
+            <div
+              style={{
+                background: "#0f2a1a",
+                border: "1px solid #34c97a",
+                borderRadius: 10,
+                padding: "14px 16px",
+                marginBottom: 24,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>📋</span>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15, color: "#e8eaf0" }}>
+                    {examName}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#8b90a0" }}>
+                    {examDate} · {startTime} – {endTime} · {duration} mins
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 8,
+                  fontSize: 12,
+                  color: "#c8cad0",
+                }}
+              >
+                <div>
+                  <strong>Exam ID:</strong> {examId}
+                </div>
+                <div>
+                  <strong>Assessment ID:</strong> {assessmentId}
+                </div>
+                <div>
+                  <strong>Status:</strong> {examStatus}
+                </div>
+                <div>
+                  <strong>Violation Threshold:</strong> {violationThreshold}
+                </div>
+              </div>
+            </div>
+
+            <h2
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                marginBottom: 16,
+                color: "#e8eaf0",
+              }}
+            >
+              Exam Instructions
+            </h2>
+
+            {instructions && (
+              <div
+                style={{
+                  background: "#22263a",
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  color: "#c8cad0",
+                  marginBottom: 16,
+                  lineHeight: 1.7,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {instructions}
+              </div>
+            )}
+
+            <div style={{ marginBottom: 20 }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#e8eaf0",
+                  marginBottom: 10,
+                }}
+              >
+                Allowed exam websites
+              </div>
+
+              {sites.length > 0 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  {sites.map((site, i) => (
+                    <div
+                      key={`${site}-${i}`}
+                      style={{
+                        background: "#10243a",
+                        border: "1px solid #2d4f75",
+                        color: "#8fc2ff",
+                        borderRadius: 999,
+                        padding: "6px 12px",
+                        fontSize: 12,
+                      }}
+                    >
+                      🌐 {site}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    background: "#2a2010",
+                    border: "1px solid #5c4621",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    color: "#d8b36a",
+                  }}
+                >
+                  No allowed websites were configured for this exam.
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#e8eaf0",
+                  marginBottom: 10,
+                }}
+              >
+                Allowed applications
+              </div>
+
+              {apps.length > 0 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  {apps.map((app, i) => (
+                    <div
+                      key={`${app}-${i}`}
+                      style={{
+                        background: "#1e2435",
+                        border: "1px solid #3a4057",
+                        color: "#d9deea",
+                        borderRadius: 999,
+                        padding: "6px 12px",
+                        fontSize: 12,
+                      }}
+                    >
+                      🧩 {app}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    background: "#22263a",
+                    border: "1px solid #2e3347",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    color: "#aeb4c3",
+                  }}
+                >
+                  No specific applications were configured for this exam.
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                marginBottom: 24,
+              }}
+            >
+              {RULES.map((rule, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontSize: 13,
+                    color: "#c8cad0",
+                    padding: "8px 12px",
+                    background: "#22263a",
+                    borderRadius: 6,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {rule}
+                </div>
+              ))}
+            </div>
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                cursor: "pointer",
+                marginBottom: 24,
+                fontSize: 14,
+                color: "#e8eaf0",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                style={{
+                  width: 18,
+                  height: 18,
+                  cursor: "pointer",
+                  marginTop: 2,
+                  flexShrink: 0,
+                }}
+              />
+              <span>I have read and understood all the instructions</span>
+            </label>
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={onBack}
+                className="btn btn-ghost"
+                style={{
+                  flex: 1,
+                  padding: "12px 0",
+                  fontSize: 15,
+                  border: "1px solid #3a4057",
+                  borderRadius: 10,
+                  background: "#22263a",
+                  color: "#e8eaf0",
+                  cursor: "pointer",
+                }}
+              >
+                ← Back
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!agreed) return;
+                  onStart?.();
+                }}
+                disabled={!agreed}
+                className="btn btn-primary"
+                style={{
+                  flex: 1.4,
+                  padding: "12px 0",
+                  fontSize: 15,
+                  opacity: agreed ? 1 : 0.4,
+                  cursor: agreed ? "pointer" : "not-allowed",
+                }}
+              >
+                Launch Exam Workspace →
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 ===== FILE END =====
@@ -7641,167 +8857,371 @@ NAME : PreCheck.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\PreCheck.jsx
 =====================
 
-import React, { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
-import useAuthStore from '../../store/authStore'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
-const API = 'http://localhost:3000'
-
-function LogoutButton() {
-  const [loading, setLoading] = useState(false)
+function LogoutButton({ onLogout }) {
+  const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
-    if (loading) return
-    setLoading(true)
+    if (loading) return;
+    setLoading(true);
 
     try {
-      const { refreshToken } = useAuthStore.getState()
-
-      if (refreshToken) {
-        try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
-        } catch (e) {
-          console.log('Logout API failed, clearing local session anyway', e)
-        }
-      }
+      await onLogout?.();
     } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-      window.location.reload()
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <button
       onClick={handleLogout}
       disabled={loading}
       className="btn btn-ghost"
-      style={{ padding: '8px 14px', fontSize: 12 }}
+      style={{ padding: "8px 14px", fontSize: 12 }}
     >
-      {loading ? 'Signing out...' : 'Logout'}
+      {loading ? "Signing out..." : "Logout"}
     </button>
-  )
+  );
 }
 
-export default function PreCheck({ onPass }) {
-  const videoRef = useRef(null)
-  const [checks, setChecks] = useState({
-    camera: null, face: null, internet: null
-  })
-  const [stream, setStream] = useState(null)
-  const [running, setRunning] = useState(false)
+function CheckItem({ label, status }) {
+  const hint =
+    status === false
+      ? label === "Camera & Microphone"
+        ? "Allow camera and microphone access"
+        : label === "Internet Connection"
+        ? "Check backend/server connection"
+        : "Keep your face visible in the frame"
+      : "";
 
-  useEffect(() => {
-    startChecks()
-    return () => { if (stream) stream.getTracks().forEach(t => t.stop()) }
-  }, [])
-
-  const startChecks = async () => {
-    setRunning(true)
-    const results = { camera: false, face: false, internet: false }
-
-    try {
-      await fetch('http://localhost:3000/health')
-      results.internet = true
-    } catch {
-      results.internet = false
-    }
-    setChecks(prev => ({ ...prev, internet: results.internet }))
-
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      setStream(s)
-      if (videoRef.current) videoRef.current.srcObject = s
-      results.camera = true
-      setChecks(prev => ({ ...prev, camera: true }))
-
-      await new Promise(r => setTimeout(r, 2000))
-      results.face = true
-      setChecks(prev => ({ ...prev, face: true }))
-    } catch {
-      results.camera = false
-      setChecks(prev => ({ ...prev, camera: false, face: false }))
-    }
-
-    setRunning(false)
-  }
-
-  const allPassed = Object.values(checks).every(v => v === true)
-
-  const Item = ({ label, status }) => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '12px 16px', background: '#22263a',
-      borderRadius: 8, border: `1px solid ${status === true ? '#34c97a' : status === false ? '#f75f5f' : '#2e3347'}`
-    }}>
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 16px",
+        background: "#22263a",
+        borderRadius: 8,
+        border: `1px solid ${
+          status === true ? "#34c97a" : status === false ? "#f75f5f" : "#2e3347"
+        }`,
+      }}
+    >
       <span style={{ fontSize: 20 }}>
-        {status === null ? '⏳' : status ? '✅' : '❌'}
+        {status === null ? "⏳" : status ? "✅" : "❌"}
       </span>
-      <span style={{ fontSize: 14, color: '#e8eaf0' }}>{label}</span>
+
+      <span style={{ fontSize: 14, color: "#e8eaf0" }}>{label}</span>
+
       {status === false && (
-        <span style={{ fontSize: 12, color: '#f75f5f', marginLeft: 'auto' }}>
-          {label === 'Camera' ? 'Allow camera access' :
-           label === 'Internet' ? 'Check connection' : 'Show your face'}
+        <span
+          style={{
+            fontSize: 12,
+            color: "#f75f5f",
+            marginLeft: "auto",
+            textAlign: "right",
+          }}
+        >
+          {hint}
         </span>
       )}
     </div>
-  )
+  );
+}
+
+export default function PreCheck({ exam, onPass, onLogout }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const hasAutoStartedRef = useRef(false);
+
+  const [checks, setChecks] = useState({
+    camera: null,
+    face: null,
+    internet: null,
+  });
+  const [running, setRunning] = useState(false);
+
+  const examView = useMemo(
+    () => ({
+      name: exam?.name || "Upcoming Exam",
+      assessmentid: exam?.assessmentid || "-",
+      examid: exam?.examid || "-",
+      durationminutes: exam?.durationminutes || "-",
+      date: exam?.date || "-",
+      starttime: exam?.starttime || "-",
+      endtime: exam?.endtime || "-",
+      status: exam?.status || "-",
+      examstatus: exam?.examstatus || "-",
+      allowedwebsites: Array.isArray(exam?.allowedwebsites) ? exam.allowedwebsites : [],
+      allowedapplications: Array.isArray(exam?.allowedapplications)
+        ? exam.allowedapplications
+        : [],
+    }),
+    [exam]
+  );
+
+  const stopMedia = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  const startChecks = useCallback(async () => {
+    if (running) return;
+
+    setRunning(true);
+    setChecks({
+      camera: null,
+      face: null,
+      internet: null,
+    });
+
+    const next = {
+      camera: false,
+      face: false,
+      internet: false,
+    };
+
+    try {
+      const res = await fetch("http://localhost:3000/health");
+      next.internet = !!res.ok;
+    } catch {
+      next.internet = false;
+    }
+    setChecks((prev) => ({ ...prev, internet: next.internet }));
+
+    try {
+      stopMedia();
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+
+      next.camera = true;
+      setChecks((prev) => ({ ...prev, camera: true }));
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      const video = videoRef.current;
+      const canSeeVideo =
+        video &&
+        typeof video.videoWidth === "number" &&
+        typeof video.videoHeight === "number" &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0;
+
+      next.face = !!canSeeVideo;
+      setChecks((prev) => ({ ...prev, face: next.face }));
+    } catch {
+      next.camera = false;
+      next.face = false;
+      setChecks((prev) => ({ ...prev, camera: false, face: false }));
+    } finally {
+      setRunning(false);
+    }
+  }, [running, stopMedia]);
+
+  useEffect(() => {
+    if (hasAutoStartedRef.current) return;
+    hasAutoStartedRef.current = true;
+    startChecks();
+
+    return () => {
+      stopMedia();
+    };
+  }, [startChecks, stopMedia]);
+
+  const allPassed = Object.values(checks).every((v) => v === true);
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      background: '#0f1117'
-    }}>
-      <div style={{
-        height: 56, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', flexShrink: 0
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          height: 56,
+          background: "#1a1d27",
+          borderBottom: "1px solid #2e3347",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>👁️</span>
-          <span style={{ fontWeight: 700, fontSize: 15, color: '#e8eaf0' }}>3rdEyeZ360</span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>
+            3rdEyeZ360
+          </span>
         </div>
-        <LogoutButton />
+        <LogoutButton onLogout={onLogout} />
       </div>
 
-      <div style={{
-        flex: 1, display: 'flex', alignItems: 'center',
-        justifyContent: 'center', padding: 20
-      }}>
-        <div style={{
-          background: '#1a1d27', border: '1px solid #2e3347',
-          borderRadius: 16, padding: 40, width: 480,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
-        }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>System Check</h2>
-          <p style={{ color: '#8b90a0', fontSize: 13, marginBottom: 24 }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: 20,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+        }}
+      >
+        <div
+          style={{
+            background: "#1a1d27",
+            border: "1px solid #2e3347",
+            borderRadius: 16,
+            padding: 40,
+            width: "min(560px, 100%)",
+            boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+            marginBottom: 24,
+          }}
+        >
+          <h2
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              marginBottom: 6,
+              color: "#e8eaf0",
+            }}
+          >
+            System Check
+          </h2>
+
+          <p style={{ color: "#8b90a0", fontSize: 13, marginBottom: 18 }}>
             We need to verify your setup before the exam starts.
           </p>
 
-          <div style={{
-            width: '100%', aspectRatio: '16/9',
-            background: '#0f1117', borderRadius: 10,
-            overflow: 'hidden', marginBottom: 20
-          }}>
-            <video ref={videoRef} autoPlay muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          {exam && (
+            <div
+              style={{
+                background: "#22263a",
+                border: "1px solid #2e3347",
+                borderRadius: 10,
+                padding: 16,
+                marginBottom: 20,
+              }}
+            >
+              <div
+                style={{
+                  color: "#e8eaf0",
+                  fontWeight: 700,
+                  fontSize: 15,
+                  marginBottom: 10,
+                }}
+              >
+                {examView.name}
+              </div>
+
+              <div style={{ fontSize: 13, color: "#c7ccda", lineHeight: 1.7 }}>
+                <div>
+                  <strong>Assessment ID:</strong> {examView.assessmentid}
+                </div>
+                <div>
+                  <strong>Exam ID:</strong> {examView.examid}
+                </div>
+                <div>
+                  <strong>Duration:</strong> {examView.durationminutes} minutes
+                </div>
+                <div>
+                  <strong>Date:</strong> {examView.date}
+                </div>
+                <div>
+                  <strong>Time:</strong> {examView.starttime} - {examView.endtime}
+                </div>
+                <div>
+                  <strong>Assessment Status:</strong> {examView.status}
+                </div>
+                <div>
+                  <strong>Exam Status:</strong> {examView.examstatus}
+                </div>
+                <div>
+                  <strong>Allowed Websites:</strong>{" "}
+                  {examView.allowedwebsites.length > 0
+                    ? examView.allowedwebsites.join(", ")
+                    : "None"}
+                </div>
+                <div>
+                  <strong>Allowed Applications:</strong>{" "}
+                  {examView.allowedapplications.length > 0
+                    ? examView.allowedapplications.join(", ")
+                    : "None"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div
+            style={{
+              width: "100%",
+              aspectRatio: "16/9",
+              background: "#0f1117",
+              borderRadius: 10,
+              overflow: "hidden",
+              marginBottom: 20,
+              border: "1px solid #2e3347",
+            }}
+          >
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            <Item label="Camera & Microphone" status={checks.camera} />
-            <Item label="Face Visible" status={checks.face} />
-            <Item label="Internet Connection" status={checks.internet} />
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginBottom: 24,
+            }}
+          >
+            <CheckItem label="Camera & Microphone" status={checks.camera} />
+            <CheckItem label="Face Visible" status={checks.face} />
+            <CheckItem label="Internet Connection" status={checks.internet} />
           </div>
 
           {running && (
-            <p style={{ color: '#8b90a0', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>
+            <p
+              style={{
+                color: "#8b90a0",
+                fontSize: 13,
+                textAlign: "center",
+                marginBottom: 16,
+              }}
+            >
               Running checks...
             </p>
           )}
 
           {!running && !allPassed && (
-            <button onClick={startChecks} className="btn btn-ghost" style={{ width: '100%', marginBottom: 12 }}>
+            <button
+              onClick={startChecks}
+              className="btn btn-ghost"
+              style={{ width: "100%", marginBottom: 12 }}
+            >
               Retry Checks
             </button>
           )}
@@ -7811,8 +9231,11 @@ export default function PreCheck({ onPass }) {
             disabled={!allPassed}
             className="btn btn-primary"
             style={{
-              width: '100%', padding: '12px 0', fontSize: 15,
-              opacity: allPassed ? 1 : 0.4, cursor: allPassed ? 'pointer' : 'not-allowed'
+              width: "100%",
+              padding: "12px 0",
+              fontSize: 15,
+              opacity: allPassed ? 1 : 0.4,
+              cursor: allPassed ? "pointer" : "not-allowed",
             }}
           >
             Continue →
@@ -7820,7 +9243,7 @@ export default function PreCheck({ onPass }) {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 ===== FILE END =====
@@ -7956,124 +9379,326 @@ NAME : WaitScreen.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\WaitScreen.jsx
 =====================
 
-import React, { useState, useEffect } from 'react'
-import axios from 'axios'
-import useAuthStore from '../../store/authStore'
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import axios from "axios";
+import useAuthStore from "../../store/authStore";
 
-const API = 'http://localhost:3000'
+const API = "http://localhost:3000";
 
-function LogoutButton() {
-  const [loading, setLoading] = useState(false)
+function LogoutButton({ onLogout }) {
+  const [loading, setLoading] = useState(false);
 
-  const handleLogout = async () => {
-    if (loading) return
-    setLoading(true)
-
+  const handle = async () => {
+    if (loading) return;
+    setLoading(true);
     try {
-      const { refreshToken } = useAuthStore.getState()
-
-      if (refreshToken) {
-        try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
-        } catch (e) {
-          console.log('Logout API failed, clearing local session anyway', e)
-        }
-      }
+      await onLogout?.();
     } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-      window.location.reload()
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <button
-      onClick={handleLogout}
+      onClick={handle}
       disabled={loading}
       className="btn btn-ghost"
-      style={{ padding: '8px 14px', fontSize: 12 }}
+      style={{ padding: "8px 14px", fontSize: 12 }}
     >
-      {loading ? 'Signing out...' : 'Logout'}
+      {loading ? "Signing out..." : "Logout"}
     </button>
-  )
+  );
 }
 
-export default function WaitScreen({ exam, onExamStart }) {
-  const [now, setNow] = useState(new Date())
+export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) {
+  const { accessToken } = useAuthStore();
+  const [now, setNow] = useState(new Date());
+  const [checking, setChecking] = useState(true);
+  const [liveExam, setLiveExam] = useState(null);
+  const [liveAssessment, setLiveAssessment] = useState(null);
+  const [launched, setLaunched] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-  const startStr = `${exam?.date}T${exam?.start_time}:00`
-  const startTime = new Date(startStr)
-  const diffMs = startTime - now
-  const diffSecs = Math.max(0, Math.floor(diffMs / 1000))
-  const mins = Math.floor(diffSecs / 60)
-  const secs = diffSecs % 60
+  const examId = assessment?.examid || exam?.examid;
+  const assessmentId = assessment?.assessmentid || exam?.assessmentid;
+
+  const allowedSites = useMemo(() => {
+    if (Array.isArray(assessment?.allowedwebsites) && assessment.allowedwebsites.length) {
+      return assessment.allowedwebsites;
+    }
+    if (Array.isArray(exam?.allowedwebsites) && exam.allowedwebsites.length) {
+      return exam.allowedwebsites;
+    }
+    if (Array.isArray(liveAssessment?.allowedwebsites) && liveAssessment.allowedwebsites.length) {
+      return liveAssessment.allowedwebsites;
+    }
+    if (Array.isArray(liveExam?.allowedwebsites) && liveExam.allowedwebsites.length) {
+      return liveExam.allowedwebsites;
+    }
+    return [];
+  }, [assessment, exam, liveAssessment, liveExam]);
+
+  const ensureBrowserVisible = useCallback(async () => {
+    if (!window.electronAPI) return;
+
+    try {
+      await window.electronAPI.enableLockdown?.();
+      await window.electronAPI.setClosable?.(false);
+      await window.electronAPI.openBrowser?.({
+        allowedWebsites: allowedSites,
+      });
+
+      if (allowedSites.length > 0) {
+        await window.electronAPI.navigateBrowser?.(allowedSites[0]);
+      }
+    } catch (e) {
+      console.log("ensureBrowserVisible failed", e);
+    }
+  }, [allowedSites]);
+
+  const checkExamStatus = useCallback(async () => {
+    if (!examId || !accessToken) {
+      setChecking(false);
+      return;
+    }
+
+    try {
+      const [examRes, assessmentRes] = await Promise.all([
+        axios.get(`${API}/api/exams/${examId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+        assessmentId
+          ? axios.get(`${API}/api/assessments/${assessmentId}`, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            })
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const latestExam = examRes?.data || null;
+      const latestAssessment = assessmentRes?.data || null;
+
+      if (latestExam) setLiveExam(latestExam);
+      if (latestAssessment) setLiveAssessment(latestAssessment);
+
+      const examRunning = latestExam?.status === "Running";
+      const assessmentActive = [
+        "ACTIVE",
+        "READY",
+        "REENTRYAPPROVED",
+        "LATEENTRYAPPROVED",
+      ].includes(latestAssessment?.status);
+
+      if (examRunning && assessmentActive && !launched) {
+        setLaunched(true);
+        await ensureBrowserVisible();
+        onExamStart?.();
+      }
+    } catch (e) {
+      console.log("Wait screen status check failed", e);
+    } finally {
+      setChecking(false);
+    }
+  }, [examId, assessmentId, accessToken, launched, onExamStart, ensureBrowserVisible]);
 
   useEffect(() => {
-  }, [])
+    ensureBrowserVisible();
+  }, [ensureBrowserVisible]);
+
+  useEffect(() => {
+    checkExamStatus();
+    const poll = setInterval(checkExamStatus, 3000);
+    return () => clearInterval(poll);
+  }, [checkExamStatus]);
+
+  const merged = useMemo(
+    () => ({
+      ...(exam || {}),
+      ...(assessment || {}),
+      ...(liveExam || {}),
+      ...(liveAssessment || {}),
+    }),
+    [exam, assessment, liveExam, liveAssessment]
+  );
+
+  const examName = merged.name || "Upcoming Exam";
+  const dateLabel = merged.date || "--";
+  const startLabel = merged.starttime || "--:--";
+  const assessmentStatus =
+    liveAssessment?.status || assessment?.status || merged.status || "-";
+  const examStatus = liveExam?.status || merged.examstatus || "-";
+
+  const startStr =
+    merged.date && merged.starttime ? `${merged.date}T${merged.starttime}:00` : null;
+  const startTime = startStr ? new Date(startStr) : null;
+  const diffMs = startTime ? startTime - now : 0;
+  const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+  const mins = Math.floor(diffSecs / 60);
+  const secs = diffSecs % 60;
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      background: '#0f1117'
-    }}>
-      <div style={{
-        height: 56, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', flexShrink: 0
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+      }}
+    >
+      <div
+        style={{
+          height: 56,
+          background: "#1a1d27",
+          borderBottom: "1px solid #2e3347",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>👁️</span>
-          <span style={{ fontWeight: 700, fontSize: 15, color: '#e8eaf0' }}>3rdEyeZ360</span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>
+            3rdEyeZ360
+          </span>
         </div>
-        <LogoutButton />
+        <LogoutButton onLogout={onLogout} />
       </div>
 
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', padding: 20
-      }}>
-        <div style={{ textAlign: 'center', maxWidth: 440 }}>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 20,
+        }}
+      >
+        <div style={{ textAlign: "center", maxWidth: 520, width: "100%" }}>
           <div style={{ fontSize: 64, marginBottom: 24 }}>⏳</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+
+          <h2
+            style={{
+              fontSize: 22,
+              fontWeight: 700,
+              marginBottom: 8,
+              color: "#e8eaf0",
+            }}
+          >
             Waiting for Exam to Begin
           </h2>
-          <p style={{ color: '#8b90a0', fontSize: 14, marginBottom: 32 }}>
-            Your examiner will start the exam. Please stay at your desk and remain visible on camera.
+
+          <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 24 }}>
+            Your secure exam workspace is prepared. Please wait while the examiner starts the exam.
           </p>
 
-          <div style={{
-            background: '#1a1d27', border: '1px solid #2e3347',
-            borderRadius: 16, padding: 32, marginBottom: 24
-          }}>
-            <div style={{ fontSize: 13, color: '#8b90a0', marginBottom: 8 }}>Exam starts at</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#4f8ef7' }}>
-              {exam?.start_time}
+          <div
+            style={{
+              background: "#1a1d27",
+              border: "1px solid #2e3347",
+              borderRadius: 16,
+              padding: 32,
+              marginBottom: 24,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color: "#e8eaf0",
+                marginBottom: 8,
+              }}
+            >
+              {examName}
             </div>
+
+            <div style={{ fontSize: 13, color: "#8b90a0", marginBottom: 18 }}>
+              {dateLabel}
+            </div>
+
+            <div style={{ fontSize: 13, color: "#8b90a0", marginBottom: 8 }}>
+              Exam starts at
+            </div>
+
+            <div style={{ fontSize: 28, fontWeight: 700, color: "#4f8ef7" }}>
+              {startLabel}
+            </div>
+
             {diffSecs > 0 && (
-              <div style={{ fontSize: 13, color: '#8b90a0', marginTop: 8 }}>
-                {mins}m {String(secs).padStart(2, '0')}s remaining
+              <div style={{ fontSize: 13, color: "#8b90a0", marginTop: 8 }}>
+                {mins}m {String(secs).padStart(2, "0")}s remaining
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 10,
+                textAlign: "left",
+                marginTop: 20,
+              }}
+            >
+              <div
+                style={{
+                  background: "#22263a",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                }}
+              >
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
+                  Exam status
+                </div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>
+                  {examStatus}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "#22263a",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                }}
+              >
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
+                  Assessment status
+                </div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>
+                  {assessmentStatus}
+                </div>
+              </div>
+            </div>
+
+            {checking && (
+              <div style={{ fontSize: 12, color: "#8b90a0", marginTop: 14 }}>
+                Checking live exam status...
               </div>
             )}
           </div>
 
-          <div style={{
-            background: '#0f2a1a', border: '1px solid #34c97a',
-            borderRadius: 10, padding: '12px 16px',
-            fontSize: 13, color: '#34c97a'
-          }}>
-            ✅ Your monitoring is active. Stay visible on camera.
+          <div
+            style={{
+              background: "#0f2a1a",
+              border: "1px solid #34c97a",
+              borderRadius: 10,
+              padding: "12px 16px",
+              fontSize: 13,
+              color: "#34c97a",
+            }}
+          >
+            ✅ Secure browser is prepared. Stay visible on camera and wait for the exam to go live.
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 ===== FILE END =====
@@ -8083,7 +9708,7 @@ NAME : AssignCandidates.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\examiner\AssignCandidates.jsx
 =====================
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import useAuthStore from '../../store/authStore'
 
@@ -8111,7 +9736,6 @@ function LogoutButton() {
       localStorage.removeItem('auth-storage')
       localStorage.removeItem('exam-storage')
       useAuthStore.getState().clearAuth()
-      window.location.reload()
     }
   }
 
@@ -8134,8 +9758,12 @@ export default function AssignCandidates({ exam, onBack }) {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
-  const headers = { Authorization: `Bearer ${accessToken}` }
+  const headers = useMemo(
+    () => ({ Authorization: `Bearer ${accessToken}` }),
+    [accessToken]
+  )
 
   useEffect(() => {
     loadData()
@@ -8143,16 +9771,38 @@ export default function AssignCandidates({ exam, onBack }) {
 
   const loadData = async () => {
     setLoading(true)
-    const [allRes, assignedRes] = await Promise.all([
-      axios.get(`${API}/api/users?role=Candidate`, { headers }),
-      axios.get(`${API}/api/exams/${exam.exam_id}/assessments`, { headers })
-    ])
-    setAllCandidates(allRes.data)
-    setAssigned(assignedRes.data.map(a => a.candidate_id))
-    setLoading(false)
+    setError('')
+
+    try {
+      const [allRes, assignedRes] = await Promise.all([
+        axios.get(`${API}/api/users?role=Candidate`, { headers }),
+        axios.get(`${API}/api/exams/${exam.exam_id}/assessments`, { headers })
+      ])
+
+      const normalizedCandidates = (allRes.data || []).map(c => ({
+        ...c,
+        user_id: c.user_id || c.userid || '',
+        name: c.name || '',
+        email: c.email || ''
+      }))
+
+      const assignedIds = (assignedRes.data || []).map(a => a.candidate_id)
+
+      setAllCandidates(normalizedCandidates)
+      setAssigned(assignedIds)
+    } catch (e) {
+      console.error('Failed to load candidates/assignments', e)
+      setError(e?.response?.data?.detail || 'Failed to load candidates.')
+      setAllCandidates([])
+      setAssigned([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   const toggle = async (candidateId) => {
+    if (!candidateId) return
+
     setSaving(true)
     const isAssigned = assigned.includes(candidateId)
 
@@ -8169,7 +9819,8 @@ export default function AssignCandidates({ exam, onBack }) {
         setAssigned(prev => [...prev, candidateId])
       }
     } catch (e) {
-      console.error(e)
+      console.error('Assignment update failed', e)
+      alert(e?.response?.data?.detail || 'Failed to update assignment.')
     } finally {
       setSaving(false)
     }
@@ -8182,21 +9833,34 @@ export default function AssignCandidates({ exam, onBack }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-      <div style={{
-        height: 52, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, flexShrink: 0
-      }}>
+      <div
+        style={{
+          height: 52,
+          background: '#1a1d27',
+          borderBottom: '1px solid #2e3347',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 24px',
+          gap: 12,
+          flexShrink: 0
+        }}
+      >
         <button onClick={onBack} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}>
           ← Back
         </button>
+
         <span style={{ fontWeight: 700, fontSize: 15 }}>Assign Candidates</span>
         <span style={{ fontSize: 12, color: '#8b90a0' }}>— {exam.name}</span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            background: '#22263a', borderRadius: 8,
-            padding: '5px 14px', fontSize: 13
-          }}>
+          <div
+            style={{
+              background: '#22263a',
+              borderRadius: 8,
+              padding: '5px 14px',
+              fontSize: 13
+            }}
+          >
             {assigned.length} assigned
           </div>
           <LogoutButton />
@@ -8216,6 +9880,19 @@ export default function AssignCandidates({ exam, onBack }) {
             <div style={{ textAlign: 'center', color: '#8b90a0', padding: 40 }}>
               Loading candidates...
             </div>
+          ) : error ? (
+            <div
+              style={{
+                textAlign: 'center',
+                color: '#f75f5f',
+                padding: 40,
+                background: '#2a1010',
+                border: '1px solid #f75f5f',
+                borderRadius: 10
+              }}
+            >
+              {error}
+            </div>
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#8b90a0', padding: 40 }}>
               No candidates found.
@@ -8224,25 +9901,39 @@ export default function AssignCandidates({ exam, onBack }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {filtered.map(c => {
                 const isAssigned = assigned.includes(c.user_id)
+
                 return (
-                  <div key={c.user_id} style={{
-                    background: '#1a1d27',
-                    border: `1px solid ${isAssigned ? '#34c97a' : '#2e3347'}`,
-                    borderRadius: 10, padding: '14px 18px',
-                    display: 'flex', alignItems: 'center', gap: 14
-                  }}>
-                    <div style={{
-                      width: 38, height: 38, borderRadius: '50%',
-                      background: isAssigned ? '#0f2a1a' : '#22263a',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 18, flexShrink: 0
-                    }}>
+                  <div
+                    key={c.user_id}
+                    style={{
+                      background: '#1a1d27',
+                      border: `1px solid ${isAssigned ? '#34c97a' : '#2e3347'}`,
+                      borderRadius: 10,
+                      padding: '14px 18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 14
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: '50%',
+                        background: isAssigned ? '#0f2a1a' : '#22263a',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 18,
+                        flexShrink: 0
+                      }}
+                    >
                       {isAssigned ? '✅' : '👤'}
                     </div>
 
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: '#8b90a0' }}>{c.email}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name || 'Unnamed candidate'}</div>
+                      <div style={{ fontSize: 12, color: '#8b90a0' }}>{c.email || 'No email'}</div>
                     </div>
 
                     <button
@@ -8278,9 +9969,39 @@ import useAuthStore from '../../store/authStore'
 const API = 'http://localhost:3000'
 
 const defaultForm = {
-  name: '', description: '', date: '', start_time: '',
-  end_time: '', duration_minutes: 120, threshold: 10,
-  instructions: '', allowed_websites: [], allowed_applications: []
+  name: '',
+  description: '',
+  date: '',
+  start_time: '',
+  end_time: '',
+  duration_minutes: 120,
+  violation_threshold: 10,
+  instructions: '',
+  allowed_websites: [],
+  allowed_applications: []
+}
+
+function Field({ label, error, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <label style={{ fontSize: 12, color: '#8b90a0', display: 'block', marginBottom: 6 }}>
+        {label}
+      </label>
+      {children}
+      {error && <div style={{ fontSize: 11, color: '#f75f5f', marginTop: 4 }}>{error}</div>}
+    </div>
+  )
+}
+
+const inputStyle = {
+  background: '#22263a',
+  border: '1px solid #2e3347',
+  borderRadius: 8,
+  padding: '8px 12px',
+  color: '#e8eaf0',
+  fontSize: 14,
+  width: '100%',
+  outline: 'none'
 }
 
 export default function CreateExam({ onBack, onCreated }) {
@@ -8298,140 +10019,217 @@ export default function CreateExam({ onBack, onCreated }) {
 
   const validate = () => {
     const e = {}
+
     if (!form.name.trim()) e.name = 'Exam name is required'
     if (!form.date) e.date = 'Date is required'
     if (!form.start_time) e.start_time = 'Start time is required'
     if (!form.end_time) e.end_time = 'End time is required'
     if (form.duration_minutes < 1) e.duration_minutes = 'Duration must be at least 1 minute'
+    if (form.violation_threshold < 1) e.violation_threshold = 'Violation threshold must be at least 1'
     if (form.allowed_websites.length === 0) e.websites = 'Add at least one allowed website'
+
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
   const addWebsite = () => {
     if (!websiteInput.trim()) return
+
     let url = websiteInput.trim()
     if (!url.startsWith('http')) url = `https://${url}`
+
     if (!form.allowed_websites.includes(url)) {
       set('allowed_websites', [...form.allowed_websites, url])
     }
+
     setWebsiteInput('')
   }
 
-  const removeWebsite = (url) =>
+  const removeWebsite = (url) => {
     set('allowed_websites', form.allowed_websites.filter(w => w !== url))
+  }
 
   const addApp = () => {
     if (!appInput.trim()) return
-    if (!form.allowed_applications.includes(appInput.trim())) {
-      set('allowed_applications', [...form.allowed_applications, appInput.trim()])
+
+    const value = appInput.trim()
+    if (!form.allowed_applications.includes(value)) {
+      set('allowed_applications', [...form.allowed_applications, value])
     }
+
     setAppInput('')
   }
 
-  const removeApp = (app) =>
+  const removeApp = (app) => {
     set('allowed_applications', form.allowed_applications.filter(a => a !== app))
+  }
 
   const handleSave = async (status = 'Published') => {
     if (!validate()) return
+
     setLoading(true)
     try {
-      const res = await axios.post(`${API}/api/exams`, {
-        ...form,
-        examiner_id: user.user_id,
-        status
-      }, { headers })
+      const res = await axios.post(
+        `${API}/api/exams`,
+        {
+          ...form,
+          examiner_id: user.user_id,
+          status
+        },
+        { headers }
+      )
+
       setSaved(true)
       setTimeout(() => onCreated?.(res.data), 1200)
     } catch (e) {
       setErrors({ submit: e.response?.data?.detail || 'Failed to create exam' })
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const Field = ({ label, error, children }) => (
-    <div style={{ marginBottom: 18 }}>
-      <label style={{ fontSize: 12, color: '#8b90a0', display: 'block', marginBottom: 6 }}>
-        {label}
-      </label>
-      {children}
-      {error && <div style={{ fontSize: 11, color: '#f75f5f', marginTop: 4 }}>{error}</div>}
-    </div>
-  )
-
-  if (saved) return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', background: '#0f1117' }}>
-      <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
-      <h2 style={{ fontSize: 20, fontWeight: 700 }}>Exam Created!</h2>
-      <p style={{ color: '#8b90a0', marginTop: 8 }}>Redirecting to exam list...</p>
-    </div>
-  )
+  if (saved) {
+    return (
+      <div
+        style={{
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#0f1117'
+        }}
+      >
+        <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+        <h2 style={{ fontSize: 20, fontWeight: 700 }}>Exam Created!</h2>
+        <p style={{ color: '#8b90a0', marginTop: 8 }}>Redirecting to exam list...</p>
+      </div>
+    )
+  }
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-      {/* Header */}
-      <div style={{
-        height: 52, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, flexShrink: 0
-      }}>
+      <div
+        style={{
+          height: 52,
+          background: '#1a1d27',
+          borderBottom: '1px solid #2e3347',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 24px',
+          gap: 12,
+          flexShrink: 0
+        }}
+      >
         <button onClick={onBack} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}>
           ← Back
         </button>
         <span style={{ fontWeight: 700, fontSize: 15 }}>Create New Exam</span>
       </div>
 
-      {/* Scrollable Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 32 }}>
         <div style={{ maxWidth: 680, margin: '0 auto' }}>
-
           {errors.submit && (
-            <div style={{
-              background: '#2a1010', border: '1px solid #f75f5f',
-              borderRadius: 8, padding: '10px 16px', color: '#f75f5f',
-              fontSize: 13, marginBottom: 20
-            }}>{errors.submit}</div>
+            <div
+              style={{
+                background: '#2a1010',
+                border: '1px solid #f75f5f',
+                borderRadius: 8,
+                padding: '10px 16px',
+                color: '#f75f5f',
+                fontSize: 13,
+                marginBottom: 20
+              }}
+            >
+              {errors.submit}
+            </div>
           )}
 
-          {/* Section: Basic Info */}
-          <div style={{
-            background: '#1a1d27', border: '1px solid #2e3347',
-            borderRadius: 14, padding: 24, marginBottom: 20
-          }}>
+          <div
+            style={{
+              background: '#1a1d27',
+              border: '1px solid #2e3347',
+              borderRadius: 14,
+              padding: 24,
+              marginBottom: 20
+            }}
+          >
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 20, color: '#4f8ef7' }}>
               📋 Basic Information
             </h3>
+
             <Field label="Exam Name *" error={errors.name}>
-              <input value={form.name} onChange={e => set('name', e.target.value)}
-                placeholder="e.g. Java Technical Assessment" />
+              <input
+                value={form.name}
+                onChange={e => set('name', e.target.value)}
+                placeholder="e.g. Java Technical Assessment"
+                style={inputStyle}
+              />
             </Field>
+
             <Field label="Description">
-              <textarea value={form.description} onChange={e => set('description', e.target.value)}
-                rows={3} placeholder="Brief description of this exam..."
+              <textarea
+                value={form.description}
+                onChange={e => set('description', e.target.value)}
+                rows={3}
+                placeholder="Brief description of this exam..."
                 style={{
-                  background: '#22263a', border: '1px solid #2e3347',
-                  borderRadius: 8, padding: '8px 12px', color: '#e8eaf0',
-                  fontSize: 14, width: '100%', resize: 'vertical', outline: 'none'
-                }} />
+                  ...inputStyle,
+                  resize: 'vertical'
+                }}
+              />
             </Field>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
               <Field label="Date *" error={errors.date}>
-                <input type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={e => set('date', e.target.value)}
+                  style={inputStyle}
+                />
               </Field>
+
               <Field label="Start Time *" error={errors.start_time}>
-                <input type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} />
+                <input
+                  type="time"
+                  value={form.start_time}
+                  onChange={e => set('start_time', e.target.value)}
+                  style={inputStyle}
+                />
               </Field>
+
               <Field label="End Time *" error={errors.end_time}>
-                <input type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)} />
+                <input
+                  type="time"
+                  value={form.end_time}
+                  onChange={e => set('end_time', e.target.value)}
+                  style={inputStyle}
+                />
               </Field>
             </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <Field label="Duration (minutes) *" error={errors.duration_minutes}>
-                <input type="number" min={1} max={480} value={form.duration_minutes}
-                  onChange={e => set('duration_minutes', parseInt(e.target.value) || 0)} />
+                <input
+                  type="number"
+                  min={1}
+                  max={480}
+                  value={form.duration_minutes}
+                  onChange={e => set('duration_minutes', parseInt(e.target.value, 10) || 0)}
+                  style={inputStyle}
+                />
               </Field>
-              <Field label="Violation Threshold">
-                <input type="number" min={1} max={100} value={form.threshold}
-                  onChange={e => set('threshold', parseInt(e.target.value) || 10)} />
+
+              <Field label="Violation Threshold" error={errors.violation_threshold}>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={form.violation_threshold}
+                  onChange={e => set('violation_threshold', parseInt(e.target.value, 10) || 10)}
+                  style={inputStyle}
+                />
                 <div style={{ fontSize: 11, color: '#8b90a0', marginTop: 4 }}>
                   Assessment locks when total risk score reaches this number
                 </div>
@@ -8439,124 +10237,204 @@ export default function CreateExam({ onBack, onCreated }) {
             </div>
           </div>
 
-          {/* Section: Allowed Websites */}
-          <div style={{
-            background: '#1a1d27', border: `1px solid ${errors.websites ? '#f75f5f' : '#2e3347'}`,
-            borderRadius: 14, padding: 24, marginBottom: 20
-          }}>
+          <div
+            style={{
+              background: '#1a1d27',
+              border: `1px solid ${errors.websites ? '#f75f5f' : '#2e3347'}`,
+              borderRadius: 14,
+              padding: 24,
+              marginBottom: 20
+            }}
+          >
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#4f8ef7' }}>
               🌐 Allowed Websites *
             </h3>
+
             <p style={{ fontSize: 12, color: '#8b90a0', marginBottom: 16 }}>
               Candidates can only visit these websites during the exam. Add the exam platform + login page.
             </p>
+
             {errors.websites && (
               <div style={{ fontSize: 11, color: '#f75f5f', marginBottom: 12 }}>{errors.websites}</div>
             )}
+
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input value={websiteInput} onChange={e => setWebsiteInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addWebsite()}
+              <input
+                value={websiteInput}
+                onChange={e => setWebsiteInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addWebsite()
+                  }
+                }}
                 placeholder="exam.company.com"
-                style={{ flex: 1 }}
+                style={{ ...inputStyle, flex: 1 }}
               />
-              <button onClick={addWebsite} className="btn btn-primary"
-                style={{ padding: '8px 16px', fontSize: 13 }}>Add</button>
+              <button onClick={addWebsite} className="btn btn-primary" style={{ padding: '8px 16px', fontSize: 13 }}>
+                Add
+              </button>
             </div>
+
             {form.allowed_websites.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#8b90a0', padding: '10px 0' }}>
-                No websites added yet.
-              </div>
+              <div style={{ fontSize: 12, color: '#8b90a0', padding: '10px 0' }}>No websites added yet.</div>
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {form.allowed_websites.map(url => (
-                  <div key={url} style={{
-                    background: '#0f2a1a', border: '1px solid #34c97a',
-                    borderRadius: 20, padding: '5px 12px', fontSize: 12,
-                    color: '#34c97a', display: 'flex', alignItems: 'center', gap: 8
-                  }}>
+                  <div
+                    key={url}
+                    style={{
+                      background: '#0f2a1a',
+                      border: '1px solid #34c97a',
+                      borderRadius: 20,
+                      padding: '5px 12px',
+                      fontSize: 12,
+                      color: '#34c97a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8
+                    }}
+                  >
                     🔗 {url}
-                    <button onClick={() => removeWebsite(url)} style={{
-                      background: 'none', color: '#34c97a', fontSize: 14,
-                      cursor: 'pointer', lineHeight: 1, padding: 0
-                    }}>×</button>
+                    <button
+                      onClick={() => removeWebsite(url)}
+                      style={{
+                        background: 'none',
+                        color: '#34c97a',
+                        fontSize: 14,
+                        cursor: 'pointer',
+                        lineHeight: 1,
+                        padding: 0
+                      }}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Section: Allowed Applications */}
-          <div style={{
-            background: '#1a1d27', border: '1px solid #2e3347',
-            borderRadius: 14, padding: 24, marginBottom: 20
-          }}>
+          <div
+            style={{
+              background: '#1a1d27',
+              border: '1px solid #2e3347',
+              borderRadius: 14,
+              padding: 24,
+              marginBottom: 20
+            }}
+          >
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#4f8ef7' }}>
               💻 Allowed Applications
             </h3>
+
             <p style={{ fontSize: 12, color: '#8b90a0', marginBottom: 16 }}>
               Optional. Applications that are permitted to run (e.g. Calculator, Notepad). All others will be flagged.
             </p>
+
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input value={appInput} onChange={e => setAppInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addApp()}
+              <input
+                value={appInput}
+                onChange={e => setAppInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addApp()
+                  }
+                }}
                 placeholder="Calculator"
-                style={{ flex: 1 }}
+                style={{ ...inputStyle, flex: 1 }}
               />
-              <button onClick={addApp} className="btn btn-ghost"
-                style={{ padding: '8px 16px', fontSize: 13 }}>Add</button>
+              <button onClick={addApp} className="btn btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>
+                Add
+              </button>
             </div>
+
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {form.allowed_applications.map(app => (
-                <div key={app} style={{
-                  background: '#22263a', border: '1px solid #2e3347',
-                  borderRadius: 20, padding: '5px 12px', fontSize: 12,
-                  color: '#c8cad0', display: 'flex', alignItems: 'center', gap: 8
-                }}>
+                <div
+                  key={app}
+                  style={{
+                    background: '#22263a',
+                    border: '1px solid #2e3347',
+                    borderRadius: 20,
+                    padding: '5px 12px',
+                    fontSize: 12,
+                    color: '#c8cad0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}
+                >
                   {app}
-                  <button onClick={() => removeApp(app)} style={{
-                    background: 'none', color: '#8b90a0', fontSize: 14,
-                    cursor: 'pointer', lineHeight: 1, padding: 0
-                  }}>×</button>
+                  <button
+                    onClick={() => removeApp(app)}
+                    style={{
+                      background: 'none',
+                      color: '#8b90a0',
+                      fontSize: 14,
+                      cursor: 'pointer',
+                      lineHeight: 1,
+                      padding: 0
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Section: Instructions */}
-          <div style={{
-            background: '#1a1d27', border: '1px solid #2e3347',
-            borderRadius: 14, padding: 24, marginBottom: 28
-          }}>
+          <div
+            style={{
+              background: '#1a1d27',
+              border: '1px solid #2e3347',
+              borderRadius: 14,
+              padding: 24,
+              marginBottom: 28
+            }}
+          >
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#4f8ef7' }}>
               📝 Candidate Instructions
             </h3>
+
             <p style={{ fontSize: 12, color: '#8b90a0', marginBottom: 16 }}>
               These will be shown to candidates on the Instructions screen before the exam starts.
             </p>
-            <textarea value={form.instructions}
+
+            <textarea
+              value={form.instructions}
               onChange={e => set('instructions', e.target.value)}
               rows={5}
               placeholder="e.g. This is a 2-hour Java assessment. Keep your camera on at all times. Read all questions carefully..."
               style={{
-                background: '#22263a', border: '1px solid #2e3347',
-                borderRadius: 8, padding: '10px 12px', color: '#e8eaf0',
-                fontSize: 14, width: '100%', resize: 'vertical', outline: 'none', lineHeight: 1.7
+                ...inputStyle,
+                padding: '10px 12px',
+                resize: 'vertical',
+                lineHeight: 1.7
               }}
             />
           </div>
 
-          {/* Action Buttons */}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-            <button onClick={() => handleSave('Draft')} disabled={loading}
-              className="btn btn-ghost" style={{ padding: '11px 24px', fontSize: 14 }}>
+            <button
+              onClick={() => handleSave('Draft')}
+              disabled={loading}
+              className="btn btn-ghost"
+              style={{ padding: '11px 24px', fontSize: 14 }}
+            >
               Save as Draft
             </button>
-            <button onClick={() => handleSave('Published')} disabled={loading}
-              className="btn btn-primary" style={{ padding: '11px 28px', fontSize: 14 }}>
+
+            <button
+              onClick={() => handleSave('Published')}
+              disabled={loading}
+              className="btn btn-primary"
+              style={{ padding: '11px 28px', fontSize: 14 }}
+            >
               {loading ? 'Creating...' : '✅ Publish Exam'}
             </button>
           </div>
-
         </div>
       </div>
     </div>
@@ -8623,7 +10501,7 @@ function LogoutButton() {
       localStorage.removeItem('auth-storage')
       localStorage.removeItem('exam-storage')
       useAuthStore.getState().clearAuth()
-      window.location.reload()
+
     }
   }
 
@@ -9215,7 +11093,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\store\authStore.js
 =====================
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 const useAuthStore = create(
   persist(
@@ -9223,6 +11101,7 @@ const useAuthStore = create(
       user: null,
       accessToken: null,
       refreshToken: null,
+      hasHydrated: false,
 
       setAuth: (user, accessToken, refreshToken) =>
         set({
@@ -9237,9 +11116,26 @@ const useAuthStore = create(
           accessToken: null,
           refreshToken: null,
         }),
+
+      setHasHydrated: (value) =>
+        set({
+          hasHydrated: value,
+        }),
     }),
     {
       name: "auth-storage",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        user: state.user,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+      }),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error("Auth store hydration failed", error);
+        }
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

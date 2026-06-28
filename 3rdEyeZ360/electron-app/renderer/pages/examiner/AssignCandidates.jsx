@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import useAuthStore from '../../store/authStore'
 
@@ -26,7 +26,6 @@ function LogoutButton() {
       localStorage.removeItem('auth-storage')
       localStorage.removeItem('exam-storage')
       useAuthStore.getState().clearAuth()
-      
     }
   }
 
@@ -49,8 +48,12 @@ export default function AssignCandidates({ exam, onBack }) {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
-  const headers = { Authorization: `Bearer ${accessToken}` }
+  const headers = useMemo(
+    () => ({ Authorization: `Bearer ${accessToken}` }),
+    [accessToken]
+  )
 
   useEffect(() => {
     loadData()
@@ -58,16 +61,38 @@ export default function AssignCandidates({ exam, onBack }) {
 
   const loadData = async () => {
     setLoading(true)
-    const [allRes, assignedRes] = await Promise.all([
-      axios.get(`${API}/api/users?role=Candidate`, { headers }),
-      axios.get(`${API}/api/exams/${exam.exam_id}/assessments`, { headers })
-    ])
-    setAllCandidates(allRes.data)
-    setAssigned(assignedRes.data.map(a => a.candidate_id))
-    setLoading(false)
+    setError('')
+
+    try {
+      const [allRes, assignedRes] = await Promise.all([
+        axios.get(`${API}/api/users?role=Candidate`, { headers }),
+        axios.get(`${API}/api/exams/${exam.exam_id}/assessments`, { headers })
+      ])
+
+      const normalizedCandidates = (allRes.data || []).map(c => ({
+        ...c,
+        user_id: c.user_id || c.userid || '',
+        name: c.name || '',
+        email: c.email || ''
+      }))
+
+      const assignedIds = (assignedRes.data || []).map(a => a.candidate_id)
+
+      setAllCandidates(normalizedCandidates)
+      setAssigned(assignedIds)
+    } catch (e) {
+      console.error('Failed to load candidates/assignments', e)
+      setError(e?.response?.data?.detail || 'Failed to load candidates.')
+      setAllCandidates([])
+      setAssigned([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   const toggle = async (candidateId) => {
+    if (!candidateId) return
+
     setSaving(true)
     const isAssigned = assigned.includes(candidateId)
 
@@ -84,7 +109,8 @@ export default function AssignCandidates({ exam, onBack }) {
         setAssigned(prev => [...prev, candidateId])
       }
     } catch (e) {
-      console.error(e)
+      console.error('Assignment update failed', e)
+      alert(e?.response?.data?.detail || 'Failed to update assignment.')
     } finally {
       setSaving(false)
     }
@@ -97,21 +123,34 @@ export default function AssignCandidates({ exam, onBack }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-      <div style={{
-        height: 52, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-        display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, flexShrink: 0
-      }}>
+      <div
+        style={{
+          height: 52,
+          background: '#1a1d27',
+          borderBottom: '1px solid #2e3347',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 24px',
+          gap: 12,
+          flexShrink: 0
+        }}
+      >
         <button onClick={onBack} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 13 }}>
           ← Back
         </button>
+
         <span style={{ fontWeight: 700, fontSize: 15 }}>Assign Candidates</span>
         <span style={{ fontSize: 12, color: '#8b90a0' }}>— {exam.name}</span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            background: '#22263a', borderRadius: 8,
-            padding: '5px 14px', fontSize: 13
-          }}>
+          <div
+            style={{
+              background: '#22263a',
+              borderRadius: 8,
+              padding: '5px 14px',
+              fontSize: 13
+            }}
+          >
             {assigned.length} assigned
           </div>
           <LogoutButton />
@@ -131,6 +170,19 @@ export default function AssignCandidates({ exam, onBack }) {
             <div style={{ textAlign: 'center', color: '#8b90a0', padding: 40 }}>
               Loading candidates...
             </div>
+          ) : error ? (
+            <div
+              style={{
+                textAlign: 'center',
+                color: '#f75f5f',
+                padding: 40,
+                background: '#2a1010',
+                border: '1px solid #f75f5f',
+                borderRadius: 10
+              }}
+            >
+              {error}
+            </div>
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#8b90a0', padding: 40 }}>
               No candidates found.
@@ -139,25 +191,39 @@ export default function AssignCandidates({ exam, onBack }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {filtered.map(c => {
                 const isAssigned = assigned.includes(c.user_id)
+
                 return (
-                  <div key={c.user_id} style={{
-                    background: '#1a1d27',
-                    border: `1px solid ${isAssigned ? '#34c97a' : '#2e3347'}`,
-                    borderRadius: 10, padding: '14px 18px',
-                    display: 'flex', alignItems: 'center', gap: 14
-                  }}>
-                    <div style={{
-                      width: 38, height: 38, borderRadius: '50%',
-                      background: isAssigned ? '#0f2a1a' : '#22263a',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 18, flexShrink: 0
-                    }}>
+                  <div
+                    key={c.user_id}
+                    style={{
+                      background: '#1a1d27',
+                      border: `1px solid ${isAssigned ? '#34c97a' : '#2e3347'}`,
+                      borderRadius: 10,
+                      padding: '14px 18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 14
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: '50%',
+                        background: isAssigned ? '#0f2a1a' : '#22263a',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 18,
+                        flexShrink: 0
+                      }}
+                    >
                       {isAssigned ? '✅' : '👤'}
                     </div>
 
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: '#8b90a0' }}>{c.email}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name || 'Unnamed candidate'}</div>
+                      <div style={{ fontSize: 12, color: '#8b90a0' }}>{c.email || 'No email'}</div>
                     </div>
 
                     <button

@@ -25,8 +25,11 @@ class CreateUserRequest(BaseModel):
 @router.get("")
 async def list_users(
     role: str | None = None,
-    current_user=Depends(require_role("Admin")),
+    current_user=Depends(require_role("Admin", "Examiner")),
 ):
+    if current_user["role"] == "Examiner" and role != "Candidate":
+        raise HTTPException(status_code=403, detail="Access denied")
+
     return await get_all_users(role)
 
 

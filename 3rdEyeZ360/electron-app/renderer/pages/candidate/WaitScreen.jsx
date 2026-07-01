@@ -29,7 +29,29 @@ function LogoutButton({ onLogout }) {
   );
 }
 
-export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) {
+const RUNNABLE_ASSESSMENT_STATUSES = new Set([
+  "ACTIVE",
+  "PAUSED",
+  "READY",
+  "ASSIGNED",
+  "AVAILABLE",
+  "REENTRYAPPROVED",
+  "LATEENTRYAPPROVED",
+  "REENTRY_APPROVED",
+  "LATEENTRY_APPROVED",
+]);
+
+const TERMINAL_ASSESSMENT_STATUSES = new Set([
+  "TERMINATED",
+  "LOCKED",
+]);
+
+const TERMINAL_EXAM_STATUSES = new Set([
+  "Completed",
+  "Terminated",
+]);
+
+export default function WaitScreen({ exam, assessment, onExamStart, onLogout, onComplete }) {
   const { accessToken } = useAuthStore();
   const [now, setNow] = useState(new Date());
   const [checking, setChecking] = useState(true);
@@ -55,36 +77,45 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
     exam?.assessment_id;
 
   const allowedSites = useMemo(() => {
-    if (Array.isArray(assessment?.allowedwebsites) && assessment.allowedwebsites.length) {
-      return assessment.allowedwebsites;
-    }
-    if (Array.isArray(assessment?.allowed_websites) && assessment.allowed_websites.length) {
-      return assessment.allowed_websites;
-    }
+    const lists = [
+      assessment?.allowedwebsites,
+      assessment?.allowed_websites,
+      exam?.allowedwebsites,
+      exam?.allowed_websites,
+      liveAssessment?.allowedwebsites,
+      liveAssessment?.allowed_websites,
+      liveExam?.allowedwebsites,
+      liveExam?.allowed_websites,
+    ];
 
-    if (Array.isArray(exam?.allowedwebsites) && exam.allowedwebsites.length) {
-      return exam.allowedwebsites;
-    }
-    if (Array.isArray(exam?.allowed_websites) && exam.allowed_websites.length) {
-      return exam.allowed_websites;
-    }
-
-    if (Array.isArray(liveAssessment?.allowedwebsites) && liveAssessment.allowedwebsites.length) {
-      return liveAssessment.allowedwebsites;
-    }
-    if (Array.isArray(liveAssessment?.allowed_websites) && liveAssessment.allowed_websites.length) {
-      return liveAssessment.allowed_websites;
-    }
-
-    if (Array.isArray(liveExam?.allowedwebsites) && liveExam.allowedwebsites.length) {
-      return liveExam.allowedwebsites;
-    }
-    if (Array.isArray(liveExam?.allowed_websites) && liveExam.allowed_websites.length) {
-      return liveExam.allowed_websites;
+    for (const item of lists) {
+      if (Array.isArray(item) && item.length) return item;
     }
 
     return [];
   }, [assessment, exam, liveAssessment, liveExam]);
+
+  const cleanupWaitingState = useCallback(async () => {
+    try {
+      await window.electronAPI?.closeBrowser?.();
+    } catch (e) {
+      console.log("closeBrowser failed", e);
+    }
+
+    try {
+      await window.electronAPI?.disableLockdown?.();
+    } catch (e) {
+      console.log("disableLockdown failed", e);
+    }
+
+    try {
+      await window.electronAPI?.setClosable?.(true);
+    } catch (e) {
+      console.log("setClosable failed", e);
+    }
+
+    onComplete?.();
+  }, [onComplete]);
 
   const ensureBrowserVisible = useCallback(async () => {
     if (!window.electronAPI) {
@@ -93,17 +124,12 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
     }
 
     try {
-      console.log("Opening secure browser with sites:", allowedSites);
-      console.log("allowedSites final:", allowedSites);
-
       await window.electronAPI.enableLockdown?.();
       await window.electronAPI.setClosable?.(false);
       await window.electronAPI.openBrowser?.({ allowedWebsites: allowedSites });
 
       if (allowedSites.length > 0) {
         await window.electronAPI.navigateBrowser?.(allowedSites[0]);
-      } else {
-        console.log("No allowed sites available at launch time");
       }
 
       return true;
@@ -137,19 +163,28 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
       if (latestExam) setLiveExam(latestExam);
       if (latestAssessment) setLiveAssessment(latestAssessment);
 
-      const examRunning = latestExam?.status === "Running";
-      const assessmentActive = ["ACTIVE", "READY", "REENTRYAPPROVED", "LATEENTRYAPPROVED"].includes(
-        latestAssessment?.status
-      );
+      const examStatus = String(latestExam?.status ?? "");
+      const assessmentStatus = String(latestAssessment?.status ?? "");
+      const finalStatus = String(
+        latestAssessment?.finalstatus ?? latestAssessment?.final_status ?? ""
+      ).toUpperCase();
 
-      console.log("WaitScreen status:", {
-        examRunning,
-        assessmentActive,
-        examStatus: latestExam?.status,
-        assessmentStatus: latestAssessment?.status,
-      });
+      const terminated =
+        TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus.toUpperCase()) ||
+        TERMINAL_ASSESSMENT_STATUSES.has(finalStatus) ||
+        TERMINAL_EXAM_STATUSES.has(examStatus);
 
-      if (examRunning && assessmentActive && !launched) {
+      if (terminated) {
+        await cleanupWaitingState();
+        return;
+      }
+
+      const examRunning = examStatus === "Running";
+      const assessmentRunnable =
+        RUNNABLE_ASSESSMENT_STATUSES.has(assessmentStatus.toUpperCase()) ||
+        (assessmentStatus === "" && !latestAssessment);
+
+      if (examRunning && assessmentRunnable && !launched) {
         setLaunched(true);
         const opened = await ensureBrowserVisible();
         if (opened) {
@@ -163,7 +198,7 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
     } finally {
       setChecking(false);
     }
-  }, [examId, assessmentId, accessToken, launched, ensureBrowserVisible, onExamStart]);
+  }, [examId, assessmentId, accessToken, launched, ensureBrowserVisible, onExamStart, cleanupWaitingState]);
 
   useEffect(() => {
     checkExamStatus();
@@ -187,9 +222,10 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
   const assessmentStatus = liveAssessment?.status || assessment?.status || merged.status || "-";
   const examStatus = liveExam?.status || merged.examstatus || merged.exam_status || "-";
 
-  const startStr = merged.date && (merged.starttime || merged.start_time)
-    ? `${merged.date}T${merged.starttime || merged.start_time}:00`
-    : null;
+  const startStr =
+    merged.date && (merged.starttime || merged.start_time)
+      ? `${merged.date}T${merged.starttime || merged.start_time}:00`
+      : null;
 
   const startTime = startStr ? new Date(startStr) : null;
   const diffMs = startTime ? startTime - now : 0;
@@ -236,7 +272,8 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
           </h2>
 
           <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 24 }}>
-            If the exam has not started, this waiting screen stays visible. Once the exam starts, the secure browser opens automatically.
+            If the exam has not started, this waiting screen stays visible. Once the exam starts,
+            the secure browser opens automatically.
           </p>
 
           <div

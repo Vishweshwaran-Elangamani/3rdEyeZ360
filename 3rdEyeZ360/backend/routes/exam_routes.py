@@ -251,6 +251,76 @@ async def start_exam(
     return {"message": "Exam started", "exam_id": exam_id}
 
 
+@router.patch("/{exam_id}/end")
+async def end_exam(
+    exam_id: str,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    current_user_id = current_user.get("user_id") or current_user.get("userid")
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    now = datetime.utcnow()
+
+    await db.exams.update_one(
+        _get_exam_query(exam_id),
+        {
+            "$set": {
+                "status": "Completed",
+                "ended_at": now,
+                "endedat": now,
+                "updated_at": now,
+                "updatedat": now,
+            }
+        }
+    )
+
+    endable_statuses = [
+        "ACTIVE",
+        "PAUSED",
+        "READY",
+        "ASSIGNED",
+        "AVAILABLE",
+        "REENTRYAPPROVED",
+        "LATEENTRYAPPROVED",
+        "REENTRY_APPROVED",
+        "LATEENTRY_APPROVED",
+    ]
+
+    await db.assessments.update_many(
+        {
+            "$or": [
+                {"exam_id": exam_id, "status": {"$in": endable_statuses}},
+                {"examid": exam_id, "status": {"$in": endable_statuses}},
+            ]
+        },
+        {
+            "$set": {
+                "status": "TERMINATED",
+                "final_status": "TERMINATED",
+                "finalstatus": "TERMINATED",
+                "exit_time": now,
+                "exittime": now,
+                "updated_at": now,
+                "updatedat": now,
+            }
+        }
+    )
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": current_user_id,
+        "userid": current_user_id,
+        "exam_id": exam_id,
+        "examid": exam_id,
+        "action": "EndExam",
+        "reason": "Exam manually ended",
+        "timestamp": now,
+    })
+
+    return {"message": "Exam ended", "exam_id": exam_id}
+
+
 @router.get("/{exam_id}/assessments")
 async def get_exam_assessments(
     exam_id: str,

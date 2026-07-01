@@ -4,6 +4,7 @@ const {
   createBrowserView,
   destroyBrowserView,
   navigateTo,
+  updateBrowserBounds,
 } = require("../lockdown/browser-view");
 const { runDetection, startCapture, stopCapture } = require("../services/webcam");
 const axios = require("axios");
@@ -41,6 +42,11 @@ function registerIpcHandlers(mainWindow) {
     return { success: true };
   });
 
+  ipcMain.handle("resize-browser", (_, layout) => {
+    updateBrowserBounds(mainWindow, layout || {});
+    return { success: true };
+  });
+
   ipcMain.handle("start-capture", (_, data) => {
     startCapture(data, mainWindow);
     return { success: true };
@@ -51,15 +57,31 @@ function registerIpcHandlers(mainWindow) {
     return { success: true };
   });
 
-  // DEV RESET: called by Ctrl+Shift+L in main.js
-  // destroys BrowserView, removes lockdown, then tells renderer to show login
   ipcMain.handle("dev-reset-to-login", async () => {
-    try { stopCapture(mainWindow); } catch (e) { console.log("stopCapture cleanup:", e.message); }
-    try { destroyBrowserView(mainWindow); } catch (e) { console.log("destroyBrowserView cleanup:", e.message); }
-    try { removeLockdown(mainWindow); } catch (e) { console.log("removeLockdown cleanup:", e.message); }
-    try { mainWindow.setClosable(true); } catch (e) { console.log("setClosable cleanup:", e.message); }
+    try {
+      stopCapture(mainWindow);
+    } catch (e) {
+      console.log("stopCapture cleanup:", e.message);
+    }
 
-    // tell renderer to switch to login screen
+    try {
+      destroyBrowserView(mainWindow);
+    } catch (e) {
+      console.log("destroyBrowserView cleanup:", e.message);
+    }
+
+    try {
+      removeLockdown(mainWindow);
+    } catch (e) {
+      console.log("removeLockdown cleanup:", e.message);
+    }
+
+    try {
+      mainWindow.setClosable(true);
+    } catch (e) {
+      console.log("setClosable cleanup:", e.message);
+    }
+
     mainWindow.webContents.send("dev-force-login");
     return { success: true };
   });
@@ -91,6 +113,7 @@ function registerIpcHandlers(mainWindow) {
                 headers: { Authorization: `Bearer ${data.token}` },
               }
             );
+
             mainWindow.webContents.send("detection-result", response.data);
           } catch (e) {
             console.log("Detection post error:", e.message);

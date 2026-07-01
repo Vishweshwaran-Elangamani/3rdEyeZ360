@@ -17,26 +17,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   onDetectionResult: (callback) =>
     ipcRenderer.on("detection-result", (_, data) => callback(data)),
-  removeDetectionListener: () =>
-    ipcRenderer.removeAllListeners("detection-result"),
+  removeDetectionListener: () => ipcRenderer.removeAllListeners("detection-result"),
 
   openBrowser: (data) => ipcRenderer.invoke("open-browser", data),
   closeBrowser: () => ipcRenderer.invoke("close-browser"),
   navigateBrowser: (url) => ipcRenderer.invoke("navigate-browser", url),
+  resizeBrowser: (layout) => ipcRenderer.invoke("resize-browser", layout),
 
-  // DEV ONLY: called by main.js Ctrl+Shift+L reset
   devResetToLogin: () => ipcRenderer.invoke("dev-reset-to-login"),
 
-  // DEV ONLY: received from main after cleanup is done
   onDevForceLogin: (callback) =>
     ipcRenderer.on("dev-force-login", () => callback()),
-  removeDevForceLoginListener: () =>
-    ipcRenderer.removeAllListeners("dev-force-login"),
+  removeDevForceLoginListener: () => ipcRenderer.removeAllListeners("dev-force-login"),
 
   onExamControl: (callback) =>
     ipcRenderer.on("exam-control", (_, data) => callback(data)),
-  removeExamControlListener: () =>
-    ipcRenderer.removeAllListeners("exam-control"),
+  removeExamControlListener: () => ipcRenderer.removeAllListeners("exam-control"),
 
   setClosable: (val) => ipcRenderer.invoke("set-closable", val),
 });

@@ -5004,17 +5004,17 @@ NAME : main.js
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\main\main.js
 =====================
 
-const { app, BrowserWindow, Menu } = require('electron')
-const path = require('path')
-const { spawnPythonApi } = require('./services/python-spawner')
-const { registerIpcHandlers } = require('./ipc/index')
+const { app, BrowserWindow, Menu } = require("electron");
+const path = require("path");
+const { spawnPythonApi } = require("./services/python-spawner");
+const registerIpcHandlers = require("./ipc");
 
-if (process.env.NODE_ENV !== 'development') {
-  Menu.setApplicationMenu(null)
+if (process.env.NODE_ENV !== "development") {
+  Menu.setApplicationMenu(null);
 }
 
-let mainWindow = null
-let pythonProcess = null
+let mainWindow = null;
+let pythonProcess = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -5026,73 +5026,145 @@ function createWindow() {
     resizable: true,
     autoHideMenuBar: true,
     show: false,
-    backgroundColor: '#0b1114',
+    backgroundColor: "#0b1114",
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true
+      webviewTag: true,
     },
-    icon: path.join(__dirname, '../dist-renderer/assets/icons/app-icon.ico'),
-    title: '3rdEyeZ360'
-  })
+    icon: path.join(__dirname, "../dist-renderer/assets/icons/app-icon.ico"),
+    title: "3rdEyeZ360",
+  });
 
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === "development") {
+    const DEV_URL = "http://localhost:5173";
+
     const tryLoad = (retries = 10) => {
-      mainWindow.loadURL('http://localhost:5173').catch(() => {
+      mainWindow.loadURL(DEV_URL).catch(() => {
         if (retries > 0) {
-          console.log(`[Main] Vite not ready, retrying... (${retries} left)`)
-          setTimeout(() => tryLoad(retries - 1), 1500)
+          console.log("Main: Vite not ready, retrying...", retries, "retries left");
+          setTimeout(() => tryLoad(retries - 1), 1500);
         } else {
-          console.error('[Main] Could not connect to Vite on port 5173')
+          console.error("Main: Could not connect to Vite on port 5173");
         }
-      })
-    }
+      });
+    };
 
-    tryLoad()
+    tryLoad();
 
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      if (input.control && input.shift && input.key.toLowerCase() === 'i') {
-        mainWindow.webContents.toggleDevTools()
-        event.preventDefault()
+    mainWindow.webContents.on("before-input-event", async (event, input) => {
+      // ORIGINAL SAFE CODE
+      /*
+      if (
+        (input.control && input.shift && input.key.toLowerCase() === "i") ||
+        input.key === "F12"
+      ) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+      */
+
+      // Ctrl+Shift+I or F12 => toggle DevTools
+      if (
+        (input.control && input.shift && input.key.toLowerCase() === "i") ||
+        input.key === "F12"
+      ) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+        return;
       }
 
-      if (input.key === 'F12') {
-        mainWindow.webContents.toggleDevTools()
-        event.preventDefault()
+      // Ctrl+Shift+L => DEV RESET to login
+      // Step 1: clear renderer storage
+      // Step 2: call devResetToLogin IPC (destroys BrowserView, removes lockdown)
+      // Step 3: IPC sends "dev-force-login" back to renderer to switch screen
+      if (input.control && input.shift && input.key.toLowerCase() === "l") {
+        event.preventDefault();
+
+        try {
+          await mainWindow.webContents.executeJavaScript(`
+            try {
+              localStorage.removeItem("auth-storage");
+              localStorage.removeItem("exam-storage");
+              localStorage.removeItem("app-screen");
+              localStorage.removeItem("zustand");
+              sessionStorage.clear();
+            } catch (e) {
+              console.error("Storage clear failed:", e);
+            }
+          `);
+        } catch (e) {
+          console.error("Storage clear JS failed:", e);
+        }
+
+        // Now call the IPC handler which destroys BrowserView + lockdown
+        // and sends "dev-force-login" to renderer
+        try {
+          const { destroyBrowserView } = require("./lockdown/browser-view");
+          const { removeLockdown } = require("./lockdown/window");
+          const { stopCapture } = require("./services/webcam");
+
+          try { stopCapture(mainWindow); } catch (_) {}
+          try { destroyBrowserView(mainWindow); } catch (_) {}
+          try { removeLockdown(mainWindow); } catch (_) {}
+          try { mainWindow.setClosable(true); } catch (_) {}
+
+          // small delay to let native BrowserView detach
+          await new Promise((r) => setTimeout(r, 200));
+
+          mainWindow.webContents.send("dev-force-login");
+        } catch (e) {
+          console.error("Failed to destroy BrowserView during reset:", e);
+        }
+
+        return;
       }
-    })
+    });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist-renderer/index.html'))
+    mainWindow.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
   }
 
-  mainWindow.webContents.once('did-finish-load', () => {
-    if (!mainWindow) return
-    mainWindow.show()
-    mainWindow.focus()
-  })
+  mainWindow.webContents.once("did-finish-load", () => {
+    if (!mainWindow) return;
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+
+  registerIpcHandlers(mainWindow);
 }
 
 app.whenReady().then(async () => {
-  pythonProcess = spawnPythonApi()
-  createWindow()
-  registerIpcHandlers(mainWindow)
+  try {
+    pythonProcess = spawnPythonApi();
+    createWindow();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  } catch (err) {
+    console.error("Electron startup failed:", err);
+  }
+});
 
-app.on('window-all-closed', () => {
-  if (pythonProcess) pythonProcess.kill()
-  if (process.platform !== 'darwin') app.quit()
-})
+app.on("window-all-closed", () => {
+  if (pythonProcess) {
+    pythonProcess.kill();
+  }
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
 
-module.exports = { getMainWindow: () => mainWindow }
+module.exports = {
+  getMainWindow: () => mainWindow,
+};
 
 ===== FILE END =====
 
@@ -5101,41 +5173,44 @@ NAME : preload.js
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\main\preload.js
 =====================
 
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  sendFrame: (data) => ipcRenderer.send('webcam-frame', data),
+contextBridge.exposeInMainWorld("electronAPI", {
+  sendFrame: (data) => ipcRenderer.send("webcam-frame", data),
 
   startWebcamCapture: (callback) =>
-    ipcRenderer.on('start-webcam-capture', (_, d) => callback(d)),
+    ipcRenderer.on("start-webcam-capture", (_, d) => callback(d)),
 
   stopWebcamCapture: (callback) =>
-    ipcRenderer.on('stop-webcam-capture', () => callback()),
+    ipcRenderer.on("stop-webcam-capture", () => callback()),
 
-  enableLockdown: () => ipcRenderer.invoke('enable-lockdown'),
-  disableLockdown: () => ipcRenderer.invoke('disable-lockdown'),
+  enableLockdown: () => ipcRenderer.invoke("enable-lockdown"),
+  disableLockdown: () => ipcRenderer.invoke("disable-lockdown"),
 
-  startCapture: (data) => ipcRenderer.invoke('start-capture', data),
-  stopCapture: () => ipcRenderer.invoke('stop-capture'),
+  startCapture: (data) => ipcRenderer.invoke("start-capture", data),
+  stopCapture: () => ipcRenderer.invoke("stop-capture"),
 
   onDetectionResult: (callback) =>
-    ipcRenderer.on('detection-result', (_, data) => callback(data)),
+    ipcRenderer.on("detection-result", (_, data) => callback(data)),
+  removeDetectionListener: () => ipcRenderer.removeAllListeners("detection-result"),
 
-  removeDetectionListener: () =>
-    ipcRenderer.removeAllListeners('detection-result'),
+  openBrowser: (data) => ipcRenderer.invoke("open-browser", data),
+  closeBrowser: () => ipcRenderer.invoke("close-browser"),
+  navigateBrowser: (url) => ipcRenderer.invoke("navigate-browser", url),
+  resizeBrowser: (layout) => ipcRenderer.invoke("resize-browser", layout),
 
-  openBrowser: (data) => ipcRenderer.invoke('open-browser', data),
-  closeBrowser: () => ipcRenderer.invoke('close-browser'),
-  navigateBrowser: (url) => ipcRenderer.invoke('navigate-browser', url),
+  devResetToLogin: () => ipcRenderer.invoke("dev-reset-to-login"),
+
+  onDevForceLogin: (callback) =>
+    ipcRenderer.on("dev-force-login", () => callback()),
+  removeDevForceLoginListener: () => ipcRenderer.removeAllListeners("dev-force-login"),
 
   onExamControl: (callback) =>
-    ipcRenderer.on('exam-control', (_, data) => callback(data)),
+    ipcRenderer.on("exam-control", (_, data) => callback(data)),
+  removeExamControlListener: () => ipcRenderer.removeAllListeners("exam-control"),
 
-  removeExamControlListener: () =>
-    ipcRenderer.removeAllListeners('exam-control'),
-
-  setClosable: (val) => ipcRenderer.invoke('set-closable', val),
-})
+  setClosable: (val) => ipcRenderer.invoke("set-closable", val),
+});
 
 ===== FILE END =====
 
@@ -5144,66 +5219,105 @@ NAME : index.js
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\main\ipc\index.js
 =====================
 
-const { ipcMain } = require('electron')
-const { setupLockdown, removeLockdown } = require('../lockdown/window')
-const { createBrowserView, destroyBrowserView, navigateTo } = require('../lockdown/browser-view')
-const { runDetection, startCapture, stopCapture } = require('../services/webcam')
-const axios = require('axios')
+const { ipcMain } = require("electron");
+const { setupLockdown, removeLockdown } = require("../lockdown/window");
+const {
+  createBrowserView,
+  destroyBrowserView,
+  navigateTo,
+  updateBrowserBounds,
+} = require("../lockdown/browser-view");
+const { runDetection, startCapture, stopCapture } = require("../services/webcam");
+const axios = require("axios");
 
-const BACKEND_URL = 'http://localhost:3000'
+const BACKEND_URL = "http://localhost:3000";
 
 function registerIpcHandlers(mainWindow) {
-  ipcMain.handle('enable-lockdown', () => {
-    setupLockdown(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("enable-lockdown", () => {
+    setupLockdown(mainWindow);
+    return { success: true };
+  });
 
-  ipcMain.handle('disable-lockdown', () => {
-    removeLockdown(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("disable-lockdown", () => {
+    removeLockdown(mainWindow);
+    return { success: true };
+  });
 
-  ipcMain.handle('set-closable', (_, val) => {
-    mainWindow.setClosable(val)
-    return { success: true }
-  })
+  ipcMain.handle("set-closable", (_, val) => {
+    mainWindow.setClosable(!!val);
+    return { success: true };
+  });
 
-  ipcMain.handle('open-browser', (_, data) => {
-    createBrowserView(mainWindow, data.allowedWebsites || [])
-    return { success: true }
-  })
+  ipcMain.handle("open-browser", (_, data) => {
+    createBrowserView(mainWindow, data?.allowedWebsites || []);
+    return { success: true };
+  });
 
-  ipcMain.handle('close-browser', () => {
-    destroyBrowserView(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("close-browser", () => {
+    destroyBrowserView(mainWindow);
+    return { success: true };
+  });
 
-  ipcMain.handle('navigate-browser', (_, url) => {
-    navigateTo(url)
-    return { success: true }
-  })
+  ipcMain.handle("navigate-browser", (_, url) => {
+    navigateTo(url);
+    return { success: true };
+  });
 
-  ipcMain.handle('start-capture', (_, data) => {
-    startCapture(data, mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("resize-browser", (_, layout) => {
+    updateBrowserBounds(mainWindow, layout || {});
+    return { success: true };
+  });
 
-  ipcMain.handle('stop-capture', () => {
-    stopCapture(mainWindow)
-    return { success: true }
-  })
+  ipcMain.handle("start-capture", (_, data) => {
+    startCapture(data, mainWindow);
+    return { success: true };
+  });
 
-  ipcMain.on('webcam-frame', async (_, data) => {
+  ipcMain.handle("stop-capture", () => {
+    stopCapture(mainWindow);
+    return { success: true };
+  });
+
+  ipcMain.handle("dev-reset-to-login", async () => {
+    try {
+      stopCapture(mainWindow);
+    } catch (e) {
+      console.log("stopCapture cleanup:", e.message);
+    }
+
+    try {
+      destroyBrowserView(mainWindow);
+    } catch (e) {
+      console.log("destroyBrowserView cleanup:", e.message);
+    }
+
+    try {
+      removeLockdown(mainWindow);
+    } catch (e) {
+      console.log("removeLockdown cleanup:", e.message);
+    }
+
+    try {
+      mainWindow.setClosable(true);
+    } catch (e) {
+      console.log("setClosable cleanup:", e.message);
+    }
+
+    mainWindow.webContents.send("dev-force-login");
+    return { success: true };
+  });
+
+  ipcMain.on("webcam-frame", async (_, data) => {
     try {
       const results = await runDetection(
         data.frame,
         data.assessmentId,
         data.candidateId,
         data.examId
-      )
+      );
 
       for (const result of results) {
-        if (result.detail !== 'ok' && result.detail !== 'no_face') {
+        if (result.detail !== "ok" && result.detail !== "noface") {
           try {
             const response = await axios.post(
               `${BACKEND_URL}/api/assessments/detect`,
@@ -5219,21 +5333,21 @@ function registerIpcHandlers(mainWindow) {
               {
                 headers: { Authorization: `Bearer ${data.token}` },
               }
-            )
+            );
 
-            mainWindow.webContents.send('detection-result', response.data)
+            mainWindow.webContents.send("detection-result", response.data);
           } catch (e) {
-            console.log('Detection post error:', e.message)
+            console.log("Detection post error:", e.message);
           }
         }
       }
     } catch (e) {
-      console.log('Detection error:', e.message)
+      console.log("Detection error:", e.message);
     }
-  })
+  });
 }
 
-module.exports = { registerIpcHandlers }
+module.exports = registerIpcHandlers;
 
 ===== FILE END =====
 
@@ -5242,83 +5356,97 @@ NAME : browser-view.js
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\main\lockdown\browser-view.js
 =====================
 
-const { BrowserView } = require('electron')
+const { BrowserView } = require("electron");
 
-let browserView = null
-let allowedDomains = []
+let browserView = null;
+let allowedDomains = [];
+let currentLayout = {
+  top: 132,
+  bottom: 34,
+  left: 0,
+  right: 0,
+};
+let resizeHandler = null;
 
 function normalizeUrl(url) {
-  if (!url) return null
-  return url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`
+  if (!url) return null;
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }
 
-function getHostname(url) {
+function extractHostname(url) {
   try {
-    return new URL(normalizeUrl(url)).hostname.toLowerCase()
+    return new URL(normalizeUrl(url)).hostname.replace(/^www\./, "");
   } catch {
-    return null
+    return null;
   }
 }
 
-function isAllowedHost(hostname) {
-  if (!hostname) return false
+function isAllowed(url) {
+  const hostname = extractHostname(url);
+  if (!hostname) return false;
   return allowedDomains.some(
-    (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
-  )
+    (d) => hostname === d || hostname.endsWith(`.${d}`)
+  );
+}
+
+function getBounds(mainWindow) {
+  const content = mainWindow.getContentBounds();
+
+  const x = currentLayout.left || 0;
+  const y = currentLayout.top || 0;
+  const width = Math.max(
+    content.width - (currentLayout.left || 0) - (currentLayout.right || 0),
+    200
+  );
+  const height = Math.max(
+    content.height - (currentLayout.top || 0) - (currentLayout.bottom || 0),
+    200
+  );
+
+  return { x, y, width, height };
 }
 
 function applyBounds(mainWindow) {
-  if (!browserView || !mainWindow) return
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!browserView || browserView.webContents.isDestroyed()) return;
 
-  const bounds = mainWindow.getContentBounds()
-  const topBarHeight = 50
-  const allowedSitesBarHeight = 42
-  const bottomBarHeight = 32
-  const topOffset = topBarHeight + allowedSitesBarHeight
-  const height = Math.max(0, bounds.height - topOffset - bottomBarHeight)
-
-  browserView.setBounds({
-    x: 0,
-    y: topOffset,
-    width: bounds.width,
-    height,
-  })
-
-  browserView.setAutoResize({ width: true, height: true })
+  const bounds = getBounds(mainWindow);
+  browserView.setBounds(bounds);
+  browserView.setAutoResize({ width: true, height: true });
 }
 
-function destroyBrowserView(mainWindow) {
-  if (!browserView) return
+function cleanup(mainWindow) {
+  if (!browserView) return;
 
   try {
+    if (mainWindow && resizeHandler) {
+      mainWindow.removeListener("resize", resizeHandler);
+      resizeHandler = null;
+    }
+
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setBrowserView(null)
+      mainWindow.setBrowserView(null);
     }
-  } catch (e) {
-    console.log('Error detaching BrowserView:', e.message)
-  }
 
-  try {
     if (!browserView.webContents.isDestroyed()) {
-      browserView.webContents.destroy()
+      browserView.webContents.destroy();
     }
   } catch (e) {
-    console.log('Error destroying BrowserView:', e.message)
+    console.log("BrowserView cleanup failed:", e.message);
   }
 
-  browserView = null
-  allowedDomains = []
-  console.log('🌐 Locked browser closed')
+  browserView = null;
 }
 
 function createBrowserView(mainWindow, websites = []) {
-  if (!mainWindow || mainWindow.isDestroyed()) return null
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
 
-  destroyBrowserView(mainWindow)
+  cleanup(mainWindow);
 
-  allowedDomains = websites
-    .map((url) => getHostname(url))
-    .filter(Boolean)
+  allowedDomains = (websites || [])
+    .map(normalizeUrl)
+    .map(extractHostname)
+    .filter(Boolean);
 
   browserView = new BrowserView({
     webPreferences: {
@@ -5326,65 +5454,99 @@ function createBrowserView(mainWindow, websites = []) {
       contextIsolation: true,
       sandbox: true,
     },
-  })
+  });
 
-  mainWindow.setBrowserView(browserView)
-  applyBounds(mainWindow)
+  mainWindow.setBrowserView(browserView);
 
-  browserView.webContents.on('will-navigate', (event, url) => {
-    const hostname = getHostname(url)
-    if (!isAllowedHost(hostname)) {
-      event.preventDefault()
-      console.log(`🚫 Blocked navigation to: ${url}`)
+  resizeHandler = () => applyBounds(mainWindow);
+  mainWindow.on("resize", resizeHandler);
+
+  browserView.webContents.on("will-navigate", (event, url) => {
+    if (!isAllowed(url)) {
+      event.preventDefault();
+      console.log("Blocked navigation to", url);
     }
-  })
+  });
 
   browserView.webContents.setWindowOpenHandler(({ url }) => {
-    const hostname = getHostname(url)
-    if (!isAllowedHost(hostname)) {
-      console.log(`🚫 Blocked popup to: ${url}`)
-      return { action: 'deny' }
+    if (!isAllowed(url)) {
+      console.log("Blocked popup to", url);
+      return { action: "deny" };
     }
 
-    navigateTo(url)
-    return { action: 'deny' }
-  })
+    browserView.webContents.loadURL(normalizeUrl(url));
+    return { action: "deny" };
+  });
 
-  browserView.webContents.on('context-menu', (event) => {
-    event.preventDefault()
-  })
+  browserView.webContents.on("context-menu", (e) => e.preventDefault());
 
-  mainWindow.on('resize', () => applyBounds(mainWindow))
-  mainWindow.on('maximize', () => applyBounds(mainWindow))
-  mainWindow.on('unmaximize', () => applyBounds(mainWindow))
+  browserView.webContents.on("did-fail-load", (_, code, desc, url) => {
+    console.log("BrowserView failed:", code, desc, url);
+  });
+
+  browserView.webContents.on("dom-ready", () => {
+    applyBounds(mainWindow);
+  });
+
+  applyBounds(mainWindow);
 
   if (websites.length > 0) {
-    const firstUrl = normalizeUrl(websites[0])
-    if (firstUrl) {
-      browserView.webContents.loadURL(firstUrl)
-    }
+    const firstUrl = normalizeUrl(websites[0]);
+    browserView.webContents.loadURL(firstUrl).catch((e) => {
+      console.log("Initial load failed:", e.message);
+    });
+  } else {
+    browserView.webContents.loadURL(
+      "data:text/html;charset=utf-8," +
+        encodeURIComponent(`
+          <html>
+            <body style="margin:0;background:#0f1117;color:#fff;font-family:Arial, sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
+              <div>No allowed website configured</div>
+            </body>
+          </html>
+        `)
+    );
   }
 
-  console.log('🌐 Locked browser opened')
-  return browserView
+  return browserView;
 }
 
 function navigateTo(url) {
-  if (!browserView) return false
+  if (!browserView || browserView.webContents.isDestroyed()) return;
+  const normalized = normalizeUrl(url);
 
-  const normalizedUrl = normalizeUrl(url)
-  const hostname = getHostname(normalizedUrl)
-
-  if (!isAllowedHost(hostname)) {
-    console.log(`🚫 Blocked direct navigation to: ${url}`)
-    return false
+  if (!isAllowed(normalized)) {
+    console.log("Blocked manual navigation to", normalized);
+    return;
   }
 
-  browserView.webContents.loadURL(normalizedUrl)
-  return true
+  browserView.webContents.loadURL(normalized).catch((e) => {
+    console.log("Navigation failed:", e.message);
+  });
 }
 
-module.exports = { createBrowserView, destroyBrowserView, navigateTo }
+function updateBrowserBounds(mainWindow, layout = {}) {
+  currentLayout = {
+    top: Number.isFinite(layout.top) ? layout.top : currentLayout.top,
+    bottom: Number.isFinite(layout.bottom) ? layout.bottom : currentLayout.bottom,
+    left: Number.isFinite(layout.left) ? layout.left : currentLayout.left,
+    right: Number.isFinite(layout.right) ? layout.right : currentLayout.right,
+  };
+
+  applyBounds(mainWindow);
+}
+
+function destroyBrowserView(mainWindow) {
+  cleanup(mainWindow);
+  allowedDomains = [];
+}
+
+module.exports = {
+  createBrowserView,
+  destroyBrowserView,
+  navigateTo,
+  updateBrowserBounds,
+};
 
 ===== FILE END =====
 
@@ -5531,28 +5693,31 @@ NAME : python-spawner.js
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\main\services\python-spawner.js
 =====================
 
-const { spawn } = require('child_process')
-const path = require('path')
+const { spawn } = require("child_process");
+const path = require("path");
 
 function spawnPythonApi() {
-  const pythonPath = path.join(__dirname, '../../../python-api')
-  const venvPython = path.join(pythonPath, 'venv', 'Scripts', 'python.exe') // Windows
+  const pythonPath = path.join(__dirname, "../../../python-api");
+  const venvPython = path.join(pythonPath, "venv", "Scripts", "python.exe");
 
-  const proc = spawn(venvPython, ['-m', 'uvicorn', 'main:app',
-    '--host', '127.0.0.1', '--port', '5001'], {
-    cwd: pythonPath,
-    stdio: 'pipe'
-  })
+  const proc = spawn(
+    venvPython,
+    ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "5001"],
+    {
+      cwd: pythonPath,
+      stdio: "pipe",
+    }
+  );
 
-  proc.stdout.on('data', (d) => console.log(`[Python] ${d}`))
-  proc.stderr.on('data', (d) => console.log(`[Python ERR] ${d}`))
-  proc.on('exit', (code) => console.log(`[Python] exited with code ${code}`))
+  proc.stdout.on("data", (d) => console.log(`[Python] ${d}`));
+  proc.stderr.on("data", (d) => console.log(`[Python ERR] ${d}`));
+  proc.on("exit", (code) => console.log(`[Python] exited with code ${code}`));
 
-  console.log('🐍 Python Detection API spawned')
-  return proc
+  console.log("🐍 Python Detection API spawned");
+  return proc;
 }
 
-module.exports = { spawnPythonApi }
+module.exports = { spawnPythonApi };
 
 ===== FILE END =====
 
@@ -5627,46 +5792,232 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\index.jsx
 =====================
 
 import React, { useState, useEffect, useCallback } from "react";
+import { createRoot } from "react-dom/client";
+import "./styles/global.css";
+import Login from "./pages/Login";
+import CandidateDashboard from "./pages/candidate/CandidateDashboard";
+import PreCheck from "./pages/candidate/PreCheck";
+import Instructions from "./pages/candidate/Instructions";
+import WaitScreen from "./pages/candidate/WaitScreen";
+import ActiveExam from "./pages/candidate/ActiveExam";
+import ExaminerDashboard from "./pages/examiner/ExaminerDashboard";
+import AdminPanel from "./pages/admin/AdminPanel";
+import useAuthStore from "./store/authStore";
+import useExamStore from "./store/examStore";
+import { useSocket } from "./hooks/useSocket";
 import axios from "axios";
-import useAuthStore from "../../store/authStore";
-import { useSocket } from "../../hooks/useSocket";
-import ChatWindow from "../../components/common/ChatWindow";
-import CreateExam from "./CreateExam";
-import AssignCandidates from "./AssignCandidates";
+import appLogo from "../dist-renderer/assets/icons/app-icon.ico";
 
 const API = "http://localhost:3000";
+const SPLASH_DURATION = 3000;
 
-const STATUS_COLORS = {
-  ACTIVE: "#34c97a",
-  READY: "#4f8ef7",
-  INTERRUPTED: "#f5a623",
-  LOCKED: "#f75f5f",
-  COMPLETED: "#8b90a0",
-  TERMINATED: "#f75f5f",
-  ASSIGNED: "#555a6e",
-  AVAILABLE: "#7c5ce7",
-  PAUSED: "#f5a623",
-};
-
-function StatBox({ label, value, color }) {
+function AppLogo({ size = 56 }) {
   return (
-    <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
-      <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
+    <img
+      src={appLogo}
+      alt="3rdEyeZ360 logo"
+      width={size}
+      height={size}
+      style={{ width: size, height: size, objectFit: "contain", display: "block" }}
+    />
+  );
+}
+
+function SplashScreen() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 99999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background:
+          "radial-gradient(circle at top, rgba(79,152,163,0.10), transparent 38%), linear-gradient(180deg, #0b1114 0%, #0f1418 100%)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          width: "min(520px, calc(100vw - 48px))",
+          padding: "36px 30px",
+          borderRadius: 28,
+          background: "rgba(18, 25, 30, 0.88)",
+          border: "1px solid rgba(79, 152, 163, 0.16)",
+          boxShadow: "0 20px 70px rgba(0,0,0,0.38)",
+          textAlign: "center",
+          backdropFilter: "blur(10px)",
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            width: 180,
+            height: 180,
+            margin: "0 auto 24px",
+            display: "grid",
+            placeItems: "center",
+            position: "relative",
+            animation: "logoPulse 2.8s ease-in-out infinite",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(79,152,163,0.24) 0%, rgba(79,152,163,0.10) 42%, rgba(79,152,163,0.00) 72%)",
+              filter: "blur(10px)",
+              animation: "glowBreath 2.8s ease-in-out infinite",
+            }}
+          />
+          <AppLogo size={140} />
+        </div>
+
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 30,
+            fontWeight: 700,
+            letterSpacing: "0.02em",
+            color: "#eaf4f6",
+          }}
+        >
+          3rdEyeZ360
+        </h1>
+
+        <div
+          style={{
+            margin: "10px 0 22px",
+            fontSize: 13,
+            color: "rgba(212, 232, 236, 0.72)",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}
+        >
+          Secure Assessment Monitoring
+        </div>
+
+        <div
+          style={{
+            width: "100%",
+            height: 6,
+            borderRadius: 999,
+            overflow: "hidden",
+            background: "rgba(255,255,255,0.08)",
+          }}
+        >
+          <div
+            style={{
+              width: "42%",
+              height: "100%",
+              borderRadius: 999,
+              background: "linear-gradient(90deg, #4f98a3, #86d1dd)",
+              boxShadow: "0 0 16px rgba(79,152,163,0.30)",
+              animation: "bootLoad 1.35s ease-in-out infinite",
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            marginTop: 14,
+            fontSize: 12,
+            color: "rgba(212, 232, 236, 0.72)",
+          }}
+        >
+          Preparing desktop workspace…
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes logoPulse {
+          0% { opacity: 0.78; transform: scale(0.985); }
+          50% { opacity: 1; transform: scale(1.02); }
+          100% { opacity: 0.78; transform: scale(0.985); }
+        }
+        @keyframes glowBreath {
+          0% { opacity: 0.35; transform: scale(0.92); }
+          50% { opacity: 0.85; transform: scale(1.08); }
+          100% { opacity: 0.35; transform: scale(0.92); }
+        }
+        @keyframes bootLoad {
+          0% { transform: translateX(-110%); }
+          100% { transform: translateX(310%); }
+        }
+      `}</style>
     </div>
   );
 }
 
-function LogoutButton() {
-  const [loading, setLoading] = useState(false);
+function normalizeAssessment(exam) {
+  if (!exam) return null;
 
-  const handleLogout = async () => {
-    if (loading) return;
-    setLoading(true);
+  return {
+    assessmentid: exam.assessmentid ?? exam.assessment_id ?? null,
+    examid: exam.examid ?? exam.exam_id ?? null,
+    status: exam.status ?? exam.assessment_status ?? null,
+    examstatus: exam.examstatus ?? exam.exam_status ?? null,
+    durationminutes: exam.durationminutes ?? exam.duration_minutes ?? 0,
+    allowedwebsites: Array.isArray(exam.allowedwebsites)
+      ? exam.allowedwebsites
+      : Array.isArray(exam.allowed_websites)
+        ? exam.allowed_websites
+        : [],
+    allowedapplications: Array.isArray(exam.allowedapplications)
+      ? exam.allowedapplications
+      : Array.isArray(exam.allowed_applications)
+        ? exam.allowed_applications
+        : [],
+    violationthreshold: exam.violationthreshold ?? exam.violation_threshold ?? null,
+    instructions: exam.instructions ?? "",
+    name: exam.name ?? "",
+    description: exam.description ?? "",
+    date: exam.date ?? "",
+    starttime: exam.starttime ?? exam.start_time ?? "",
+    endtime: exam.endtime ?? exam.end_time ?? "",
+  };
+}
 
+function AppShell() {
+  const { user, accessToken, hasHydrated } = useAuthStore();
+  const {
+    currentExam,
+    currentAssessment,
+    setExam,
+    setAssessment,
+    reset: resetExamStore,
+  } = useExamStore();
+
+  const [screen, setScreen] = useState("login");
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const socket = useSocket(accessToken);
+
+  const resetToLogin = useCallback(() => {
+    useAuthStore.getState().clearAuth();
+    resetExamStore();
+    setScreen("login");
+  }, [resetExamStore]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.onDevForceLogin) return;
+
+    const handleDevForceLogin = () => {
+      resetToLogin();
+    };
+
+    window.electronAPI.onDevForceLogin(handleDevForceLogin);
+
+    return () => {
+      window.electronAPI.removeDevForceLoginListener?.();
+    };
+  }, [resetToLogin]);
+
+  const handleLogout = useCallback(async () => {
     try {
-      const { refreshToken } = useAuthStore.getState();
-
+      const refreshToken = useAuthStore.getState().refreshToken;
       if (refreshToken) {
         try {
           await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
@@ -5675,795 +6026,221 @@ function LogoutButton() {
         }
       }
     } finally {
-      localStorage.removeItem("app-screen");
-      localStorage.removeItem("auth-storage");
-      localStorage.removeItem("exam-storage");
-      useAuthStore.getState().clearAuth();
-    }
-  };
-
-  return (
-    <button
-      onClick={handleLogout}
-      disabled={loading}
-      className="btn btn-ghost"
-      style={{ padding: "7px 14px", fontSize: 13 }}
-    >
-      {loading ? "Signing out..." : "Logout"}
-    </button>
-  );
-}
-
-export default function ExaminerDashboard() {
-  const [monitorTab, setMonitorTab] = useState("grid");
-  const [reentryRequests, setReentryRequests] = useState([]);
-  const { user, accessToken } = useAuthStore();
-  const socket = useSocket(accessToken);
-
-  const [view, setView] = useState("list");
-  const [exams, setExams] = useState([]);
-  const [selectedExam, setSelectedExam] = useState(null);
-  const [candidates, setCandidates] = useState([]);
-  const [liveData, setLiveData] = useState({});
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
-  const [violations, setViolations] = useState([]);
-  const [broadcastMsg, setBroadcastMsg] = useState("");
-  const [loadingExams, setLoadingExams] = useState(false);
-  const [actionMsg, setActionMsg] = useState("");
-
-  const headers = { Authorization: `Bearer ${accessToken}` };
-
-  const loadExams = useCallback(async () => {
-    setLoadingExams(true);
-    try {
-      const res = await axios.get(`${API}/api/exams`, { headers });
-      setExams(Array.isArray(res.data) ? res.data : []);
-    } catch (e) {
-      console.error("loadExams:", e.message);
-    } finally {
-      setLoadingExams(false);
-    }
-  }, [accessToken]);
-
-  const loadCandidates = useCallback(
-    async (examid) => {
-      if (!examid) return;
       try {
-        const res = await axios.get(`${API}/api/exams/${examid}/assessments`, { headers });
-        setCandidates(Array.isArray(res.data) ? res.data : []);
+        await window.electronAPI?.stopCapture?.();
+        await window.electronAPI?.closeBrowser?.();
+        await window.electronAPI?.disableLockdown?.();
+        await window.electronAPI?.setClosable?.(true);
       } catch (e) {
-        console.error("loadCandidates:", e.message);
+        console.log("Electron cleanup during logout failed", e);
       }
-    },
-    [accessToken]
-  );
-
-  const loadViolations = useCallback(
-    async (candidateid, examid) => {
-      if (!candidateid || !examid) return;
-      try {
-        const res = await axios.get(`${API}/api/violations/${examid}/${candidateid}`, { headers });
-        setViolations(Array.isArray(res.data) ? res.data : []);
-      } catch (e) {
-        console.error("loadViolations:", e.message);
-      }
-    },
-    [accessToken]
-  );
-
-  useEffect(() => {
-    loadExams();
-  }, [loadExams]);
-
-  useEffect(() => {
-    if (!socket || view !== "monitor" || !selectedExam?.examid) return;
-
-    socket.emit("joinexam", {
-      examid: selectedExam.examid,
-      role: "Examiner",
-      userid: user?.userid,
-    });
-
-    const onCandidateUpdate = (data) => {
-      const candidateid = data?.candidateid;
-      if (!candidateid) return;
-      setLiveData((prev) => ({ ...prev, [candidateid]: data }));
-    };
-
-    const onViolationAlert = ({ candidateid, violation }) => {
-      if (!candidateid) return;
-      setLiveData((prev) => ({
-        ...prev,
-        [candidateid]: { ...(prev[candidateid] || {}), latestViolation: violation },
-      }));
-    };
-
-    const onAssessmentUpdate = () => {
-      loadCandidates(selectedExam.examid);
-    };
-
-    socket.on("candidate_update", onCandidateUpdate);
-    socket.on("violation_alert", onViolationAlert);
-    socket.on("assessment_updated", onAssessmentUpdate);
-
-    return () => {
-      socket.off("candidate_update", onCandidateUpdate);
-      socket.off("violation_alert", onViolationAlert);
-      socket.off("assessment_updated", onAssessmentUpdate);
-    };
-  }, [socket, view, selectedExam, user, loadCandidates]);
-
-  const openMonitor = (exam) => {
-    setSelectedExam(exam);
-    setSelectedCandidate(null);
-    setViolations([]);
-    setLiveData({});
-    loadCandidates(exam.examid);
-    setView("monitor");
-  };
-
-  const startExam = async () => {
-    if (!selectedExam?.examid) return;
-
-    try {
-      await axios.patch(`${API}/api/exams/${selectedExam.examid}/start`, {}, { headers });
-
-      if (socket) {
-        socket.emit("start_exam", {
-          examid: selectedExam.examid,
-          examinerid: user?.userid,
-        });
-      }
-
-      setActionMsg("✅ Exam started — candidates are being notified");
-      setTimeout(() => setActionMsg(""), 4000);
-      loadCandidates(selectedExam.examid);
-      loadExams();
-    } catch (e) {
-      setActionMsg("❌ Failed to start exam");
-      setTimeout(() => setActionMsg(""), 4000);
+      resetToLogin();
     }
-  };
+  }, [resetToLogin]);
 
-  const doAction = async (assessmentid, action) => {
-    const reason = window.prompt(`Reason for "${action}" (required):`);
-    if (!reason || !reason.trim()) return;
-
+  const loadCandidateExam = useCallback(async () => {
     try {
-      await axios.post(
-        `${API}/api/assessments/${assessmentid}/action`,
-        { action, reason: reason.trim() },
-        { headers }
-      );
+      const token = useAuthStore.getState().accessToken;
+      if (!token) return null;
 
-      if (socket && selectedExam?.examid && selectedCandidate?.candidateid) {
-        socket.emit("examiner_control", {
-          examid: selectedExam.examid,
-          candidateid: selectedCandidate.candidateid,
-          action,
-        });
-      }
-
-      setActionMsg(`✅ ${action} applied`);
-      setTimeout(() => setActionMsg(""), 3000);
-      loadCandidates(selectedExam.examid);
-    } catch (e) {
-      setActionMsg(`❌ Action failed: ${e.response?.data?.detail || e.message}`);
-      setTimeout(() => setActionMsg(""), 4000);
-    }
-  };
-
-  const sendBroadcast = () => {
-    if (!broadcastMsg.trim() || !socket || !selectedExam?.examid) return;
-
-    socket.emit("broadcast_message", {
-      examid: selectedExam.examid,
-      examinerid: user?.userid,
-      message: broadcastMsg.trim(),
-    });
-
-    setBroadcastMsg("");
-    setActionMsg("📢 Broadcast sent to all candidates");
-    setTimeout(() => setActionMsg(""), 3000);
-  };
-
-  const goBack = () => {
-    setView("list");
-    setSelectedExam(null);
-    setSelectedCandidate(null);
-    setCandidates([]);
-    setLiveData({});
-    setViolations([]);
-    loadExams();
-  };
-
-  const loadReentryRequests = useCallback(async () => {
-    try {
-      if (!selectedExam?.examid) return;
-
-      const res = await axios.get(`${API}/api/exams/${selectedExam.examid}/requests`, {
-        headers,
+      const res = await axios.get(`${API}/api/exams/candidate/upcoming`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      setReentryRequests(Array.isArray(res.data) ? res.data : []);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [selectedExam, accessToken]);
-
-  const handleReentry = async (assessmentid, requestid, approve) => {
-    try {
-      const url = `${API}/api/assessments/${assessmentid}/reentry/${requestid}/${approve ? "approve" : "reject"}`;
-
-      const body = approve
-        ? {}
-        : {
-            reason: window.prompt("Rejection reason:") || "Not approved",
-          };
-
-      await axios.post(url, body, { headers });
-
-      if (socket && selectedExam?.examid) {
-        socket.emit("reentry_decision", {
-          assessmentid,
-          approved: approve,
-          examid: selectedExam.examid,
-        });
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        const firstExam = res.data[0];
+        setExam(firstExam);
+        setAssessment(normalizeAssessment(firstExam));
+        return firstExam;
       }
-
-      await loadReentryRequests();
-      await loadCandidates(selectedExam.examid);
-
-      setActionMsg(approve ? "✅ Re-entry approved" : "❌ Re-entry rejected");
-      setTimeout(() => setActionMsg(""), 3000);
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.log("No exam found", e);
     }
+    return null;
+  }, [setExam, setAssessment]);
+
+  const handleLogin = async (loggedUser) => {
+    if (loggedUser.role === "Admin") {
+      setScreen("admin");
+      return;
+    }
+
+    if (loggedUser.role === "Examiner") {
+      setScreen("examiner");
+      return;
+    }
+
+    await loadCandidateExam();
+    setScreen("candidate-dashboard");
   };
 
-  if (view === "create") {
+  useEffect(() => {
+    document.body.style.margin = "0";
+    document.body.style.background = "#0b1114";
+    document.documentElement.style.background = "#0b1114";
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+
+    const bootstrap = async () => {
+      try {
+        if (!user || !accessToken) {
+          setScreen("login");
+          setBootstrapping(false);
+          return;
+        }
+
+        if (user.role === "Admin") {
+          setScreen("admin");
+          setBootstrapping(false);
+          return;
+        }
+
+        if (user.role === "Examiner") {
+          setScreen("examiner");
+          setBootstrapping(false);
+          return;
+        }
+
+        if (user.role === "Candidate") {
+          if (!currentExam) {
+            await loadCandidateExam();
+          }
+          setScreen("candidate-dashboard");
+          setBootstrapping(false);
+          return;
+        }
+
+        setScreen("login");
+        setBootstrapping(false);
+      } catch (e) {
+        console.log("Bootstrap failed", e);
+        resetToLogin();
+        setBootstrapping(false);
+      }
+    };
+
+    bootstrap();
+  }, [hasHydrated, user, accessToken, currentExam, loadCandidateExam, resetToLogin]);
+
+  const handleEnterExam = (exam) => {
+    setExam(exam);
+    setAssessment(normalizeAssessment(exam));
+    setScreen("precheck");
+  };
+
+  const handlePreCheckPass = () => {
+    setScreen("instructions");
+  };
+
+  const handleStartMonitoring = () => {
+    if (socket && currentExam && user) {
+      socket.emit("joinexam", {
+        examid: currentExam.examid,
+        candidateid: user.userid,
+        role: "Candidate",
+      });
+    }
+    setScreen("wait");
+  };
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const onExamStarted = () => {
+      setScreen("wait");
+    };
+
+    const onControlCommand = (action) => {
+      if (action === "terminate") setScreen("complete");
+    };
+
+    socket.on("examstarted", onExamStarted);
+    socket.on("controlcommand", onControlCommand);
+
+    return () => {
+      socket.off("examstarted", onExamStarted);
+      socket.off("controlcommand", onControlCommand);
+    };
+  }, [socket]);
+
+  if (!hasHydrated || bootstrapping) return null;
+
+  const handleExamComplete = () => setScreen("complete");
+
+  if (screen === "login") return <Login onLogin={handleLogin} />;
+  if (screen === "admin") return <AdminPanel />;
+  if (screen === "examiner") return <ExaminerDashboard />;
+  if (screen === "candidate-dashboard") return <CandidateDashboard onEnterExam={handleEnterExam} />;
+  if (screen === "precheck") return <PreCheck exam={currentExam} assessment={currentAssessment} onPass={handlePreCheckPass} />;
+  if (screen === "instructions") return <Instructions exam={currentExam} assessment={currentAssessment} onStart={handleStartMonitoring} />;
+  if (screen === "wait") {
     return (
-      <CreateExam
-        onBack={() => setView("list")}
-        onCreated={(newExam) => {
-          setSelectedExam(newExam);
-          loadExams();
-          setView("assign");
-        }}
+      <WaitScreen
+        exam={currentExam}
+        assessment={currentAssessment}
+        onExamStart={() => setScreen("exam")}
+        onLogout={handleLogout}
       />
     );
   }
-
-  if (view === "assign") {
+  if (screen === "exam") {
     return (
-      <AssignCandidates
-        exam={selectedExam}
-        onBack={() => {
-          loadExams();
-          setView("list");
-        }}
+      <ActiveExam
+        exam={currentExam}
+        assessment={currentAssessment}
+        onComplete={handleExamComplete}
+        onLogout={handleLogout}
       />
     );
   }
-
-  if (view === "list") {
+  if (screen === "complete") {
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
-        <div
-          style={{
-            height: 56,
-            background: "#1a1d27",
-            borderBottom: "1px solid #2e3347",
-            display: "flex",
-            alignItems: "center",
-            padding: "0 24px",
-            gap: 12,
-            flexShrink: 0,
-          }}
-        >
-          <span style={{ fontSize: 20 }}>👁️</span>
-          <span style={{ fontWeight: 700, fontSize: 16 }}>3rdEyeZ360</span>
-          <span style={{ fontSize: 12, color: "#8b90a0" }}>— {user?.role} Dashboard</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
-            <span style={{ fontSize: 13, color: "#8b90a0" }}>{user?.name}</span>
-            <LogoutButton />
-            <button
-              onClick={() => setView("create")}
-              className="btn btn-primary"
-              style={{ padding: "7px 18px", fontSize: 13 }}
-            >
-              + Create Exam
-            </button>
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117", color: "#fff", fontFamily: "Inter, sans-serif" }}>
+        <div style={{ height: 56, background: "#1a1d27", borderBottom: "1px solid #2e3347", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <AppLogo size={22} />
+            <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
           </div>
-        </div>
-
-        <div style={{ flex: 1, overflowY: "auto", padding: 28 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Your Exams</h2>
-
-          {loadingExams ? (
-            <div style={{ textAlign: "center", color: "#8b90a0", padding: 60 }}>Loading exams...</div>
-          ) : exams.length === 0 ? (
-            <div style={{ textAlign: "center", color: "#8b90a0", padding: "60px 0" }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-              <p style={{ marginBottom: 16 }}>No exams yet.</p>
-              <button
-                onClick={() => setView("create")}
-                className="btn btn-primary"
-                style={{ padding: "10px 24px", fontSize: 14 }}
-              >
-                Create your first exam
-              </button>
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-                gap: 16,
-              }}
-            >
-              {exams.map((exam) => (
-                <div
-                  key={exam.examid}
-                  style={{
-                    background: "#1a1d27",
-                    border: "1px solid #2e3347",
-                    borderRadius: 12,
-                    padding: 20,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: 15 }}>{exam.name}</div>
-                  <div style={{ fontSize: 12, color: "#8b90a0" }}>
-                    {exam.date} &nbsp;·&nbsp; {exam.starttime} – {exam.endtime}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                      style={{
-                        background: exam.status === "Running" ? "#0f2a1a" : "#22263a",
-                        color: exam.status === "Running" ? "#34c97a" : "#8b90a0",
-                        padding: "3px 10px",
-                        borderRadius: 20,
-                        fontSize: 12,
-                      }}
-                    >
-                      {exam.status}
-                    </span>
-                    <span style={{ fontSize: 12, color: "#555a6e" }}>⏱ {exam.durationminutes} min</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                    <button
-                      onClick={() => openMonitor(exam)}
-                      className="btn btn-primary"
-                      style={{ flex: 1, fontSize: 13, padding: "7px 0" }}
-                    >
-                      🖥 Monitor
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedExam(exam);
-                        setView("assign");
-                      }}
-                      className="btn btn-ghost"
-                      style={{ flex: 1, fontSize: 13, padding: "7px 0" }}
-                    >
-                      👥 Assign
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (view === "monitor") {
-    return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
-        <div
-          style={{
-            height: 52,
-            background: "#1a1d27",
-            borderBottom: "1px solid #2e3347",
-            display: "flex",
-            alignItems: "center",
-            padding: "0 20px",
-            gap: 12,
-            flexShrink: 0,
-            flexWrap: "wrap",
-          }}
-        >
-          <button onClick={goBack} className="btn btn-ghost" style={{ padding: "5px 12px", fontSize: 12 }}>
-            ← Back
+          <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }}>
+            Logout
           </button>
-          <span style={{ fontWeight: 700, fontSize: 14 }}>{selectedExam?.name}</span>
-          <span style={{ fontSize: 12, color: "#8b90a0" }}>
-            · {candidates.length} candidate{candidates.length !== 1 ? "s" : ""}
-          </span>
-
-          {actionMsg && (
-            <span style={{ fontSize: 12, color: "#34c97a", marginLeft: 8 }}>
-              {actionMsg}
-            </span>
-          )}
-
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-            <LogoutButton />
-            <input
-              value={broadcastMsg}
-              onChange={(e) => setBroadcastMsg(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendBroadcast()}
-              placeholder="Broadcast to all candidates..."
-              style={{ width: 220, padding: "6px 10px", fontSize: 12 }}
-            />
-            <button onClick={sendBroadcast} className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }}>
-              📢 Send
-            </button>
-            <button onClick={startExam} className="btn btn-success" style={{ padding: "6px 16px", fontSize: 12 }}>
-              ▶ Start Exam
-            </button>
-            <button
-              onClick={() => {
-                setSelectedExam(selectedExam);
-                setView("assign");
-              }}
-              className="btn btn-ghost"
-              style={{ padding: "6px 12px", fontSize: 12 }}
-            >
-              👥 Assign
-            </button>
-          </div>
         </div>
-
-        <div
-          style={{
-            height: 40,
-            background: "#1a1d27",
-            borderBottom: "1px solid #2e3347",
-            display: "flex",
-            alignItems: "center",
-            padding: "0 16px",
-            gap: 4,
-            flexShrink: 0,
-          }}
-        >
-          {[
-            { key: "grid", label: "🖥 Live Grid" },
-            {
-              key: "requests",
-              label: `📬 Requests${
-                reentryRequests.filter((r) => r.status === "Pending").length > 0
-                  ? ` (${reentryRequests.filter((r) => r.status === "Pending").length})`
-                  : ""
-              }`,
-            },
-          ].map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                setMonitorTab(t.key);
-                if (t.key === "requests") loadReentryRequests();
-              }}
-              style={{
-                padding: "5px 14px",
-                borderRadius: 6,
-                fontSize: 12,
-                cursor: "pointer",
-                background: monitorTab === t.key ? "#22263a" : "transparent",
-                color: monitorTab === t.key ? "#e8eaf0" : "#8b90a0",
-                border: monitorTab === t.key ? "1px solid #2e3347" : "1px solid transparent",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-          <div
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              padding: 16,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-              gap: 12,
-              alignContent: "start",
-            }}
-          >
-            {candidates.length === 0 && (
-              <div
-                style={{
-                  gridColumn: "1 / -1",
-                  textAlign: "center",
-                  color: "#8b90a0",
-                  padding: "60px 0",
-                  fontSize: 13,
-                }}
-              >
-                No candidates assigned yet.{" "}
-                <span onClick={() => setView("assign")} style={{ color: "#4f8ef7", cursor: "pointer" }}>
-                  Assign candidates →
-                </span>
-              </div>
-            )}
-
-            {candidates.map((c) => {
-              const live = liveData[c.candidateid] || {};
-              const color = STATUS_COLORS[c.status] || "#555a6e";
-              const isAlert = !!live.latestViolation;
-              const isActive = c.candidateid === selectedCandidate?.candidateid;
-
-              return (
-                <div
-                  key={c.candidateid}
-                  onClick={() => {
-                    setSelectedCandidate(c);
-                    loadViolations(c.candidateid, selectedExam.examid);
-                  }}
-                  style={{
-                    background: isActive ? "#1e2235" : "#1a1d27",
-                    border: `2px solid ${isAlert ? "#f75f5f" : isActive ? "#4f8ef7" : color}`,
-                    borderRadius: 10,
-                    padding: 14,
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                    outline: isActive ? "1px solid #4f8ef7" : "none",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "#555a6e",
-                        maxWidth: 120,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {c.candidateid}
-                    </span>
-                    <span
-                      style={{
-                        width: 9,
-                        height: 9,
-                        borderRadius: "50%",
-                        background: color,
-                        display: "inline-block",
-                        flexShrink: 0,
-                      }}
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      fontWeight: 600,
-                      fontSize: 13,
-                      marginBottom: 3,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {c.candidatename || "Candidate"}
-                  </div>
-
-                  <div style={{ fontSize: 11, color, marginBottom: 8, fontWeight: 500 }}>{c.status}</div>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8b90a0" }}>
-                    <span>⚠️ {c.violationcount || 0}</span>
-                    <span>📊 {c.riskscore || 0}</span>
-                    <span>💯 {c.credibilityscore ?? 100}</span>
-                  </div>
-
-                  {isAlert && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 10,
-                        background: "#2a1010",
-                        borderRadius: 5,
-                        padding: "4px 8px",
-                        color: "#f75f5f",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      🚨 {live.latestViolation.type}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ marginBottom: 18 }}>
+            <AppLogo size={72} />
           </div>
-
-          {selectedCandidate && (
-            <div
-              style={{
-                width: 320,
-                background: "#1a1d27",
-                borderLeft: "1px solid #2e3347",
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-                flexShrink: 0,
-              }}
-            >
-              <div style={{ padding: "16px 20px", borderBottom: "1px solid #2e3347", flexShrink: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>
-                      {selectedCandidate.candidatename || selectedCandidate.candidateid}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#8b90a0", marginTop: 2 }}>{selectedCandidate.status}</div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setSelectedCandidate(null);
-                      setViolations([]);
-                    }}
-                    style={{ background: "none", color: "#8b90a0", fontSize: 20, cursor: "pointer" }}
-                  >
-                    ×
-                  </button>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <StatBox label="Violations" value={selectedCandidate.violationcount || 0} color="#f75f5f" />
-                  <StatBox label="Risk Score" value={selectedCandidate.riskscore || 0} color="#f5a623" />
-                  <StatBox label="Credibility" value={`${selectedCandidate.credibilityscore ?? 100}%`} color="#34c97a" />
-                  <StatBox label="Warnings" value={selectedCandidate.warningcount || 0} color="#8b90a0" />
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => doAction(selectedCandidate.assessmentid, "pause")}
-                      className="btn btn-ghost"
-                      style={{ flex: 1, fontSize: 12 }}
-                    >
-                      ⏸ Pause
-                    </button>
-                    <button
-                      onClick={() => doAction(selectedCandidate.assessmentid, "resume")}
-                      className="btn btn-ghost"
-                      style={{ flex: 1, fontSize: 12 }}
-                    >
-                      ▶ Resume
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => doAction(selectedCandidate.assessmentid, "terminate")}
-                    className="btn btn-danger"
-                    style={{ width: "100%", fontSize: 12 }}
-                  >
-                    🛑 Terminate Assessment
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ flex: 1, overflowY: "auto" }}>
-                <div style={{ padding: "14px 20px", borderBottom: "1px solid #2e3347" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
-                    Violations ({violations.length})
-                  </div>
-                  {violations.length === 0 ? (
-                    <p style={{ fontSize: 12, color: "#8b90a0" }}>No violations recorded.</p>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {violations.map((v, i) => (
-                        <div
-                          key={v.violationid || i}
-                          style={{
-                            background: "#22263a",
-                            borderRadius: 8,
-                            padding: "10px 12px",
-                            borderLeft: "3px solid #f75f5f",
-                          }}
-                        >
-                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{v.type}</div>
-                          <div style={{ fontSize: 11, color: "#8b90a0" }}>
-                            {v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : "—"}
-                            {v.confidence != null ? ` · ${Math.round(v.confidence * 100)}% confidence` : ""}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ padding: "14px 20px" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Chat with Candidate</div>
-                  <ChatWindow
-                    examId={selectedExam.examid}
-                    candidateId={selectedCandidate.candidateid}
-                    currentUser={{ user_id: user?.userid, role: user?.role }}
-                    token={accessToken}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Exam Completed</h2>
+          <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 20, textAlign: "center" }}>
+            Your assessment has ended. You may now close this application.
+          </p>
+          <button onClick={handleLogout} className="btn btn-primary" style={{ padding: "10px 20px", fontSize: 14 }}>
+            Finish and Logout
+          </button>
         </div>
-
-        {monitorTab === "requests" && (
-          <div
-            style={{
-              position: "absolute",
-              top: 92,
-              right: 16,
-              width: 420,
-              maxHeight: "calc(100vh - 120px)",
-              overflowY: "auto",
-              background: "#1a1d27",
-              border: "1px solid #2e3347",
-              borderRadius: 12,
-              padding: 16,
-              boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Re-entry Requests</div>
-
-            {reentryRequests.length === 0 ? (
-              <div style={{ fontSize: 12, color: "#8b90a0" }}>No requests found.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {reentryRequests.map((req) => (
-                  <div
-                    key={req.requestid}
-                    style={{
-                      background: "#22263a",
-                      borderRadius: 10,
-                      padding: 12,
-                      border: "1px solid #2e3347",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                      {req.candidatename || req.candidateid}
-                    </div>
-                    <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 6 }}>
-                      {req.reason || "No reason provided"}
-                    </div>
-                    <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 10 }}>
-                      Status: {req.status}
-                    </div>
-
-                    {req.status === "Pending" && (
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          onClick={() => handleReentry(req.assessmentid, req.requestid, true)}
-                          className="btn btn-success"
-                          style={{ flex: 1, fontSize: 12 }}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleReentry(req.assessmentid, req.requestid, false)}
-                          className="btn btn-danger"
-                          style={{ flex: 1, fontSize: 12 }}
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     );
   }
 
   return null;
 }
+
+function Root() {
+  const { hasHydrated } = useAuthStore();
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, SPLASH_DURATION);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!hasHydrated) return showSplash ? <SplashScreen /> : null;
+  return showSplash ? <SplashScreen /> : <AppShell />;
+}
+
+createRoot(document.getElementById("root")).render(<Root />);
 
 ===== FILE END =====
 
@@ -6472,44 +6249,76 @@ NAME : LogoutButton.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\components\LogoutButton.jsx
 =====================
 
-import React, { useState } from 'react'
-import axios from 'axios'
-import useAuthStore from '../store/authStore'
-import useExamStore from '../store/examStore'
+import React, { useState } from "react";
+import axios from "axios";
+import useAuthStore from "../store/authStore";
+import useExamStore from "../store/examStore";
 
-const API = 'http://localhost:3000'
-const SCREEN_STORAGE_KEY = 'app-screen'
+const API = "http://localhost:3000";
+const SCREEN_STORAGE_KEY = "app-screen";
 
 export default function LogoutButton({ onLoggedOut, style = {} }) {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
-    if (loading) return
+    if (loading) return;
 
-    setLoading(true)
+    setLoading(true);
 
     try {
-      const { refreshToken } = useAuthStore.getState()
+      const { refreshToken } = useAuthStore.getState();
+
+      if (window.electronAPI) {
+        try {
+          await window.electronAPI.stopCapture?.();
+        } catch (e) {
+          console.log("stopCapture cleanup failed", e);
+        }
+
+        try {
+          await window.electronAPI.closeBrowser?.();
+        } catch (e) {
+          console.log("closeBrowser cleanup failed", e);
+        }
+
+        try {
+          await window.electronAPI.disableLockdown?.();
+        } catch (e) {
+          console.log("disableLockdown cleanup failed", e);
+        }
+
+        try {
+          await window.electronAPI.setClosable?.(true);
+        } catch (e) {
+          console.log("setClosable cleanup failed", e);
+        }
+      }
 
       if (refreshToken) {
         try {
           await axios.post(`${API}/api/auth/logout`, {
-  refresh_token: refreshToken,
-})
+            refreshtoken: refreshToken,
+          });
         } catch (e) {
-          console.log('Logout API failed, clearing local session anyway', e)
+          console.log("Logout API failed, clearing local session anyway", e);
         }
       }
     } finally {
-      useAuthStore.getState().clearAuth()
-      useExamStore.getState().reset()
-      localStorage.removeItem(SCREEN_STORAGE_KEY)
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      onLoggedOut?.()
-      setLoading(false)
+      useAuthStore.getState().clearAuth();
+      useExamStore.getState().reset();
+
+      try {
+        localStorage.removeItem(SCREEN_STORAGE_KEY);
+        localStorage.removeItem("auth-storage");
+        localStorage.removeItem("exam-storage");
+      } catch (e) {
+        console.log("Storage cleanup failed", e);
+      }
+
+      onLoggedOut?.();
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <button
@@ -6517,20 +6326,20 @@ export default function LogoutButton({ onLoggedOut, style = {} }) {
       disabled={loading}
       className="btn"
       style={{
-        padding: '10px 16px',
+        padding: "10px 16px",
         borderRadius: 10,
-        border: '1px solid #3a4057',
-        background: '#1a1d27',
-        color: '#e8eaf0',
-        cursor: 'pointer',
+        border: "1px solid #3a4057",
+        background: "#1a1d27",
+        color: "#e8eaf0",
+        cursor: "pointer",
         fontSize: 13,
         fontWeight: 600,
         ...style,
       }}
     >
-      {loading ? 'Signing out...' : 'Logout'}
+      {loading ? "Signing out..." : "Logout"}
     </button>
-  )
+  );
 }
 
 ===== FILE END =====
@@ -6791,35 +6600,46 @@ NAME : useTimer.js
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\hooks\useTimer.js
 =====================
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from "react";
 
 export function useTimer(durationMinutes, onExpire) {
-  const [timeLeft, setTimeLeft] = useState(durationMinutes * 60)
-  const intervalRef = useRef(null)
+  const [timeLeft, setTimeLeft] = useState((Number(durationMinutes) || 0) * 60);
+  const intervalRef = useRef(null);
 
   useEffect(() => {
+    setTimeLeft((Number(durationMinutes) || 0) * 60);
+  }, [durationMinutes]);
+
+  useEffect(() => {
+    clearInterval(intervalRef.current);
+
     intervalRef.current = setInterval(() => {
-      setTimeLeft(prev => {
+      setTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(intervalRef.current)
-          if (onExpire) onExpire()
-          return 0
+          clearInterval(intervalRef.current);
+          if (onExpire) onExpire();
+          return 0;
         }
-        return prev - 1
-      })
-    }, 1000)
-    return () => clearInterval(intervalRef.current)
-  }, [])
+        return prev - 1;
+      });
+    }, 1000);
 
-  const formatted = () => {
-    const h = Math.floor(timeLeft / 3600)
-    const m = Math.floor((timeLeft % 3600) / 60)
-    const s = timeLeft % 60
-    if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-  }
+    return () => clearInterval(intervalRef.current);
+  }, [onExpire]);
 
-  return { timeLeft, formatted }
+  const formatted = useMemo(() => {
+    const h = Math.floor(timeLeft / 3600);
+    const m = Math.floor((timeLeft % 3600) / 60);
+    const s = timeLeft % 60;
+
+    if (h > 0) {
+      return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }, [timeLeft]);
+
+  return { timeLeft, formatted };
 }
 
 ===== FILE END =====
@@ -7726,271 +7546,429 @@ NAME : ActiveExam.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\ActiveExam.jsx
 =====================
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
-import useExamStore from "../../store/examStore";
-import { useTimer } from "../../hooks/useTimer";
-import { useToaster } from "../../hooks/useToaster";
-import { getSocket } from "../../hooks/useSocket";
-import Toaster from "../../components/common/Toaster";
-import ChatWindow from "../../components/common/ChatWindow";
+import { useSocket } from "../../hooks/useSocket";
 
 const API = "http://localhost:3000";
 
-export default function ActiveExam({ exam, assessment, onComplete }) {
-  const { user, accessToken } = useAuthStore();
-  const { violationCount, incrementViolation, setLocked, isLocked } = useExamStore();
-  const { toasts, addToast, removeToast } = useToaster();
+export default function ActiveExam({
+  exam,
+  assessment,
+  onComplete,
+  onLogout,
+}) {
+  const shellRef = useRef(null);
+  const browserAreaRef = useRef(null);
+  const completedRef = useRef(false);
 
-  // Always prefer assessment for normalized fields
-  const examId = assessment?.examid || exam?.examid;
-  const assessmentId = assessment?.assessmentid || exam?.assessmentid;
-  const examName = assessment?.name || exam?.name || "Exam";
-  const durationMinutes = assessment?.durationminutes || exam?.durationminutes || 0;
-  const allowedSites = assessment?.allowedwebsites?.length
-    ? assessment.allowedwebsites
-    : (exam?.allowedwebsites || []);
+  const { accessToken } = useAuthStore();
+  const socket = useSocket(accessToken);
 
-  const { formatted } = useTimer(durationMinutes, onComplete);
+  const examId =
+    assessment?.examid ??
+    assessment?.exam_id ??
+    exam?.examid ??
+    exam?.exam_id;
 
-  const videoRef = useRef(null);
-  const captureIntervalRef = useRef(null);
-  const streamRef = useRef(null);
-  const socketRef = useRef(null);
+  const assessmentId =
+    assessment?.assessmentid ??
+    assessment?.assessment_id ??
+    exam?.assessmentid ??
+    exam?.assessment_id;
 
-  const [activeSite, setActiveSite] = useState(allowedSites[0] || "");
+  const candidateId =
+    assessment?.candidateid ??
+    assessment?.candidate_id ??
+    exam?.candidateid ??
+    exam?.candidate_id;
 
-  const handleExamComplete = async () => {
-    try {
-      if (window.electronAPI) {
-        await window.electronAPI.stopCapture?.();
-        await window.electronAPI.closeBrowser?.();
-        await window.electronAPI.disableLockdown?.();
-        await window.electronAPI.setClosable?.(true);
-      }
-    } catch (e) {
-      console.log("Cleanup on complete failed", e);
+  const allowedSites = useMemo(() => {
+    const candidates = [
+      assessment?.allowedwebsites,
+      assessment?.allowed_websites,
+      exam?.allowedwebsites,
+      exam?.allowed_websites,
+    ];
+
+    for (const item of candidates) {
+      if (Array.isArray(item) && item.length) return item;
     }
-    onComplete?.();
-  };
+
+    return [];
+  }, [assessment, exam]);
+
+  const [activeTab, setActiveTab] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const [liveExam, setLiveExam] = useState(null);
+  const [liveAssessment, setLiveAssessment] = useState(null);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    startMonitoring();
-    setupSocketListeners();
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-    // DO NOT re-open browser or re-enable lockdown here —
-    // handleStartMonitoring in index.jsx already did that.
-    // Only start webcam capture session via IPC if not already running.
-    if (window.electronAPI && examId && assessmentId && user?.userid) {
-      window.electronAPI.startCapture?.({
-        assessmentId,
-        examId,
-        candidateId: user.userid,
-        token: accessToken,
-      });
-    }
+  const merged = useMemo(
+    () => ({
+      ...exam,
+      ...assessment,
+      ...liveExam,
+      ...liveAssessment,
+    }),
+    [exam, assessment, liveExam, liveAssessment]
+  );
+
+  const activeUrl = allowedSites[activeTab] || "";
+
+  useEffect(() => {
+    if (!window.electronAPI || !activeUrl) return;
+    window.electronAPI.navigateBrowser?.(activeUrl);
+  }, [activeUrl]);
+
+  useEffect(() => {
+    const sendBounds = () => {
+      if (!shellRef.current || !browserAreaRef.current || !window.electronAPI) return;
+
+      const shellRect = shellRef.current.getBoundingClientRect();
+      const browserRect = browserAreaRef.current.getBoundingClientRect();
+
+      const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
+      const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
+      const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
+      const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
+
+      window.electronAPI.resizeBrowser?.({ top, left, right, bottom });
+    };
+
+    sendBounds();
+
+    const id = setTimeout(sendBounds, 300);
+    window.addEventListener("resize", sendBounds);
 
     return () => {
-      stopMonitoring();
-      teardownSocketListeners();
-      window.electronAPI?.stopCapture?.();
-      window.electronAPI?.closeBrowser?.();
-      window.electronAPI?.disableLockdown?.();
-      window.electronAPI?.setClosable?.(true);
-      window.electronAPI?.removeDetectionListener?.();
+      clearTimeout(id);
+      window.removeEventListener("resize", sendBounds);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, allowedSites.length]);
 
-  const startMonitoring = async () => {
+  const finishExam = useCallback(async () => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-
-      captureIntervalRef.current = setInterval(() => captureAndSendFrame(), 4000);
+      await window.electronAPI?.stopCapture?.();
     } catch (e) {
-      addToast("⚠️ Camera access lost — please reconnect your camera", "error", 8000);
+      console.log("stopCapture failed", e);
     }
-  };
 
-  const captureAndSendFrame = () => {
-    if (!videoRef.current || !window.electronAPI) return;
-    if (!assessmentId || !user?.userid || !examId) return;
+    try {
+      await window.electronAPI?.closeBrowser?.();
+    } catch (e) {
+      console.log("closeBrowser failed", e);
+    }
 
-    const canvas = document.createElement("canvas");
-    canvas.width = 640;
-    canvas.height = 480;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(videoRef.current, 0, 0, 640, 480);
-    const base64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+    try {
+      await window.electronAPI?.disableLockdown?.();
+    } catch (e) {
+      console.log("disableLockdown failed", e);
+    }
 
-    window.electronAPI.sendFrame({
-      frame: base64,
-      assessmentId,
-      candidateId: user.userid,
-      examId,
-      token: accessToken,
+    try {
+      await window.electronAPI?.setClosable?.(true);
+    } catch (e) {
+      console.log("setClosable failed", e);
+    }
+
+    onComplete?.();
+  }, [onComplete]);
+
+  useEffect(() => {
+    if (!socket || !examId) return;
+
+    socket.emit("join_exam", {
+      exam_id: examId,
+      examid: examId,
+      assessment_id: assessmentId,
+      assessmentid: assessmentId,
+      candidate_id: candidateId,
+      candidateid: candidateId,
+      role: "Candidate",
     });
-  };
 
-  const stopMonitoring = () => {
-    if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
-    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
-  };
+    const onExaminerControl = async (payload) => {
+      const payloadExamId = payload?.exam_id ?? payload?.examid;
+      const payloadAssessmentId = payload?.assessment_id ?? payload?.assessmentid;
+      const payloadCandidateId = payload?.candidate_id ?? payload?.candidateid;
+      const action = String(payload?.action ?? "").toLowerCase();
+      const status = String(payload?.status ?? "").toUpperCase();
 
-  const setupSocketListeners = () => {
-    window.electronAPI?.onDetectionResult((result) => {
-      if (result.action === "toast" || result.action === "violation") {
-        addToast(result.message, result.action === "violation" ? "error" : "warning", 6000);
-        if (result.action === "violation") incrementViolation();
-        if (result.locked) {
-          setLocked(true);
-          addToast("🔒 Your assessment has been locked. Contact your examiner.", "error", 0);
-        }
+      const examMatch = !payloadExamId || String(payloadExamId) === String(examId);
+      const assessmentMatch = !payloadAssessmentId || String(payloadAssessmentId) === String(assessmentId);
+      const candidateMatch = !payloadCandidateId || String(payloadCandidateId) === String(candidateId);
+
+      if (!examMatch || !assessmentMatch || !candidateMatch) return;
+
+      if (action === "terminate" || status === "TERMINATED") {
+        await finishExam();
       }
-    });
+    };
 
-    const socket = getSocket();
-    socketRef.current = socket;
-    if (socket) {
-      socket.on("control_command", ({ action }) => {
-        if (action === "pause") {
-          addToast("⏸️ Your assessment has been paused by the examiner.", "warning", 0);
-        } else if (action === "resume") {
-          addToast("▶️ Your assessment has been resumed.", "success", 5000);
-        } else if (action === "terminate") {
-          addToast("🛑 Your assessment has been terminated by the examiner.", "error", 0);
-          setTimeout(handleExamComplete, 3000);
-        }
-      });
-      socket.on("you_are_locked", () => {
-        setLocked(true);
-        addToast("🔒 Assessment locked due to violations. Waiting for examiner.", "error", 0);
-      });
+    socket.on("examiner_control", onExaminerControl);
+    return () => {
+      socket.off("examiner_control", onExaminerControl);
+    };
+  }, [socket, examId, assessmentId, candidateId, finishExam]);
+
+  const checkLiveStatus = useCallback(async () => {
+    if (!examId || !accessToken || !assessmentId) {
+      setChecking(false);
+      return;
     }
-  };
 
-  const teardownSocketListeners = () => {
-    const socket = socketRef.current;
-    if (!socket) return;
-    socket.off("control_command");
-    socket.off("you_are_locked");
-  };
+    try {
+      const [examRes, assessmentRes] = await Promise.all([
+        axios.get(`${API}/api/exams/${examId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+        axios.get(`${API}/api/assessments/${assessmentId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+      ]);
 
-  const handleSiteClick = (site) => {
-    setActiveSite(site);
-    window.electronAPI?.navigateBrowser?.(site);
-  };
+      const latestExam = examRes?.data ?? null;
+      const latestAssessment = assessmentRes?.data ?? null;
+
+      if (latestExam) setLiveExam(latestExam);
+      if (latestAssessment) setLiveAssessment(latestAssessment);
+
+      const examStatus = String(latestExam?.status ?? "");
+      const assessmentStatus = String(latestAssessment?.status ?? "");
+      const finalStatus = String(
+        latestAssessment?.finalstatus ?? latestAssessment?.final_status ?? ""
+      );
+
+      const shouldEnd =
+        examStatus !== "Running" ||
+        assessmentStatus === "TERMINATED" ||
+        assessmentStatus === "LOCKED" ||
+        finalStatus === "TERMINATED";
+
+      if (shouldEnd) {
+        await finishExam();
+        return;
+      }
+    } catch (e) {
+      console.log("ActiveExam status check failed", e);
+    } finally {
+      setChecking(false);
+    }
+  }, [examId, assessmentId, accessToken, finishExam]);
+
+  useEffect(() => {
+    checkLiveStatus();
+    const poll = setInterval(checkLiveStatus, 3000);
+    return () => clearInterval(poll);
+  }, [checkLiveStatus]);
+
+  const startDate = merged.date || exam?.date;
+  const startClock =
+    merged.starttime || merged.start_time || exam?.starttime || exam?.start_time;
+
+  const durationMinutes = Number(
+    merged.durationminutes ??
+      merged.duration_minutes ??
+      exam?.durationminutes ??
+      exam?.duration_minutes ??
+      0
+  );
+
+  const startMs = startDate && startClock
+    ? new Date(`${startDate}T${startClock}:00`).getTime()
+    : null;
+
+  const endMs = startMs && durationMinutes > 0
+    ? startMs + durationMinutes * 60 * 1000
+    : null;
+
+  const remainingMs = endMs ? Math.max(0, endMs - now) : 0;
+  const totalSecs = Math.floor(remainingMs / 1000);
+  const hrs = Math.floor(totalSecs / 3600);
+  const remMins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+
+  useEffect(() => {
+    if (endMs && now >= endMs) {
+      finishExam();
+    }
+  }, [endMs, now, finishExam]);
+
+  useEffect(() => {
+    return () => {
+      window.electronAPI?.closeBrowser?.();
+    };
+  }, []);
+
+  const endLabel = merged.endtime || merged.end_time || exam?.endtime || exam?.end_time || "--:--";
+  const examName = merged.name || exam?.name || "Exam";
+  const assessmentStatus = liveAssessment?.status || assessment?.status || merged.status || "-";
+  const examStatus = liveExam?.status || merged.examstatus || merged.exam_status || exam?.status || "-";
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
-      {/* Top bar */}
-      <div style={{
-        height: 50, background: "#1a1d27", borderBottom: "1px solid #2e3347",
-        display: "flex", alignItems: "center", padding: "0 16px", gap: 16, flexShrink: 0,
-      }}>
-        <span style={{ fontWeight: 700, fontSize: 14, color: "#e8eaf0" }}>👁️ 3rdEyeZ360</span>
-        <span style={{ color: "#8b90a0", fontSize: 13 }}>|</span>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "#e8eaf0" }}>{examName}</span>
+    <div
+      ref={shellRef}
+      style={{
+        minHeight: "100vh",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+        color: "#e8eaf0",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          height: 58,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 18px",
+          background: "#1a1d27",
+          borderBottom: "1px solid #2c3143",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>3rdEyeZ360</div>
+          <div style={{ width: 1, height: 20, background: "#394055" }} />
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{examName}</div>
+        </div>
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{
-            background: "#22263a", padding: "5px 14px", borderRadius: 8,
-            fontSize: 15, fontWeight: 700,
-            color: parseInt(formatted.split(":")[0], 10) < 5 ? "#f75f5f" : "#34c97a",
-          }}>
-            ⏱ {formatted}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={pill("#2b2230", "#ff6b6b")}>
+            ⏱ {String(hrs).padStart(2, "0")}:
+            {String(remMins).padStart(2, "0")}:
+            {String(secs).padStart(2, "0")}
           </div>
-
-          <div style={{
-            background: violationCount > 0 ? "#2a1010" : "#22263a",
-            padding: "5px 12px", borderRadius: 8, fontSize: 13,
-            color: violationCount > 0 ? "#f75f5f" : "#8b90a0",
-          }}>
-            ⚠️ {violationCount} violation{violationCount !== 1 ? "s" : ""}
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#34c97a" }}>
-            <span style={{
-              width: 8, height: 8, background: "#34c97a", borderRadius: "50%",
-              animation: "pulse 1.5s infinite",
-            }} />
-            Monitoring Active
-          </div>
+          <div style={pill("#252c40", "#b8d1ff")}>🕒 Ends at {endLabel}</div>
+          <div style={pill("#252937", "#f2c46d")}>Assessment {assessmentStatus}</div>
+          <div style={pill("#15281f", "#44d17a")}>Exam {examStatus}</div>
         </div>
       </div>
 
-      {/* Allowed sites bar */}
-      {allowedSites.length > 0 && (
-        <div style={{
-          minHeight: 42, background: "#22263a", borderBottom: "1px solid #2e3347",
-          display: "flex", alignItems: "center", padding: "6px 12px",
-          gap: 8, flexWrap: "wrap", flexShrink: 0,
-        }}>
-          <span style={{ fontSize: 11, color: "#8b90a0", marginRight: 4 }}>Allowed websites:</span>
-          {allowedSites.map((site, i) => {
-            const isActive = site === activeSite;
-            return (
-              <button key={i} onClick={() => handleSiteClick(site)} style={{
-                background: isActive ? "#10243a" : "#1a1d27",
-                border: `1px solid ${isActive ? "#4f8ef7" : "#2e3347"}`,
-                borderRadius: 6, padding: "5px 10px", fontSize: 12,
-                color: isActive ? "#8fc2ff" : "#c8cad0", cursor: "pointer",
-              }}>
-                🌐 {site}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div
+        style={{
+          height: 44,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "0 10px",
+          background: "#252a3d",
+          borderBottom: "1px solid #32384d",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ fontSize: 13, color: "#98a0b8" }}>Allowed websites:</div>
 
-      {/* Main content area — BrowserView renders here via Electron */}
-      <div style={{ flex: 1, background: "#0a0c14", position: "relative" }}>
-        {isLocked && (
-          <div style={{
-            position: "absolute", inset: 0, background: "rgba(0,0,0,0.85)",
-            display: "flex", flexDirection: "column", alignItems: "center",
-            justifyContent: "center", zIndex: 100,
-          }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: "#fff" }}>
-              Assessment Locked
-            </h2>
-            <p style={{ color: "#8b90a0", fontSize: 14, textAlign: "center", maxWidth: 320 }}>
-              Your assessment has been locked due to repeated violations.
-              <br />Please wait for your examiner to take action.
-            </p>
+        {allowedSites.map((site, i) => {
+          const label = safeHost(site) || `Tab ${i + 1}`;
+          const active = i === activeTab;
+
+          return (
+            <button
+              key={`${site}-${i}`}
+              onClick={() => setActiveTab(i)}
+              style={{
+                border: active ? "1px solid #4f8ef7" : "1px solid #474e65",
+                background: active ? "#193457" : "#2a2f3f",
+                color: active ? "#cfe3ff" : "#e8eaf0",
+                borderRadius: 8,
+                padding: "7px 12px",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Tab {i + 1}: {label}
+            </button>
+          );
+        })}
+
+        {checking && (
+          <div style={{ marginLeft: "auto", fontSize: 12, color: "#98a0b8" }}>
+            Syncing exam status...
           </div>
         )}
       </div>
 
-      {/* Status bar */}
-      <div style={{
-        height: 32, background: "#1a1d27", borderTop: "1px solid #2e3347",
-        display: "flex", alignItems: "center", padding: "0 16px",
-        gap: 20, fontSize: 11, color: "#8b90a0", flexShrink: 0,
-      }}>
+      <div
+        ref={browserAreaRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          background: "#0b0f17",
+        }}
+      />
+
+      <div
+        style={{
+          height: 34,
+          background: "#1a1d27",
+          borderTop: "1px solid #2c3143",
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          padding: "0 12px",
+          color: "#a5acc0",
+          fontSize: 13,
+          flexShrink: 0,
+        }}
+      >
         <span>📷 Camera Active</span>
         <span>🌐 Connected</span>
         <span>🔴 Recording</span>
-        <span style={{ marginLeft: "auto", color: "#f75f5f", fontSize: 11 }}>
-          ⚠️ Do not close this window during the exam
-        </span>
+
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            style={{
+              marginLeft: "auto",
+              background: "#2a2f3f",
+              color: "#e8eaf0",
+              border: "1px solid #474e65",
+              borderRadius: 8,
+              padding: "5px 10px",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            Logout
+          </button>
+        )}
       </div>
-
-      <video ref={videoRef} autoPlay muted style={{ display: "none" }} />
-      <Toaster toasts={toasts} onRemove={removeToast} />
-      <ChatWindow
-        examId={examId}
-        candidateId={user?.userid}
-        currentUser={user}
-        token={accessToken}
-      />
-
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
     </div>
   );
+}
+
+function safeHost(url) {
+  try {
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return new URL(normalized).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function pill(bg, color) {
+  return {
+    background: bg,
+    color,
+    borderRadius: 10,
+    padding: "8px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+  };
 }
 
 ===== FILE END =====
@@ -8000,22 +7978,97 @@ NAME : CandidateDashboard.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\CandidateDashboard.jsx
 =====================
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
 
 const API = "http://localhost:3000";
+const POLL_INTERVAL = 6000; // auto-refresh every 6s
 
+// ─── Normalize mixed field names from backend ────────────────────────────────
+function normalizeItem(raw) {
+  if (!raw) return null;
+  return {
+    ...raw,
+    assessmentid:    raw.assessmentid    ?? raw.assessment_id   ?? null,
+    examid:          raw.examid          ?? raw.exam_id         ?? null,
+    name:            raw.name            ?? "Upcoming Exam",
+    description:     raw.description     ?? "",
+    date:            raw.date            ?? "—",
+    starttime:       raw.starttime       ?? raw.start_time      ?? "—",
+    endtime:         raw.endtime         ?? raw.end_time        ?? "—",
+    durationminutes: raw.durationminutes ?? raw.duration_minutes ?? 0,
+    status:          raw.status          ?? "ASSIGNED",
+    examstatus:      raw.examstatus      ?? raw.exam_status     ?? "Draft",
+    allowedwebsites: Array.isArray(raw.allowedwebsites)
+      ? raw.allowedwebsites
+      : Array.isArray(raw.allowed_websites)
+        ? raw.allowed_websites
+        : [],
+  };
+}
+
+// ─── Status chip ─────────────────────────────────────────────────────────────
+function getStatusChip(status, examStatus) {
+  const s = String(status    || "").toUpperCase();
+  const e = String(examStatus || "").toLowerCase();
+
+  if (s === "COMPLETED")  return { label: "Completed",      bg: "#0f2a1a", color: "#34c97a" };
+  if (s === "TERMINATED") return { label: "Terminated",     bg: "#2a1010", color: "#f75f5f" };
+  if (s === "LOCKED")     return { label: "Locked",         bg: "#2a1010", color: "#f75f5f" };
+  if (s === "PAUSED")     return { label: "Paused",         bg: "#2a2010", color: "#f5a623" };
+
+  // Approved re-entry / late entry
+  if (["REENTRYAPPROVED","REENTRY_APPROVED","LATEENTRYAPPROVED","LATEENTRY_APPROVED"].includes(s)) {
+    return { label: "Re-entry Approved", bg: "#0f2a1a", color: "#34c97a" };
+  }
+
+  // Assessment is active AND exam is running → ready to enter
+  if ((s === "ACTIVE") || e === "running") {
+    return { label: "Ready to Enter", bg: "#10243a", color: "#4f8ef7" };
+  }
+
+  if (["ASSIGNED","AVAILABLE","READY"].includes(s)) {
+    return { label: "Assigned — Waiting", bg: "#22263a", color: "#c8cad0" };
+  }
+
+  return { label: status || "Unknown", bg: "#22263a", color: "#c8cad0" };
+}
+
+// ─── Entry gate ──────────────────────────────────────────────────────────────
+function canEnterExam(exam) {
+  const s = String(exam?.status    || "").toUpperCase();
+  const e = String(exam?.examstatus || "").toLowerCase();
+
+  // Hard blocks
+  if (["COMPLETED","TERMINATED","LOCKED"].includes(s)) return false;
+
+  // Re-entry / late entry approved
+  if (["REENTRYAPPROVED","REENTRY_APPROVED","LATEENTRYAPPROVED","LATEENTRY_APPROVED"].includes(s)) {
+    return true;
+  }
+
+  // Assessment is active (exam running)
+  if (s === "ACTIVE") return true;
+
+  // Paused — still allow re-entry (examiner can resume)
+  if (s === "PAUSED") return true;
+
+  // Assigned/Ready only when exam is actually running
+  if (["ASSIGNED","AVAILABLE","READY"].includes(s) && e === "running") return true;
+
+  return false;
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
 function LogoutButton() {
   const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
     if (loading) return;
     setLoading(true);
-
     try {
       const { refreshToken } = useAuthStore.getState();
-
       if (refreshToken) {
         try {
           await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
@@ -8045,226 +8098,158 @@ function LogoutButton() {
 
 function StatCard({ label, value, color }) {
   return (
-    <div
-      style={{
-        background: "#1a1d27",
-        border: "1px solid #2e3347",
-        borderRadius: 14,
-        padding: 18,
-      }}
-    >
+    <div style={{ background: "#1a1d27", border: "1px solid #2e3347", borderRadius: 14, padding: 18 }}>
       <div style={{ fontSize: 12, color: "#8b90a0", marginBottom: 8 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
 
-function getStatusChip(status, examStatus) {
-  const normalized = String(status || "").toUpperCase();
-  const normalizedExam = String(examStatus || "").toLowerCase();
-
-  if (normalized === "COMPLETED") {
-    return { label: "Completed", bg: "#0f2a1a", color: "#34c97a" };
-  }
-
-  if (normalized === "TERMINATED") {
-    return { label: "Terminated", bg: "#2a1010", color: "#f75f5f" };
-  }
-
-  if (normalized === "ACTIVE" || normalizedExam === "running") {
-    return { label: "Ready to Enter", bg: "#10243a", color: "#4f8ef7" };
-  }
-
-  if (normalized === "PAUSED") {
-    return { label: "Paused", bg: "#2a2010", color: "#f5a623" };
-  }
-
-  if (normalized === "LOCKED") {
-    return { label: "Locked", bg: "#2a1010", color: "#f75f5f" };
-  }
-
-  if (normalized === "ASSIGNED" || normalized === "AVAILABLE" || normalized === "READY") {
-    return { label: "Assigned", bg: "#22263a", color: "#c8cad0" };
-  }
-
-  return { label: status || "Unknown", bg: "#22263a", color: "#c8cad0" };
-}
-
-function canEnterExam(exam) {
-  const status = String(exam?.status || "").toUpperCase();
-  const examStatus = String(exam?.examstatus || "").toLowerCase();
-
-  if (status === "COMPLETED" || status === "TERMINATED") return false;
-  if (status === "LOCKED") return false;
-
-  return ["assigned", "running", "draft"].includes(examStatus) ||
-    ["ASSIGNED", "AVAILABLE", "READY", "ACTIVE", "PAUSED"].includes(status);
-}
-
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function CandidateDashboard({ onEnterExam }) {
   const { user, accessToken } = useAuthStore();
-  const [assessments, setAssessments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [assessments, setAssessments]   = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [error, setError]               = useState("");
+  const [lastUpdated, setLastUpdated]   = useState(null);
+  const prevEnterable                   = useRef(new Set());
 
   const headers = useMemo(
-    () => ({
-      Authorization: `Bearer ${accessToken}`,
-    }),
+    () => ({ Authorization: `Bearer ${accessToken}` }),
     [accessToken]
   );
 
-  const loadAssessments = async () => {
+  const fetchAssessments = useCallback(async (silent = false) => {
     if (!accessToken) return;
-
-    setLoading(true);
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
     setError("");
 
     try {
       const res = await axios.get(`${API}/api/exams/candidate/upcoming`, { headers });
-      setAssessments(Array.isArray(res.data) ? res.data : []);
+      const normalized = Array.isArray(res.data) ? res.data.map(normalizeItem) : [];
+      setAssessments(normalized);
+      setLastUpdated(new Date());
     } catch (e) {
       console.error("load candidate assessments:", e);
-      setError(e?.response?.data?.detail || "Failed to load your assessments.");
-      setAssessments([]);
+      if (!silent) {
+        setError(e?.response?.data?.detail || "Failed to load your assessments.");
+        setAssessments([]);
+      }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [accessToken, headers]);
 
+  // Initial load
   useEffect(() => {
-    loadAssessments();
-  }, [accessToken]);
+    fetchAssessments(false);
+  }, [fetchAssessments]);
 
-  const allottedCount = assessments.length;
-  const completedCount = assessments.filter(
-    (item) => String(item.status || "").toUpperCase() === "COMPLETED"
-  ).length;
-  const activeCount = assessments.filter((item) => canEnterExam(item)).length;
+  // Auto-poll — so the "Enter Exam Hall" button lights up the moment an examiner starts the exam
+  useEffect(() => {
+    const poll = setInterval(() => fetchAssessments(true), POLL_INTERVAL);
+    return () => clearInterval(poll);
+  }, [fetchAssessments]);
+
+  // Derived counts
+  const allottedCount  = assessments.length;
+  const completedCount = assessments.filter(a => String(a.status).toUpperCase() === "COMPLETED").length;
+  const activeCount    = assessments.filter(a => canEnterExam(a)).length;
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        background: "#0f1117",
-      }}
-    >
-      <div
-        style={{
-          height: 56,
-          background: "#1a1d27",
-          borderBottom: "1px solid #2e3347",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 20px",
-          flexShrink: 0,
-        }}
-      >
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
+      {/* ── Header ── */}
+      <div style={{
+        height: 56, background: "#1a1d27", borderBottom: "1px solid #2e3347",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "0 20px", flexShrink: 0,
+      }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>👁️</span>
-          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>
-            3rdEyeZ360
-          </span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>3rdEyeZ360</span>
           <span style={{ fontSize: 12, color: "#8b90a0" }}>— Candidate Dashboard</span>
         </div>
-
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ fontSize: 13, color: "#8b90a0" }}>{user?.name}</span>
           <LogoutButton />
         </div>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: 24,
-        }}
-      >
+      {/* ── Body ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+        {/* Welcome */}
         <div style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: "#e8eaf0" }}>
-            Welcome back
+            Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
           </h2>
           <p style={{ fontSize: 14, color: "#8b90a0", margin: 0 }}>
-            Choose an allotted assessment to enter the exam hall and begin your checks.
+            Once the examiner starts your exam, the button below will automatically become active.
           </p>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 16,
-            marginBottom: 28,
-          }}
-        >
+        {/* Stat cards */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: 16, marginBottom: 28,
+        }}>
           <StatCard label="Assessments Allotted" value={allottedCount} color="#4f8ef7" />
-          <StatCard label="Ready / Active" value={activeCount} color="#34c97a" />
-          <StatCard label="Completed" value={completedCount} color="#f5a623" />
+          <StatCard label="Ready to Enter"        value={activeCount}    color="#34c97a" />
+          <StatCard label="Completed"             value={completedCount} color="#f5a623" />
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 16,
-            gap: 12,
-          }}
-        >
+        {/* Section header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          marginBottom: 16, gap: 12,
+        }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: "#e8eaf0", margin: 0 }}>
             Your Assessments
           </h3>
 
-          <button
-            onClick={loadAssessments}
-            className="btn btn-ghost"
-            style={{ padding: "8px 14px", fontSize: 12 }}
-          >
-            Refresh
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {lastUpdated && (
+              <span style={{ fontSize: 11, color: "#555a6e" }}>
+                Updated {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            {refreshing && (
+              <span style={{ fontSize: 11, color: "#4f8ef7" }}>Refreshing…</span>
+            )}
+            <button
+              onClick={() => fetchAssessments(false)}
+              disabled={loading || refreshing}
+              className="btn btn-ghost"
+              style={{ padding: "7px 14px", fontSize: 12 }}
+            >
+              {loading ? "Loading…" : "↻ Refresh"}
+            </button>
+          </div>
         </div>
 
+        {/* States */}
         {loading ? (
-          <div
-            style={{
-              textAlign: "center",
-              color: "#8b90a0",
-              padding: "60px 0",
-              background: "#1a1d27",
-              border: "1px solid #2e3347",
-              borderRadius: 16,
-            }}
-          >
-            Loading your assessments...
+          <div style={{
+            textAlign: "center", color: "#8b90a0", padding: "60px 0",
+            background: "#1a1d27", border: "1px solid #2e3347", borderRadius: 16,
+          }}>
+            Loading your assessments…
           </div>
         ) : error ? (
-          <div
-            style={{
-              background: "#2a1010",
-              border: "1px solid #f75f5f",
-              color: "#f3c2c2",
-              borderRadius: 12,
-              padding: 16,
-              fontSize: 14,
-            }}
-          >
+          <div style={{
+            background: "#2a1010", border: "1px solid #f75f5f",
+            color: "#f3c2c2", borderRadius: 12, padding: 16, fontSize: 14,
+          }}>
             {error}
           </div>
         ) : assessments.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              color: "#8b90a0",
-              padding: "60px 24px",
-              background: "#1a1d27",
-              border: "1px solid #2e3347",
-              borderRadius: 16,
-            }}
-          >
+          <div style={{
+            textAlign: "center", color: "#8b90a0", padding: "60px 24px",
+            background: "#1a1d27", border: "1px solid #2e3347", borderRadius: 16,
+          }}>
             <div style={{ fontSize: 44, marginBottom: 14 }}>📝</div>
             <div style={{ fontSize: 16, color: "#e8eaf0", marginBottom: 8 }}>
               No assessments assigned yet
@@ -8274,15 +8259,13 @@ export default function CandidateDashboard({ onEnterExam }) {
             </div>
           </div>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-              gap: 16,
-            }}
-          >
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+            gap: 16,
+          }}>
             {assessments.map((exam) => {
-              const chip = getStatusChip(exam.status, exam.examstatus);
+              const chip      = getStatusChip(exam.status, exam.examstatus);
               const enterable = canEnterExam(exam);
 
               return (
@@ -8290,138 +8273,105 @@ export default function CandidateDashboard({ onEnterExam }) {
                   key={exam.assessmentid}
                   style={{
                     background: "#1a1d27",
-                    border: "1px solid #2e3347",
-                    borderRadius: 16,
-                    padding: 20,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 14,
-                    boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+                    border: `1px solid ${enterable ? "#2a4060" : "#2e3347"}`,
+                    borderRadius: 16, padding: 20,
+                    display: "flex", flexDirection: "column", gap: 14,
+                    boxShadow: enterable
+                      ? "0 0 0 1px #4f8ef744, 0 10px 30px rgba(0,0,0,0.22)"
+                      : "0 10px 30px rgba(0,0,0,0.18)",
+                    transition: "border-color 0.3s, box-shadow 0.3s",
                   }}
                 >
+                  {/* Title + chip */}
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                     <div>
-                      <div
-                        style={{
-                          fontSize: 17,
-                          fontWeight: 700,
-                          color: "#e8eaf0",
-                          marginBottom: 6,
-                        }}
-                      >
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "#e8eaf0", marginBottom: 6 }}>
                         {exam.name}
                       </div>
                       <div style={{ fontSize: 12, color: "#8b90a0", lineHeight: 1.6 }}>
                         {exam.date} · {exam.starttime} – {exam.endtime}
                       </div>
                     </div>
-
-                    <span
-                      style={{
-                        background: chip.bg,
-                        color: chip.color,
-                        padding: "4px 10px",
-                        borderRadius: 999,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
+                    <span style={{
+                      background: chip.bg, color: chip.color,
+                      padding: "4px 10px", borderRadius: 999,
+                      fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+                    }}>
                       {chip.label}
                     </span>
                   </div>
 
-                  {exam.description ? (
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: "#c8cad0",
-                        lineHeight: 1.6,
-                        minHeight: 42,
-                      }}
-                    >
-                      {exam.description}
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: "#8b90a0",
-                        lineHeight: 1.6,
-                        minHeight: 42,
-                      }}
-                    >
-                      No additional description provided for this assessment.
-                    </div>
-                  )}
+                  {/* Description */}
+                  <div style={{
+                    fontSize: 13,
+                    color: exam.description ? "#c8cad0" : "#8b90a0",
+                    lineHeight: 1.6, minHeight: 40,
+                  }}>
+                    {exam.description || "No additional description provided for this assessment."}
+                  </div>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 10,
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: "#22263a",
-                        borderRadius: 10,
-                        padding: "10px 12px",
-                      }}
-                    >
-                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
-                        Duration
-                      </div>
+                  {/* Meta grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Duration</div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>
                         {exam.durationminutes} mins
                       </div>
                     </div>
-
-                    <div
-                      style={{
-                        background: "#22263a",
-                        borderRadius: 10,
-                        padding: "10px 12px",
-                      }}
-                    >
-                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
-                        Allowed Sites
-                      </div>
+                    <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Allowed Sites</div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>
-                        {Array.isArray(exam.allowedwebsites) ? exam.allowedwebsites.length : 0}
+                        {exam.allowedwebsites.length}
                       </div>
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      background: "#22263a",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                      fontSize: 12,
-                      color: "#8b90a0",
-                      lineHeight: 1.6,
-                    }}
-                  >
+                  {/* IDs / statuses */}
+                  <div style={{
+                    background: "#22263a", borderRadius: 10, padding: "10px 12px",
+                    fontSize: 12, color: "#8b90a0", lineHeight: 1.8,
+                  }}>
                     Assessment ID: <span style={{ color: "#c8cad0" }}>{exam.assessmentid}</span>
                     <br />
-                    Exam Status: <span style={{ color: "#c8cad0" }}>{exam.examstatus || "—"}</span>
+                    Assessment Status:{" "}
+                    <span style={{ color: chip.color, fontWeight: 600 }}>{exam.status}</span>
+                    <br />
+                    Exam Status:{" "}
+                    <span style={{
+                      color: String(exam.examstatus).toLowerCase() === "running" ? "#34c97a" : "#c8cad0",
+                      fontWeight: String(exam.examstatus).toLowerCase() === "running" ? 700 : 400,
+                    }}>
+                      {exam.examstatus || "—"}
+                    </span>
                   </div>
 
-                  <button
-                    onClick={() => onEnterExam(exam)}
-                    disabled={!enterable}
-                    className="btn btn-primary"
-                    style={{
-                      width: "100%",
-                      padding: "12px 0",
-                      fontSize: 14,
-                      opacity: enterable ? 1 : 0.45,
-                      cursor: enterable ? "pointer" : "not-allowed",
-                    }}
-                  >
-                    {enterable ? "Enter Exam Hall →" : "Not Available"}
-                  </button>
+                  {/* CTA */}
+                  {enterable ? (
+                    <button
+                      onClick={() => onEnterExam(exam)}
+                      className="btn btn-primary"
+                      style={{ width: "100%", padding: "12px 0", fontSize: 14 }}
+                    >
+                      Enter Exam Hall →
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="btn btn-ghost"
+                      style={{
+                        width: "100%", padding: "12px 0", fontSize: 13,
+                        opacity: 0.4, cursor: "not-allowed",
+                      }}
+                    >
+                      {String(exam.status).toUpperCase() === "COMPLETED"
+                        ? "✅ Completed"
+                        : String(exam.status).toUpperCase() === "TERMINATED"
+                          ? "🛑 Terminated"
+                          : String(exam.status).toUpperCase() === "LOCKED"
+                            ? "🔒 Locked"
+                            : "⏳ Waiting for Exam to Start"}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -9410,7 +9360,7 @@ function LogoutButton({ onLogout }) {
   );
 }
 
-export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) {
+export default function WaitScreen({ exam, assessment, onExamStart, onLogout, onComplete }) {
   const { accessToken } = useAuthStore();
   const [now, setNow] = useState(new Date());
   const [checking, setChecking] = useState(true);
@@ -9423,40 +9373,91 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
     return () => clearInterval(t);
   }, []);
 
-  const examId = assessment?.examid || exam?.examid;
-  const assessmentId = assessment?.assessmentid || exam?.assessmentid;
+  const examId =
+    assessment?.examid ??
+    assessment?.exam_id ??
+    exam?.examid ??
+    exam?.exam_id;
+
+  const assessmentId =
+    assessment?.assessmentid ??
+    assessment?.assessment_id ??
+    exam?.assessmentid ??
+    exam?.assessment_id;
 
   const allowedSites = useMemo(() => {
     if (Array.isArray(assessment?.allowedwebsites) && assessment.allowedwebsites.length) {
       return assessment.allowedwebsites;
     }
+    if (Array.isArray(assessment?.allowed_websites) && assessment.allowed_websites.length) {
+      return assessment.allowed_websites;
+    }
+
     if (Array.isArray(exam?.allowedwebsites) && exam.allowedwebsites.length) {
       return exam.allowedwebsites;
     }
+    if (Array.isArray(exam?.allowed_websites) && exam.allowed_websites.length) {
+      return exam.allowed_websites;
+    }
+
     if (Array.isArray(liveAssessment?.allowedwebsites) && liveAssessment.allowedwebsites.length) {
       return liveAssessment.allowedwebsites;
     }
+    if (Array.isArray(liveAssessment?.allowed_websites) && liveAssessment.allowed_websites.length) {
+      return liveAssessment.allowed_websites;
+    }
+
     if (Array.isArray(liveExam?.allowedwebsites) && liveExam.allowedwebsites.length) {
       return liveExam.allowedwebsites;
     }
+    if (Array.isArray(liveExam?.allowed_websites) && liveExam.allowed_websites.length) {
+      return liveExam.allowed_websites;
+    }
+
     return [];
   }, [assessment, exam, liveAssessment, liveExam]);
 
+  const cleanupWaitingState = useCallback(async () => {
+    try {
+      await window.electronAPI?.closeBrowser?.();
+    } catch (e) {
+      console.log("closeBrowser failed", e);
+    }
+
+    try {
+      await window.electronAPI?.disableLockdown?.();
+    } catch (e) {
+      console.log("disableLockdown failed", e);
+    }
+
+    try {
+      await window.electronAPI?.setClosable?.(true);
+    } catch (e) {
+      console.log("setClosable failed", e);
+    }
+
+    onComplete?.();
+  }, [onComplete]);
+
   const ensureBrowserVisible = useCallback(async () => {
-    if (!window.electronAPI) return;
+    if (!window.electronAPI) {
+      console.log("electronAPI not available");
+      return false;
+    }
 
     try {
       await window.electronAPI.enableLockdown?.();
       await window.electronAPI.setClosable?.(false);
-      await window.electronAPI.openBrowser?.({
-        allowedWebsites: allowedSites,
-      });
+      await window.electronAPI.openBrowser?.({ allowedWebsites: allowedSites });
 
       if (allowedSites.length > 0) {
         await window.electronAPI.navigateBrowser?.(allowedSites[0]);
       }
+
+      return true;
     } catch (e) {
       console.log("ensureBrowserVisible failed", e);
+      return false;
     }
   }, [allowedSites]);
 
@@ -9478,35 +9479,58 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
           : Promise.resolve({ data: null }),
       ]);
 
-      const latestExam = examRes?.data || null;
-      const latestAssessment = assessmentRes?.data || null;
+      const latestExam = examRes?.data ?? null;
+      const latestAssessment = assessmentRes?.data ?? null;
 
       if (latestExam) setLiveExam(latestExam);
       if (latestAssessment) setLiveAssessment(latestAssessment);
 
-      const examRunning = latestExam?.status === "Running";
-      const assessmentActive = [
+      const examStatus = String(latestExam?.status ?? "");
+      const assessmentStatus = String(latestAssessment?.status ?? "");
+      const finalStatus = String(
+        latestAssessment?.finalstatus ?? latestAssessment?.final_status ?? ""
+      );
+
+      const terminated =
+        assessmentStatus === "TERMINATED" ||
+        assessmentStatus === "LOCKED" ||
+        finalStatus === "TERMINATED" ||
+        examStatus === "Completed" ||
+        examStatus === "Terminated";
+
+      if (terminated) {
+        await cleanupWaitingState();
+        return;
+      }
+
+      const examRunning = examStatus === "Running";
+
+      const assessmentActiveStatuses = [
         "ACTIVE",
         "READY",
         "REENTRYAPPROVED",
         "LATEENTRYAPPROVED",
-      ].includes(latestAssessment?.status);
+        "REENTRY_APPROVED",
+        "LATEENTRY_APPROVED",
+      ];
+
+      const assessmentActive = assessmentActiveStatuses.includes(assessmentStatus);
 
       if (examRunning && assessmentActive && !launched) {
         setLaunched(true);
-        await ensureBrowserVisible();
-        onExamStart?.();
+        const opened = await ensureBrowserVisible();
+        if (opened) {
+          onExamStart?.();
+        } else {
+          setLaunched(false);
+        }
       }
     } catch (e) {
       console.log("Wait screen status check failed", e);
     } finally {
       setChecking(false);
     }
-  }, [examId, assessmentId, accessToken, launched, onExamStart, ensureBrowserVisible]);
-
-  useEffect(() => {
-    ensureBrowserVisible();
-  }, [ensureBrowserVisible]);
+  }, [examId, assessmentId, accessToken, launched, ensureBrowserVisible, onExamStart, cleanupWaitingState]);
 
   useEffect(() => {
     checkExamStatus();
@@ -9516,23 +9540,25 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
 
   const merged = useMemo(
     () => ({
-      ...(exam || {}),
-      ...(assessment || {}),
-      ...(liveExam || {}),
-      ...(liveAssessment || {}),
+      ...exam,
+      ...assessment,
+      ...liveExam,
+      ...liveAssessment,
     }),
     [exam, assessment, liveExam, liveAssessment]
   );
 
   const examName = merged.name || "Upcoming Exam";
   const dateLabel = merged.date || "--";
-  const startLabel = merged.starttime || "--:--";
-  const assessmentStatus =
-    liveAssessment?.status || assessment?.status || merged.status || "-";
-  const examStatus = liveExam?.status || merged.examstatus || "-";
+  const startLabel = merged.starttime || merged.start_time || "--:--";
+  const assessmentStatus = liveAssessment?.status || assessment?.status || merged.status || "-";
+  const examStatus = liveExam?.status || merged.examstatus || merged.exam_status || "-";
 
   const startStr =
-    merged.date && merged.starttime ? `${merged.date}T${merged.starttime}:00` : null;
+    merged.date && (merged.starttime || merged.start_time)
+      ? `${merged.date}T${merged.starttime || merged.start_time}:00`
+      : null;
+
   const startTime = startStr ? new Date(startStr) : null;
   const diffMs = startTime ? startTime - now : 0;
   const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
@@ -9540,14 +9566,7 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
   const secs = diffSecs % 60;
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        background: "#0f1117",
-      }}
-    >
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
       <div
         style={{
           height: 56,
@@ -9562,9 +9581,7 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 20 }}>👁️</span>
-          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>
-            3rdEyeZ360
-          </span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "#e8eaf0" }}>3rdEyeZ360</span>
         </div>
         <LogoutButton onLogout={onLogout} />
       </div>
@@ -9580,21 +9597,15 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
         }}
       >
         <div style={{ textAlign: "center", maxWidth: 520, width: "100%" }}>
-          <div style={{ fontSize: 64, marginBottom: 24 }}>⏳</div>
+          <div style={{ fontSize: 64, marginBottom: 24 }}>🕒</div>
 
-          <h2
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              marginBottom: 8,
-              color: "#e8eaf0",
-            }}
-          >
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: "#e8eaf0" }}>
             Waiting for Exam to Begin
           </h2>
 
           <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 24 }}>
-            Your secure exam workspace is prepared. Please wait while the examiner starts the exam.
+            If the exam has not started, this waiting screen stays visible. Once the exam starts,
+            the secure browser opens automatically.
           </p>
 
           <div
@@ -9607,28 +9618,15 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
               boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
             }}
           >
-            <div
-              style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: "#e8eaf0",
-                marginBottom: 8,
-              }}
-            >
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#e8eaf0", marginBottom: 8 }}>
               {examName}
             </div>
 
-            <div style={{ fontSize: 13, color: "#8b90a0", marginBottom: 18 }}>
-              {dateLabel}
-            </div>
+            <div style={{ fontSize: 13, color: "#8b90a0", marginBottom: 18 }}>{dateLabel}</div>
 
-            <div style={{ fontSize: 13, color: "#8b90a0", marginBottom: 8 }}>
-              Exam starts at
-            </div>
+            <div style={{ fontSize: 13, color: "#8b90a0", marginBottom: 8 }}>Exam starts at</div>
 
-            <div style={{ fontSize: 28, fontWeight: 700, color: "#4f8ef7" }}>
-              {startLabel}
-            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: "#4f8ef7" }}>{startLabel}</div>
 
             {diffSecs > 0 && (
               <div style={{ fontSize: 13, color: "#8b90a0", marginTop: 8 }}>
@@ -9645,34 +9643,14 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
                 marginTop: 20,
               }}
             >
-              <div
-                style={{
-                  background: "#22263a",
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                }}
-              >
-                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
-                  Exam status
-                </div>
-                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>
-                  {examStatus}
-                </div>
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Exam status</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>{examStatus}</div>
               </div>
 
-              <div
-                style={{
-                  background: "#22263a",
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                }}
-              >
-                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
-                  Assessment status
-                </div>
-                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>
-                  {assessmentStatus}
-                </div>
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Assessment status</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>{assessmentStatus}</div>
               </div>
             </div>
 
@@ -9693,7 +9671,7 @@ export default function WaitScreen({ exam, assessment, onExamStart, onLogout }) 
               color: "#34c97a",
             }}
           >
-            ✅ Secure browser is prepared. Stay visible on camera and wait for the exam to go live.
+            Stay visible on camera and wait for the exam to go live.
           </div>
         </div>
       </div>
@@ -10448,641 +10426,972 @@ NAME : ExaminerDashboard.jsx
 PATH : D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\examiner\ExaminerDashboard.jsx
 =====================
 
-import React, { useState, useEffect, useCallback } from 'react'
-import axios from 'axios'
-import useAuthStore from '../../store/authStore'
-import { useSocket } from '../../hooks/useSocket'
-import ChatWindow from '../../components/common/ChatWindow'
-import CreateExam from './CreateExam'
-import AssignCandidates from './AssignCandidates'
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import axios from "axios";
+import useAuthStore from "../../store/authStore";
+import { useSocket } from "../../hooks/useSocket";
+import ChatWindow from "../../components/common/ChatWindow";
+import CreateExam from "./CreateExam";
+import AssignCandidates from "./AssignCandidates";
 
-const API = 'http://localhost:3000'
+const API = "http://localhost:3000";
 
 const STATUS_COLORS = {
-  ACTIVE: '#34c97a',
-  READY: '#4f8ef7',
-  INTERRUPTED: '#f5a623',
-  LOCKED: '#f75f5f',
-  COMPLETED: '#8b90a0',
-  TERMINATED: '#f75f5f',
-  ASSIGNED: '#555a6e',
-  AVAILABLE: '#7c5ce7',
-  PAUSED: '#f5a623',
+  ACTIVE: "#34c97a",
+  READY: "#4f8ef7",
+  INTERRUPTED: "#f5a623",
+  LOCKED: "#f75f5f",
+  COMPLETED: "#8b90a0",
+  TERMINATED: "#f75f5f",
+  ASSIGNED: "#555a6e",
+  AVAILABLE: "#7c5ce7",
+  PAUSED: "#f5a623",
+  REENTRYAPPROVED: "#34c97a",
+  REENTRY_APPROVED: "#34c97a",
+  LATEENTRYAPPROVED: "#34c97a",
+  LATEENTRY_APPROVED: "#34c97a",
+};
+
+function normalizeExam(exam) {
+  if (!exam) return null;
+  return {
+    ...exam,
+    examid: exam.examid ?? exam.exam_id ?? null,
+    name: exam.name ?? "Untitled Exam",
+    status: exam.status ?? exam.examstatus ?? exam.exam_status ?? "Draft",
+    date: exam.date ?? "—",
+    starttime: exam.starttime ?? exam.start_time ?? "—",
+    endtime: exam.endtime ?? exam.end_time ?? "—",
+    durationminutes: exam.durationminutes ?? exam.duration_minutes ?? 0,
+  };
+}
+
+function normalizeCandidate(c) {
+  if (!c) return null;
+  return {
+    ...c,
+    assessmentid: c.assessmentid ?? c.assessment_id ?? null,
+    candidateid: c.candidateid ?? c.candidate_id ?? null,
+    candidatename: c.candidatename ?? c.candidate_name ?? "Candidate",
+    status: c.status ?? "ASSIGNED",
+    violationcount: c.violationcount ?? c.violation_count ?? 0,
+    warningcount: c.warningcount ?? c.warning_count ?? 0,
+    riskscore: c.riskscore ?? c.risk_score ?? 0,
+    credibilityscore: c.credibilityscore ?? c.credibility_score ?? 100,
+  };
+}
+
+function normalizeRequest(r) {
+  if (!r) return null;
+  return {
+    ...r,
+    requestid: r.requestid ?? r.request_id ?? null,
+    assessmentid: r.assessmentid ?? r.assessment_id ?? null,
+    candidateid: r.candidateid ?? r.candidate_id ?? null,
+    status: String(r.status ?? "").toUpperCase(),
+    type: String(r.type ?? "").toUpperCase(),
+    reason: r.reason ?? "",
+  };
 }
 
 function StatBox({ label, value, color }) {
   return (
-    <div style={{ background: '#22263a', borderRadius: 8, padding: '10px 12px' }}>
-      <div style={{ fontSize: 10, color: '#8b90a0', marginBottom: 2 }}>{label}</div>
+    <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
+      <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
     </div>
-  )
+  );
 }
 
 function LogoutButton() {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
-    if (loading) return
-    setLoading(true)
+    if (loading) return;
+    setLoading(true);
 
     try {
-      const { refreshToken } = useAuthStore.getState()
-
+      const { refreshToken } = useAuthStore.getState();
       if (refreshToken) {
         try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken })
+          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
         } catch (e) {
-          console.log('Logout API failed, clearing local session anyway', e)
+          console.log("Logout API failed, clearing local session anyway", e);
         }
       }
     } finally {
-      localStorage.removeItem('app-screen')
-      localStorage.removeItem('auth-storage')
-      localStorage.removeItem('exam-storage')
-      useAuthStore.getState().clearAuth()
-
+      localStorage.removeItem("app-screen");
+      localStorage.removeItem("auth-storage");
+      localStorage.removeItem("exam-storage");
+      useAuthStore.getState().clearAuth();
     }
-  }
+  };
 
   return (
     <button
       onClick={handleLogout}
       disabled={loading}
       className="btn btn-ghost"
-      style={{ padding: '7px 14px', fontSize: 13 }}
+      style={{ padding: "7px 14px", fontSize: 13 }}
     >
-      {loading ? 'Signing out...' : 'Logout'}
+      {loading ? "Signing out..." : "Logout"}
     </button>
-  )
+  );
+}
+
+function statusPill(status) {
+  const s = String(status || "").toUpperCase();
+  if (s === "RUNNING") return { bg: "#0f2a1a", color: "#34c97a", label: "Running" };
+  if (s === "DRAFT") return { bg: "#22263a", color: "#8b90a0", label: "Draft" };
+  if (s === "PUBLISHED") return { bg: "#10243a", color: "#4f8ef7", label: "Published" };
+  if (s === "COMPLETED") return { bg: "#22263a", color: "#c8cad0", label: "Completed" };
+  return { bg: "#22263a", color: "#c8cad0", label: status || "Unknown" };
 }
 
 export default function ExaminerDashboard() {
-  const [monitorTab, setMonitorTab] = useState('grid')
-  const [reentryRequests, setReentryRequests] = useState([])
-  const { user, accessToken } = useAuthStore()
-  const socket = useSocket(accessToken)
+  const [monitorTab, setMonitorTab] = useState("grid");
+  const [reentryRequests, setReentryRequests] = useState([]);
+  const { user, accessToken } = useAuthStore();
+  const socket = useSocket(accessToken);
 
-  const [view, setView] = useState('list')
-  const [exams, setExams] = useState([])
-  const [selectedExam, setSelectedExam] = useState(null)
-  const [candidates, setCandidates] = useState([])
-  const [liveData, setLiveData] = useState({})
-  const [selectedCandidate, setSelectedCandidate] = useState(null)
-  const [violations, setViolations] = useState([])
-  const [broadcastMsg, setBroadcastMsg] = useState('')
-  const [loadingExams, setLoadingExams] = useState(false)
-  const [actionMsg, setActionMsg] = useState('')
+  const [view, setView] = useState("list");
+  const [exams, setExams] = useState([]);
+  const [selectedExam, setSelectedExam] = useState(null);
+  const [candidates, setCandidates] = useState([]);
+  const [liveData, setLiveData] = useState({});
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [violations, setViolations] = useState([]);
+  const [broadcastMsg, setBroadcastMsg] = useState("");
+  const [loadingExams, setLoadingExams] = useState(false);
+  const [startingExam, setStartingExam] = useState(false);
+  const [actionMsg, setActionMsg] = useState("");
+  const [refreshTick, setRefreshTick] = useState(0);
 
-  const headers = { Authorization: `Bearer ${accessToken}` }
+  const headers = useMemo(
+    () => ({ Authorization: `Bearer ${accessToken}` }),
+    [accessToken]
+  );
+
+  const selectedExamId = selectedExam?.examid ?? selectedExam?.exam_id ?? null;
+  const isExamRunning = String(selectedExam?.status || "").toLowerCase() === "running";
 
   const loadExams = useCallback(async () => {
-    setLoadingExams(true)
+    setLoadingExams(true);
     try {
-      const res = await axios.get(`${API}/api/exams`, { headers })
-      setExams(res.data || [])
+      const res = await axios.get(`${API}/api/exams`, { headers });
+      const rows = Array.isArray(res.data) ? res.data.map(normalizeExam) : [];
+      setExams(rows);
+
+      if (selectedExamId) {
+        const latest = rows.find((x) => x.examid === selectedExamId);
+        if (latest) setSelectedExam(latest);
+      }
     } catch (e) {
-      console.error('loadExams:', e.message)
+      console.error("loadExams:", e.message);
     } finally {
-      setLoadingExams(false)
+      setLoadingExams(false);
     }
-  }, [accessToken])
+  }, [headers, selectedExamId]);
+
+  const loadExamById = useCallback(async (examId) => {
+    if (!examId) return null;
+    try {
+      const res = await axios.get(`${API}/api/exams/${examId}`, { headers });
+      const normalized = normalizeExam(res.data);
+      setSelectedExam(normalized);
+      setExams((prev) => prev.map((e) => (e.examid === examId ? normalized : e)));
+      return normalized;
+    } catch (e) {
+      console.error("loadExamById:", e.message);
+      return null;
+    }
+  }, [headers]);
 
   const loadCandidates = useCallback(async (examId) => {
+    if (!examId) return;
     try {
-      const res = await axios.get(`${API}/api/exams/${examId}/assessments`, { headers })
-      setCandidates(res.data || [])
+      const res = await axios.get(`${API}/api/exams/${examId}/assessments`, { headers });
+      setCandidates(Array.isArray(res.data) ? res.data.map(normalizeCandidate) : []);
     } catch (e) {
-      console.error('loadCandidates:', e.message)
+      console.error("loadCandidates:", e.message);
     }
-  }, [accessToken])
+  }, [headers]);
 
   const loadViolations = useCallback(async (candidateId, examId) => {
+    if (!candidateId || !examId) return;
     try {
-      const res = await axios.get(`${API}/api/violations/${examId}/${candidateId}`, { headers })
-      setViolations(res.data || [])
+      const res = await axios.get(`${API}/api/violations/${examId}/${candidateId}`, { headers });
+      setViolations(res.data || []);
     } catch (e) {
-      console.error('loadViolations:', e.message)
+      console.error("loadViolations:", e.message);
     }
-  }, [accessToken])
+  }, [headers]);
 
-  useEffect(() => { loadExams() }, [loadExams])
+  const loadReentryRequests = useCallback(async () => {
+    try {
+      if (!selectedExamId) return;
+      const res = await axios.get(`${API}/api/exams/${selectedExamId}/requests`, { headers });
+      setReentryRequests(Array.isArray(res.data) ? res.data.map(normalizeRequest) : []);
+    } catch (e) {
+      console.error("loadReentryRequests:", e);
+    }
+  }, [selectedExamId, headers]);
 
   useEffect(() => {
-    if (!socket || view !== 'monitor' || !selectedExam) return
+    loadExams();
+  }, [loadExams, refreshTick]);
 
-    socket.emit('join_exam', { exam_id: selectedExam.exam_id, role: 'Examiner' })
+  useEffect(() => {
+    if (view !== "monitor" || !selectedExamId) return;
+
+    loadExamById(selectedExamId);
+    loadCandidates(selectedExamId);
+
+    const poll = setInterval(() => {
+      loadExamById(selectedExamId);
+      loadCandidates(selectedExamId);
+      if (monitorTab === "requests") loadReentryRequests();
+    }, 5000);
+
+    return () => clearInterval(poll);
+  }, [view, selectedExamId, monitorTab, loadExamById, loadCandidates, loadReentryRequests]);
+
+  useEffect(() => {
+    if (!socket || view !== "monitor" || !selectedExamId) return;
+
+    socket.emit("join_exam", { exam_id: selectedExamId, role: "Examiner" });
 
     const onCandidateUpdate = (data) => {
-      setLiveData(prev => ({ ...prev, [data.candidate_id]: data }))
-    }
-    const onViolationAlert = ({ candidate_id, violation }) => {
-      setLiveData(prev => ({
-        ...prev,
-        [candidate_id]: { ...(prev[candidate_id] || {}), latestViolation: violation }
-      }))
-    }
-    const onAssessmentUpdate = () => {
-      loadCandidates(selectedExam.exam_id)
-    }
+      const candidateId = data?.candidate_id ?? data?.candidateid;
+      if (!candidateId) return;
+      setLiveData((prev) => ({ ...prev, [candidateId]: data }));
+      loadCandidates(selectedExamId);
+    };
 
-    socket.on('candidate_update', onCandidateUpdate)
-    socket.on('violation_alert', onViolationAlert)
-    socket.on('assessment_updated', onAssessmentUpdate)
+    const onViolationAlert = ({ candidate_id, candidateid, violation }) => {
+      const candidateId = candidate_id ?? candidateid;
+      if (!candidateId) return;
+      setLiveData((prev) => ({
+        ...prev,
+        [candidateId]: { ...(prev[candidateId] || {}), latestViolation: violation },
+      }));
+    };
+
+    const onAssessmentUpdate = () => {
+      loadCandidates(selectedExamId);
+    };
+
+    const onExamStarted = (payload) => {
+      const startedId = payload?.exam_id ?? payload?.examid;
+      if (startedId && startedId !== selectedExamId) return;
+      setActionMsg("✅ Exam is now running");
+      setTimeout(() => setActionMsg(""), 4000);
+      loadExamById(selectedExamId);
+      loadCandidates(selectedExamId);
+      setRefreshTick((v) => v + 1);
+    };
+
+    socket.on("candidate_update", onCandidateUpdate);
+    socket.on("violation_alert", onViolationAlert);
+    socket.on("assessment_updated", onAssessmentUpdate);
+    socket.on("exam_started", onExamStarted);
 
     return () => {
-      socket.off('candidate_update', onCandidateUpdate)
-      socket.off('violation_alert', onViolationAlert)
-      socket.off('assessment_updated', onAssessmentUpdate)
-    }
-  }, [socket, view, selectedExam, loadCandidates])
+      socket.off("candidate_update", onCandidateUpdate);
+      socket.off("violation_alert", onViolationAlert);
+      socket.off("assessment_updated", onAssessmentUpdate);
+      socket.off("exam_started", onExamStarted);
+    };
+  }, [socket, view, selectedExamId, loadCandidates, loadExamById]);
 
-  const openMonitor = (exam) => {
-    setSelectedExam(exam)
-    setSelectedCandidate(null)
-    setViolations([])
-    setLiveData({})
-    loadCandidates(exam.exam_id)
-    setView('monitor')
-  }
+  const openMonitor = async (exam) => {
+    const normalized = normalizeExam(exam);
+    setSelectedExam(normalized);
+    setSelectedCandidate(null);
+    setViolations([]);
+    setLiveData({});
+    await loadExamById(normalized?.examid);
+    await loadCandidates(normalized?.examid);
+    setView("monitor");
+  };
 
   const startExam = async () => {
-    if (!selectedExam) return
+    if (!selectedExamId || startingExam || isExamRunning) return;
+
+    setStartingExam(true);
     try {
-      await axios.patch(`${API}/api/exams/${selectedExam.exam_id}/start`, {}, { headers })
-      if (socket) socket.emit('start_exam', { exam_id: selectedExam.exam_id })
-      setActionMsg('✅ Exam started — candidates are being notified')
-      setTimeout(() => setActionMsg(''), 4000)
-      loadCandidates(selectedExam.exam_id)
+      await axios.patch(`${API}/api/exams/${selectedExamId}/start`, {}, { headers });
+
+      if (socket) {
+        socket.emit("start_exam", { exam_id: selectedExamId });
+      }
+
+      await loadExamById(selectedExamId);
+      await loadCandidates(selectedExamId);
+      setRefreshTick((v) => v + 1);
+
+      setActionMsg("✅ Exam started successfully — status changed to Running");
+      setTimeout(() => setActionMsg(""), 5000);
     } catch (e) {
-      setActionMsg('❌ Failed to start exam')
-      setTimeout(() => setActionMsg(''), 4000)
+      setActionMsg(`❌ Failed to start exam: ${e.response?.data?.detail || e.message}`);
+      setTimeout(() => setActionMsg(""), 5000);
+    } finally {
+      setStartingExam(false);
     }
-  }
+  };
 
   const doAction = async (assessmentId, action) => {
-    const reason = window.prompt(`Reason for "${action}" (required):`)
-    if (!reason || !reason.trim()) return
+    if (!assessmentId) return;
+
+    const reason = window.prompt(`Reason for "${action}" (required):`);
+    if (!reason || !reason.trim()) return;
+
     try {
       await axios.post(
         `${API}/api/assessments/${assessmentId}/action`,
         { action, reason: reason.trim() },
         { headers }
-      )
+      );
+
       if (socket) {
-        socket.emit('examiner_control', {
-          exam_id: selectedExam.exam_id,
-          candidate_id: selectedCandidate?.candidate_id,
-          action
-        })
+        socket.emit("examiner_control", {
+          exam_id: selectedExamId,
+          examid: selectedExamId,
+          assessment_id: assessmentId,
+          assessmentid: assessmentId,
+          candidate_id: selectedCandidate?.candidateid,
+          candidateid: selectedCandidate?.candidateid,
+          action,
+          status: action === "terminate" ? "TERMINATED" : undefined,
+        });
       }
-      setActionMsg(`✅ ${action} applied`)
-      setTimeout(() => setActionMsg(''), 3000)
-      loadCandidates(selectedExam.exam_id)
+
+      setActionMsg(`✅ ${action} applied`);
+      setTimeout(() => setActionMsg(""), 3000);
+
+      await loadCandidates(selectedExamId);
+      if (selectedCandidate?.candidateid) {
+        await loadViolations(selectedCandidate.candidateid, selectedExamId);
+      }
+      await loadExamById(selectedExamId);
     } catch (e) {
-      setActionMsg(`❌ Action failed: ${e.response?.data?.detail || e.message}`)
-      setTimeout(() => setActionMsg(''), 4000)
+      setActionMsg(`❌ Action failed: ${e.response?.data?.detail || e.message}`);
+      setTimeout(() => setActionMsg(""), 4000);
     }
-  }
+  };
 
   const sendBroadcast = () => {
-    if (!broadcastMsg.trim() || !socket) return
-    socket.emit('broadcast_message', {
-      exam_id: selectedExam.exam_id,
-      examiner_id: user.user_id,
-      message: broadcastMsg.trim()
-    })
-    setBroadcastMsg('')
-    setActionMsg('📢 Broadcast sent to all candidates')
-    setTimeout(() => setActionMsg(''), 3000)
-  }
+    if (!broadcastMsg.trim() || !socket || !selectedExamId) return;
+    socket.emit("broadcast_message", {
+      exam_id: selectedExamId,
+      examiner_id: user?.user_id ?? user?.userid,
+      message: broadcastMsg.trim(),
+    });
+    setBroadcastMsg("");
+    setActionMsg("📢 Broadcast sent to all candidates");
+    setTimeout(() => setActionMsg(""), 3000);
+  };
 
   const goBack = () => {
-    setView('list')
-    setSelectedExam(null)
-    setSelectedCandidate(null)
-    setCandidates([])
-    setLiveData({})
-    setViolations([])
-    loadExams()
-  }
-
-  const loadReentryRequests = useCallback(async () => {
-    try {
-      if (!selectedExam?.exam_id) return
-
-      const res = await axios.get(
-        `${API}/api/exams/${selectedExam.exam_id}/requests`,
-        { headers }
-      )
-
-      setReentryRequests(res.data || [])
-    } catch (e) {
-      console.error(e)
-    }
-  }, [selectedExam, accessToken])
+    setView("list");
+    setSelectedExam(null);
+    setSelectedCandidate(null);
+    setCandidates([]);
+    setLiveData({});
+    setViolations([]);
+    setReentryRequests([]);
+    loadExams();
+  };
 
   const handleReentry = async (assessmentId, requestId, approve) => {
     try {
-      const url = `${API}/api/assessments/${assessmentId}/reentry/${requestId}/${approve ? 'approve' : 'reject'}`
-
+      const url = `${API}/api/assessments/${assessmentId}/reentry/${requestId}/${approve ? "approve" : "reject"}`;
       const body = approve ? {} : {
-        reason: window.prompt('Rejection reason:') || 'Not approved'
-      }
+        reason: window.prompt("Rejection reason:") || "Not approved",
+      };
 
-      await axios.post(url, body, { headers })
+      await axios.post(url, body, { headers });
 
       if (socket) {
-        socket.emit('reentry_decision', {
+        socket.emit("reentry_decision", {
           assessment_id: assessmentId,
           approved: approve,
-          exam_id: selectedExam.exam_id
-        })
+          exam_id: selectedExamId,
+        });
       }
 
-      await loadReentryRequests()
+      await loadReentryRequests();
+      await loadCandidates(selectedExamId);
 
-      setActionMsg(approve ? '✅ Re-entry approved' : '❌ Re-entry rejected')
-      setTimeout(() => setActionMsg(''), 3000)
+      setActionMsg(approve ? "✅ Re-entry approved" : "❌ Re-entry rejected");
+      setTimeout(() => setActionMsg(""), 3000);
     } catch (err) {
-      console.error(err)
+      console.error(err);
+      setActionMsg(`❌ ${err.response?.data?.detail || err.message}`);
+      setTimeout(() => setActionMsg(""), 4000);
     }
-  }
+  };
 
-  if (view === 'create') {
+  if (view === "create") {
     return (
       <CreateExam
-        onBack={() => setView('list')}
+        onBack={() => setView("list")}
         onCreated={(newExam) => {
-          setSelectedExam(newExam)
-          loadExams()
-          setView('assign')
+          const normalized = normalizeExam(newExam);
+          setSelectedExam(normalized);
+          loadExams();
+          setView("assign");
         }}
       />
-    )
+    );
   }
 
-  if (view === 'assign') {
+  if (view === "assign") {
     return (
       <AssignCandidates
         exam={selectedExam}
         onBack={() => {
-          loadExams()
-          setView('list')
+          loadExams();
+          if (selectedExamId) loadExamById(selectedExamId);
+          setView("list");
         }}
       />
-    )
+    );
   }
 
-  if (view === 'list') {
+  if (view === "list") {
     return (
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-        <div style={{
-          height: 56, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-          display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12,
-          flexShrink: 0
-        }}>
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
+        <div
+          style={{
+            height: 56,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 24px",
+            gap: 12,
+            flexShrink: 0,
+          }}
+        >
           <span style={{ fontSize: 20 }}>👁️</span>
           <span style={{ fontWeight: 700, fontSize: 16 }}>3rdEyeZ360</span>
-          <span style={{ fontSize: 12, color: '#8b90a0' }}>— {user?.role} Dashboard</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: '#8b90a0' }}>{user?.name}</span>
+          <span style={{ fontSize: 12, color: "#8b90a0" }}>— {user?.role} Dashboard</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
+            <span style={{ fontSize: 13, color: "#8b90a0" }}>{user?.name}</span>
             <LogoutButton />
             <button
-              onClick={() => setView('create')}
+              onClick={() => setView("create")}
               className="btn btn-primary"
-              style={{ padding: '7px 18px', fontSize: 13 }}
+              style={{ padding: "7px 18px", fontSize: 13 }}
             >
               + Create Exam
             </button>
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: 28 }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: 28 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>Your Exams</h2>
 
           {loadingExams ? (
-            <div style={{ textAlign: 'center', color: '#8b90a0', padding: 60 }}>
-              Loading exams...
-            </div>
+            <div style={{ textAlign: "center", color: "#8b90a0", padding: 60 }}>Loading exams...</div>
           ) : exams.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#8b90a0', padding: '60px 0' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+            <div style={{ textAlign: "center", color: "#8b90a0", padding: "60px 0" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📝</div>
               <p style={{ marginBottom: 16 }}>No exams yet.</p>
               <button
-                onClick={() => setView('create')}
+                onClick={() => setView("create")}
                 className="btn btn-primary"
-                style={{ padding: '10px 24px', fontSize: 14 }}
+                style={{ padding: "10px 24px", fontSize: 14 }}
               >
                 Create your first exam
               </button>
             </div>
           ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-              gap: 16
-            }}>
-              {exams.map(exam => (
-                <div key={exam.exam_id} style={{
-                  background: '#1a1d27', border: '1px solid #2e3347',
-                  borderRadius: 12, padding: 20,
-                  display: 'flex', flexDirection: 'column', gap: 10
-                }}>
-                  <div style={{ fontWeight: 600, fontSize: 15 }}>{exam.name}</div>
-                  <div style={{ fontSize: 12, color: '#8b90a0' }}>
-                    {exam.date} &nbsp;·&nbsp; {exam.start_time} – {exam.end_time}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+              {exams.map((exam) => {
+                const pill = statusPill(exam.status);
+
+                return (
+                  <div
+                    key={exam.examid}
+                    style={{
+                      background: "#1a1d27",
+                      border: "1px solid #2e3347",
+                      borderRadius: 12,
+                      padding: 20,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>{exam.name}</div>
+                    <div style={{ fontSize: 12, color: "#8b90a0" }}>
+                      {exam.date} &nbsp;&nbsp; {exam.starttime} - {exam.endtime}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span
+                        style={{
+                          background: pill.bg,
+                          color: pill.color,
+                          padding: "3px 10px",
+                          borderRadius: 20,
+                          fontSize: 12,
+                        }}
+                      >
+                        {pill.label}
+                      </span>
+                      <span style={{ fontSize: 12, color: "#555a6e" }}>{exam.durationminutes} min</span>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                      <button
+                        onClick={() => openMonitor(exam)}
+                        className="btn btn-primary"
+                        style={{ flex: 1, fontSize: 13, padding: "7px 0" }}
+                      >
+                        Monitor
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedExam(exam);
+                          setView("assign");
+                        }}
+                        className="btn btn-ghost"
+                        style={{ flex: 1, fontSize: 13, padding: "7px 0" }}
+                      >
+                        Assign
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      background: exam.status === 'Running' ? '#0f2a1a' : '#22263a',
-                      color: exam.status === 'Running' ? '#34c97a' : '#8b90a0',
-                      padding: '3px 10px', borderRadius: 20, fontSize: 12
-                    }}>{exam.status}</span>
-                    <span style={{ fontSize: 12, color: '#555a6e' }}>
-                      ⏱ {exam.duration_minutes} min
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button
-                      onClick={() => openMonitor(exam)}
-                      className="btn btn-primary"
-                      style={{ flex: 1, fontSize: 13, padding: '7px 0' }}
-                    >
-                      🖥 Monitor
-                    </button>
-                    <button
-                      onClick={() => { setSelectedExam(exam); setView('assign') }}
-                      className="btn btn-ghost"
-                      style={{ flex: 1, fontSize: 13, padding: '7px 0' }}
-                    >
-                      👥 Assign
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
-    )
+    );
   }
 
-  if (view === 'monitor') {
+  if (view === "monitor") {
+    const examPill = statusPill(selectedExam?.status);
+    const pendingRequests = reentryRequests.filter(
+      (r) => r.status === "PENDING" || r.status === "Pending"
+    ).length;
+
     return (
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117' }}>
-        <div style={{
-          height: 52, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-          display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12,
-          flexShrink: 0, flexWrap: 'wrap'
-        }}>
-          <button onClick={goBack} className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }}>
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
+        <div
+          style={{
+            minHeight: 52,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 20px",
+            gap: 12,
+            flexShrink: 0,
+            flexWrap: "wrap",
+          }}
+        >
+          <button onClick={goBack} className="btn btn-ghost" style={{ padding: "5px 12px", fontSize: 12 }}>
             ← Back
           </button>
+
           <span style={{ fontWeight: 700, fontSize: 14 }}>{selectedExam?.name}</span>
-          <span style={{ fontSize: 12, color: '#8b90a0' }}>
-            · {candidates.length} candidate{candidates.length !== 1 ? 's' : ''}
+
+          <span
+            style={{
+              background: examPill.bg,
+              color: examPill.color,
+              padding: "3px 10px",
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            {examPill.label}
+          </span>
+
+          <span style={{ fontSize: 12, color: "#8b90a0" }}>
+            {candidates.length} candidate{candidates.length !== 1 ? "s" : ""}
           </span>
 
           {actionMsg && (
-            <span style={{ fontSize: 12, color: '#34c97a', marginLeft: 8 }}>
-              {actionMsg}
-            </span>
+            <span style={{ fontSize: 12, color: "#34c97a", marginLeft: 8 }}>{actionMsg}</span>
           )}
 
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             <LogoutButton />
+
             <input
               value={broadcastMsg}
-              onChange={e => setBroadcastMsg(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendBroadcast()}
+              onChange={(e) => setBroadcastMsg(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendBroadcast()}
               placeholder="Broadcast to all candidates..."
-              style={{ width: 220, padding: '6px 10px', fontSize: 12 }}
+              style={{ width: 220, padding: "6px 10px", fontSize: 12 }}
             />
-            <button onClick={sendBroadcast} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>
-              📢 Send
+
+            <button onClick={sendBroadcast} className="btn btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }}>
+              Send
             </button>
-            <button onClick={startExam} className="btn btn-success" style={{ padding: '6px 16px', fontSize: 12 }}>
-              ▶ Start Exam
-            </button>
+
             <button
-              onClick={() => { setSelectedExam(selectedExam); setView('assign') }}
-              className="btn btn-ghost"
-              style={{ padding: '6px 12px', fontSize: 12 }}
+              onClick={startExam}
+              disabled={startingExam || isExamRunning}
+              className="btn btn-success"
+              style={{
+                padding: "6px 16px",
+                fontSize: 12,
+                opacity: startingExam || isExamRunning ? 0.6 : 1,
+                cursor: startingExam || isExamRunning ? "not-allowed" : "pointer",
+              }}
             >
-              👥 Assign
+              {startingExam ? "Starting..." : isExamRunning ? "Exam Running" : "Start Exam"}
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedExam(selectedExam);
+                setView("assign");
+              }}
+              className="btn btn-ghost"
+              style={{ padding: "6px 12px", fontSize: 12 }}
+            >
+              Assign
+            </button>
+
+            <button
+              onClick={() => {
+                loadExamById(selectedExamId);
+                loadCandidates(selectedExamId);
+                if (monitorTab === "requests") loadReentryRequests();
+              }}
+              className="btn btn-ghost"
+              style={{ padding: "6px 12px", fontSize: 12 }}
+            >
+              Refresh
             </button>
           </div>
         </div>
 
-        <div style={{
-          height: 40, background: '#1a1d27', borderBottom: '1px solid #2e3347',
-          display: 'flex', alignItems: 'center', padding: '0 16px', gap: 4, flexShrink: 0
-        }}>
+        <div
+          style={{
+            height: 40,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 16px",
+            gap: 4,
+            flexShrink: 0,
+          }}
+        >
           {[
-            { key: 'grid', label: '🖥 Live Grid' },
-            {
-              key: 'requests',
-              label: `📬 Requests${reentryRequests.filter(r => r.status === 'Pending').length > 0
-                ? ` (${reentryRequests.filter(r => r.status === 'Pending').length})` : ''}`
-            }
-          ].map(t => (
+            { key: "grid", label: "🖥 Live Grid" },
+            { key: "requests", label: `📬 Requests${pendingRequests > 0 ? ` (${pendingRequests})` : ""}` },
+          ].map((t) => (
             <button
               key={t.key}
-              onClick={() => { setMonitorTab(t.key); if (t.key === 'requests') loadReentryRequests() }}
-              style={{
-                padding: '5px 14px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                background: monitorTab === t.key ? '#22263a' : 'transparent',
-                color: monitorTab === t.key ? '#e8eaf0' : '#8b90a0',
-                border: monitorTab === t.key ? '1px solid #2e3347' : '1px solid transparent'
+              onClick={() => {
+                setMonitorTab(t.key);
+                if (t.key === "requests") loadReentryRequests();
               }}
-            >{t.label}</button>
+              style={{
+                padding: "5px 14px",
+                borderRadius: 6,
+                fontSize: 12,
+                cursor: "pointer",
+                background: monitorTab === t.key ? "#22263a" : "transparent",
+                color: monitorTab === t.key ? "#e8eaf0" : "#8b90a0",
+                border: monitorTab === t.key ? "1px solid #2e3347" : "1px solid transparent",
+              }}
+            >
+              {t.label}
+            </button>
           ))}
         </div>
 
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          <div style={{
-            flex: 1, overflowY: 'auto', padding: 16,
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-            gap: 12, alignContent: 'start'
-          }}>
-            {candidates.length === 0 && (
-              <div style={{
-                gridColumn: '1 / -1', textAlign: 'center',
-                color: '#8b90a0', padding: '60px 0', fontSize: 13
-              }}>
-                No candidates assigned yet.{' '}
-                <span
-                  onClick={() => setView('assign')}
-                  style={{ color: '#4f8ef7', cursor: 'pointer' }}
-                >
-                  Assign candidates →
-                </span>
+        {monitorTab === "requests" ? (
+          <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+            {reentryRequests.length === 0 ? (
+              <div style={{ color: "#8b90a0", textAlign: "center", padding: "60px 0" }}>
+                No pending requests.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {reentryRequests.map((req) => (
+                  <div
+                    key={req.requestid}
+                    style={{
+                      background: "#1a1d27",
+                      border: "1px solid #2e3347",
+                      borderRadius: 12,
+                      padding: 16,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#e8eaf0" }}>{req.type} Request</div>
+                      <div style={{ fontSize: 12, color: "#8b90a0" }}>{req.status}</div>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "#8b90a0", marginBottom: 10 }}>
+                      Candidate {req.candidateid} • Assessment {req.assessmentid}
+                    </div>
+
+                    <div style={{ fontSize: 13, color: "#c8cad0", marginBottom: 12 }}>
+                      {req.reason || "No reason provided"}
+                    </div>
+
+                    {req.status === "PENDING" ? (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          onClick={() => handleReentry(req.assessmentid, req.requestid, true)}
+                          className="btn btn-success"
+                          style={{ padding: "7px 14px", fontSize: 12 }}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleReentry(req.assessmentid, req.requestid, false)}
+                          className="btn btn-danger"
+                          style={{ padding: "7px 14px", fontSize: 12 }}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
               </div>
             )}
-
-            {candidates.map(c => {
-              const live = liveData[c.candidate_id] || {}
-              const color = STATUS_COLORS[c.status] || '#555a6e'
-              const isAlert = !!live.latestViolation
-              const isActive = c.candidate_id === selectedCandidate?.candidate_id
-
-              return (
-                <div
-                  key={c.candidate_id}
-                  onClick={() => {
-                    setSelectedCandidate(c)
-                    loadViolations(c.candidate_id, selectedExam.exam_id)
-                  }}
-                  style={{
-                    background: isActive ? '#1e2235' : '#1a1d27',
-                    border: `2px solid ${isAlert ? '#f75f5f' : isActive ? '#4f8ef7' : color}`,
-                    borderRadius: 10, padding: 14, cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    outline: isActive ? '1px solid #4f8ef7' : 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{
-                      fontSize: 10, color: '#555a6e', maxWidth: 120,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                    }}>
-                      {c.candidate_id}
-                    </span>
-                    <span style={{
-                      width: 9, height: 9, borderRadius: '50%',
-                      background: color, display: 'inline-block', flexShrink: 0
-                    }} />
-                  </div>
-
-                  <div style={{
-                    fontWeight: 600, fontSize: 13, marginBottom: 3,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                  }}>
-                    {c.candidate_name || 'Candidate'}
-                  </div>
-
-                  <div style={{ fontSize: 11, color: color, marginBottom: 8, fontWeight: 500 }}>
-                    {c.status}
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8b90a0' }}>
-                    <span>⚠️ {c.violation_count || 0}</span>
-                    <span>📊 {c.risk_score || 0}</span>
-                    <span>💯 {c.credibility_score ?? 100}</span>
-                  </div>
-
-                  {isAlert && (
-                    <div style={{
-                      marginTop: 8, fontSize: 10, background: '#2a1010',
-                      borderRadius: 5, padding: '4px 8px', color: '#f75f5f',
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                    }}>
-                      🚨 {live.latestViolation.type}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
           </div>
-
-          {selectedCandidate && (
-            <div style={{
-              width: 320, background: '#1a1d27', borderLeft: '1px solid #2e3347',
-              display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0
-            }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid #2e3347', flexShrink: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>
-                      {selectedCandidate.candidate_name || selectedCandidate.candidate_id}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#8b90a0', marginTop: 2 }}>
-                      {selectedCandidate.status}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => { setSelectedCandidate(null); setViolations([]) }}
-                    style={{ background: 'none', color: '#8b90a0', fontSize: 20, cursor: 'pointer' }}
-                  >×</button>
+        ) : (
+          <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: 16,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                gap: 12,
+                alignContent: "start",
+              }}
+            >
+              {candidates.length === 0 ? (
+                <div style={{ gridColumn: "1 / -1", textAlign: "center", color: "#8b90a0", padding: "60px 0", fontSize: 13 }}>
+                  No candidates assigned yet.{" "}
+                  <span onClick={() => setView("assign")} style={{ color: "#4f8ef7", cursor: "pointer" }}>
+                    Assign candidates
+                  </span>
                 </div>
+              ) : (
+                candidates.map((c) => {
+                  const candidateId = c.candidateid;
+                  const live = liveData[candidateId] || {};
+                  const color = STATUS_COLORS[String(c.status).toUpperCase()] || "#555a6e";
+                  const isAlert = !!live.latestViolation;
+                  const isActive = candidateId === selectedCandidate?.candidateid;
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <StatBox label="Violations" value={selectedCandidate.violation_count || 0} color="#f75f5f" />
-                  <StatBox label="Risk Score" value={selectedCandidate.risk_score || 0} color="#f5a623" />
-                  <StatBox label="Credibility" value={`${selectedCandidate.credibility_score ?? 100}%`} color="#34c97a" />
-                  <StatBox label="Warnings" value={selectedCandidate.warning_count || 0} color="#8b90a0" />
-                </div>
+                  return (
+                    <div
+                      key={candidateId}
+                      onClick={() => {
+                        setSelectedCandidate(c);
+                        loadViolations(candidateId, selectedExamId);
+                      }}
+                      style={{
+                        background: isActive ? "#1e2235" : "#1a1d27",
+                        border: `2px solid ${isAlert ? "#f75f5f" : isActive ? "#4f8ef7" : color}`,
+                        borderRadius: 10,
+                        padding: 14,
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                        outline: isActive ? "1px solid #4f8ef7" : "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: "#555a6e",
+                            maxWidth: 120,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {candidateId}
+                        </span>
+                        <span
+                          style={{
+                            width: 9,
+                            height: 9,
+                            borderRadius: "50%",
+                            background: color,
+                            display: "inline-block",
+                            flexShrink: 0,
+                          }}
+                        />
+                      </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => doAction(selectedCandidate.assessment_id, 'pause')}
-                      className="btn btn-ghost"
-                      style={{ flex: 1, fontSize: 12 }}
-                    >⏸ Pause</button>
-                    <button
-                      onClick={() => doAction(selectedCandidate.assessment_id, 'resume')}
-                      className="btn btn-ghost"
-                      style={{ flex: 1, fontSize: 12 }}
-                    >▶ Resume</button>
-                  </div>
-                  <button
-                    onClick={() => doAction(selectedCandidate.assessment_id, 'terminate')}
-                    className="btn btn-danger"
-                    style={{ width: '100%', fontSize: 12 }}
-                  >🛑 Terminate Assessment</button>
-                </div>
-              </div>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 13,
+                          marginBottom: 3,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {c.candidatename}
+                      </div>
 
-              <div style={{ flex: 1, overflowY: 'auto' }}>
-                <div style={{ padding: '14px 20px', borderBottom: '1px solid #2e3347' }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
-                    Violations ({violations.length})
-                  </div>
-                  {violations.length === 0 ? (
-                    <p style={{ fontSize: 12, color: '#8b90a0' }}>No violations recorded.</p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {violations.map((v, i) => (
-                        <div key={v.violation_id || i} style={{
-                          background: '#22263a', borderRadius: 8, padding: '10px 12px',
-                          borderLeft: '3px solid #f75f5f'
-                        }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>
-                            {v.type}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#8b90a0' }}>
-                            {v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '—'}
-                            {v.confidence != null ? ` · ${Math.round(v.confidence * 100)}% confidence` : ''}
-                          </div>
+                      <div style={{ fontSize: 11, color, marginBottom: 8, fontWeight: 500 }}>{c.status}</div>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8b90a0" }}>
+                        <span>⚠ {c.violationcount}</span>
+                        <span>📊 {c.riskscore}</span>
+                        <span>💯 {c.credibilityscore}</span>
+                      </div>
+
+                      {isAlert && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: 10,
+                            background: "#2a1010",
+                            borderRadius: 5,
+                            padding: "4px 8px",
+                            color: "#f75f5f",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {live.latestViolation.type}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
+                  );
+                })
+              )}
+            </div>
+
+            {selectedCandidate && (
+              <div
+                style={{
+                  width: 320,
+                  background: "#1a1d27",
+                  borderLeft: "1px solid #2e3347",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid #2e3347", flexShrink: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>
+                        {selectedCandidate.candidatename || selectedCandidate.candidateid}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#8b90a0", marginTop: 2 }}>{selectedCandidate.status}</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedCandidate(null);
+                        setViolations([]);
+                      }}
+                      style={{ background: "none", color: "#8b90a0", fontSize: 20, cursor: "pointer" }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <StatBox label="Violations" value={selectedCandidate.violationcount ?? 0} color="#f75f5f" />
+                    <StatBox label="Risk Score" value={selectedCandidate.riskscore ?? 0} color="#f5a623" />
+                    <StatBox label="Credibility" value={selectedCandidate.credibilityscore ?? 100} color="#34c97a" />
+                    <StatBox label="Warnings" value={selectedCandidate.warningcount ?? 0} color="#8b90a0" />
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => doAction(selectedCandidate.assessmentid, "pause")}
+                        className="btn btn-ghost"
+                        style={{ flex: 1, fontSize: 12 }}
+                      >
+                        Pause
+                      </button>
+                      <button
+                        onClick={() => doAction(selectedCandidate.assessmentid, "resume")}
+                        className="btn btn-ghost"
+                        style={{ flex: 1, fontSize: 12 }}
+                      >
+                        Resume
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => doAction(selectedCandidate.assessmentid, "terminate")}
+                      className="btn btn-danger"
+                      style={{ width: "100%", fontSize: 12 }}
+                    >
+                      Terminate Assessment
+                    </button>
+                  </div>
                 </div>
 
-                <div style={{ padding: '14px 20px' }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
-                    Chat with Candidate
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <div style={{ padding: "14px 20px", borderBottom: "1px solid #2e3347" }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
+                      Violations ({violations.length})
+                    </div>
+
+                    {violations.length === 0 ? (
+                      <p style={{ fontSize: 12, color: "#8b90a0" }}>No violations recorded.</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {violations.map((v, i) => (
+                          <div
+                            key={v.violationid ?? v.violation_id ?? i}
+                            style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}
+                          >
+                            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{v.type}</div>
+                            <div style={{ fontSize: 11, color: "#8b90a0" }}>
+                              {v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : ""}
+                              {v.confidence != null ? ` • ${Math.round(v.confidence * 100)}% confidence` : ""}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <ChatWindow
-                    examId={selectedExam.exam_id}
-                    candidateId={selectedCandidate.candidate_id}
-                    currentUser={{ user_id: user.user_id, role: user.role }}
-                    token={accessToken}
-                  />
+
+                  <div style={{ padding: "14px 20px" }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Chat with Candidate</div>
+                    <ChatWindow
+                      examId={selectedExamId}
+                      candidateId={selectedCandidate.candidateid}
+                      currentUser={{ userid: user?.user_id ?? user?.userid, role: user?.role }}
+                      token={accessToken}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
-    )
+    );
   }
 
-  return null
+  return null;
 }
 
 ===== FILE END =====
@@ -11133,6 +11442,11 @@ const useAuthStore = create(
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.error("Auth store hydration failed", error);
+          try {
+            localStorage.removeItem("auth-storage");
+          } catch (e) {
+            console.error("Failed to clear corrupted auth storage", e);
+          }
         }
         state?.setHasHydrated(true);
       },

@@ -16,9 +16,14 @@ import axios from "axios";
 import appLogo from "../dist-renderer/assets/icons/app-icon.ico";
 
 const API = "http://localhost:3000";
-const SCREEN_STORAGE_KEY = "app-screen";
-const SPLASH_SESSION_KEY = "splash-shown";
-const SPLASH_DURATION = 10000;
+const SPLASH_DURATION = 3000;
+const CANDIDATE_FLOW_SCREENS = new Set([
+  "precheck",
+  "instructions",
+  "wait",
+  "exam",
+  "complete",
+]);
 
 function AppLogo({ size = 56 }) {
   return (
@@ -200,24 +205,14 @@ function AppShell() {
     reset: resetExamStore,
   } = useExamStore();
 
-  const [screen, setScreenState] = useState(() => localStorage.getItem(SCREEN_STORAGE_KEY) || "login");
+  const [screen, setScreen] = useState("login");
   const [bootstrapping, setBootstrapping] = useState(true);
-
   const socket = useSocket(accessToken);
-
-  const setScreen = useCallback((nextScreen) => {
-    setScreenState(nextScreen);
-    localStorage.setItem(SCREEN_STORAGE_KEY, nextScreen);
-  }, []);
 
   const resetToLogin = useCallback(() => {
     useAuthStore.getState().clearAuth();
     resetExamStore();
-    localStorage.removeItem("auth-storage");
-    localStorage.removeItem("exam-storage");
-    localStorage.removeItem("app-screen");
-    localStorage.removeItem("zustand");
-    setScreenState("login");
+    setScreen("login");
   }, [resetExamStore]);
 
   useEffect(() => {
@@ -310,16 +305,14 @@ function AppShell() {
           return;
         }
 
-        const savedScreen = localStorage.getItem(SCREEN_STORAGE_KEY);
-
         if (user.role === "Admin") {
-          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "admin");
+          setScreen("admin");
           setBootstrapping(false);
           return;
         }
 
         if (user.role === "Examiner") {
-          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "examiner");
+          setScreen("examiner");
           setBootstrapping(false);
           return;
         }
@@ -328,7 +321,12 @@ function AppShell() {
           if (!currentExam) {
             await loadCandidateExam();
           }
-          setScreen(savedScreen && savedScreen !== "login" ? savedScreen : "candidate-dashboard");
+
+          setScreen((prev) => {
+            if (CANDIDATE_FLOW_SCREENS.has(prev)) return prev;
+            return "candidate-dashboard";
+          });
+
           setBootstrapping(false);
           return;
         }
@@ -343,7 +341,7 @@ function AppShell() {
     };
 
     bootstrap();
-  }, [hasHydrated, user, accessToken, currentExam, loadCandidateExam, resetToLogin, setScreen]);
+  }, [hasHydrated, user, accessToken, loadCandidateExam, resetToLogin, currentExam]);
 
   const handleEnterExam = (exam) => {
     setExam(exam);
@@ -366,16 +364,31 @@ function AppShell() {
     setScreen("wait");
   };
 
+  const handleReturnToDashboard = useCallback(async () => {
+    try {
+      await window.electronAPI?.stopCapture?.();
+      await window.electronAPI?.closeBrowser?.();
+      await window.electronAPI?.disableLockdown?.();
+      await window.electronAPI?.setClosable?.(true);
+    } catch (e) {
+      console.log("Return-to-dashboard cleanup failed", e);
+    }
+
+    await loadCandidateExam();
+    setScreen("candidate-dashboard");
+  }, [loadCandidateExam]);
+
   useEffect(() => {
     if (!socket) return;
 
     const onExamStarted = () => {
-      console.log("Socket examstarted received");
-      setScreen("wait");
+      setScreen((prev) => (prev === "exam" ? prev : "wait"));
     };
 
     const onControlCommand = (action) => {
-      if (action === "terminate") setScreen("complete");
+      if (action === "terminate") {
+        setScreen("wait");
+      }
     };
 
     socket.on("examstarted", onExamStarted);
@@ -385,7 +398,7 @@ function AppShell() {
       socket.off("examstarted", onExamStarted);
       socket.off("controlcommand", onControlCommand);
     };
-  }, [socket, setScreen]);
+  }, [socket]);
 
   if (!hasHydrated || bootstrapping) return null;
 
@@ -394,14 +407,25 @@ function AppShell() {
   if (screen === "login") return <Login onLogin={handleLogin} />;
   if (screen === "admin") return <AdminPanel />;
   if (screen === "examiner") return <ExaminerDashboard />;
-  if (screen === "candidate-dashboard") {
-    return <CandidateDashboard onEnterExam={handleEnterExam} />;
-  }
+  if (screen === "candidate-dashboard") return <CandidateDashboard onEnterExam={handleEnterExam} />;
   if (screen === "precheck") {
-    return <PreCheck exam={currentExam} assessment={currentAssessment} onPass={handlePreCheckPass} />;
+    return (
+      <PreCheck
+        exam={currentExam}
+        assessment={currentAssessment}
+        onPass={handlePreCheckPass}
+        onLogout={handleLogout}
+      />
+    );
   }
   if (screen === "instructions") {
-    return <Instructions exam={currentExam} assessment={currentAssessment} onStart={handleStartMonitoring} />;
+    return (
+      <Instructions
+        exam={currentExam}
+        assessment={currentAssessment}
+        onStart={handleStartMonitoring}
+      />
+    );
   }
   if (screen === "wait") {
     return (
@@ -410,33 +434,88 @@ function AppShell() {
         assessment={currentAssessment}
         onExamStart={() => setScreen("exam")}
         onLogout={handleLogout}
+        onComplete={handleExamComplete}
+        onReturnToDashboard={handleReturnToDashboard}
       />
     );
   }
   if (screen === "exam") {
-    return <ActiveExam exam={currentExam} assessment={currentAssessment} onComplete={handleExamComplete} />;
+    return (
+      <ActiveExam
+        exam={currentExam}
+        assessment={currentAssessment}
+        onComplete={handleExamComplete}
+        onLogout={handleLogout}
+      />
+    );
   }
   if (screen === "complete") {
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117", color: "#fff", fontFamily: "Inter, sans-serif" }}>
-        <div style={{ height: 56, background: "#1a1d27", borderBottom: "1px solid #2e3347", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "#0f1117",
+          color: "#fff",
+          fontFamily: "Inter, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            height: 56,
+            background: "#1a1d27",
+            borderBottom: "1px solid #2e3347",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 20px",
+            flexShrink: 0,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <AppLogo size={22} />
             <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
           </div>
-          <button onClick={handleLogout} className="btn btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }}>
+          <button
+            onClick={handleLogout}
+            className="btn btn-ghost"
+            style={{ padding: "8px 14px", fontSize: 12 }}
+          >
             Logout
           </button>
         </div>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
           <div style={{ marginBottom: 18 }}>
             <AppLogo size={72} />
           </div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Exam Completed</h2>
-          <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 20, textAlign: "center" }}>
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+            Exam Completed
+          </h2>
+          <p
+            style={{
+              color: "#8b90a0",
+              fontSize: 14,
+              marginBottom: 20,
+              textAlign: "center",
+            }}
+          >
             Your assessment has ended. You may now close this application.
           </p>
-          <button onClick={handleLogout} className="btn btn-primary" style={{ padding: "10px 20px", fontSize: 14 }}>
+          <button
+            onClick={handleLogout}
+            className="btn btn-primary"
+            style={{ padding: "10px 20px", fontSize: 14 }}
+          >
             Finish and Logout
           </button>
         </div>
@@ -449,24 +528,14 @@ function AppShell() {
 
 function Root() {
   const { hasHydrated } = useAuthStore();
-  const [showSplash, setShowSplash] = useState(() => {
-    try {
-      return sessionStorage.getItem(SPLASH_SESSION_KEY) !== "true";
-    } catch {
-      return true;
-    }
-  });
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    if (!showSplash) return;
     const timer = setTimeout(() => {
-      try {
-        sessionStorage.setItem(SPLASH_SESSION_KEY, "true");
-      } catch {}
       setShowSplash(false);
     }, SPLASH_DURATION);
     return () => clearTimeout(timer);
-  }, [showSplash]);
+  }, []);
 
   if (!hasHydrated) return showSplash ? <SplashScreen /> : null;
   return showSplash ? <SplashScreen /> : <AppShell />;

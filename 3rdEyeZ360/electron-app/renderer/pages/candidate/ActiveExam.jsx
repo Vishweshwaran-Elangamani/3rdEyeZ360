@@ -18,6 +18,14 @@ function pick(...values) {
   return null;
 }
 
+function toUpper(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function canonicalStatus(value) {
+  return toUpper(value).replace(/\s+/g, "").replace(/_/g, "");
+}
+
 function normalizeSites(...sources) {
   const unique = new Set();
 
@@ -35,9 +43,7 @@ function normalizeSites(...sources) {
 function normalizeExam(raw) {
   if (!raw) return null;
 
-  const examStatus = String(
-    pick(raw.examstatus, raw.exam_status, raw.status, "")
-  ).toUpperCase();
+  const examStatus = toUpper(pick(raw.examstatus, raw.exam_status, raw.status, ""));
 
   return {
     ...raw,
@@ -64,17 +70,11 @@ function normalizeExam(raw) {
 function normalizeAssessment(raw) {
   if (!raw) return null;
 
-  const assessmentStatus = String(
-    pick(raw.status, raw.assessmentstatus, raw.assessment_status, "")
-  ).toUpperCase();
-
-  const finalStatus = String(
-    pick(raw.finalstatus, raw.final_status, "")
-  ).toUpperCase();
-
-  const examStatus = String(
+  const assessmentStatus = toUpper(pick(raw.status, raw.assessmentstatus, raw.assessment_status, ""));
+  const finalStatus = toUpper(pick(raw.finalstatus, raw.final_status, ""));
+  const examStatus = toUpper(
     pick(raw.examstatus, raw.exam_status, raw.status_exam, raw.runtimestatus, "")
-  ).toUpperCase();
+  );
 
   return {
     ...raw,
@@ -102,15 +102,15 @@ function normalizeAssessment(raw) {
 }
 
 function getExamStatus(source) {
-  return String(pick(source?.examstatus, source?.exam_status, "")).toUpperCase();
+  return canonicalStatus(pick(source?.examstatus, source?.exam_status, source?.status, ""));
 }
 
 function getAssessmentStatus(source) {
-  return String(pick(source?.assessmentstatus, source?.assessment_status, source?.status, "")).toUpperCase();
+  return canonicalStatus(pick(source?.assessmentstatus, source?.assessment_status, source?.status, ""));
 }
 
 function getFinalStatus(source) {
-  return String(pick(source?.finalstatus, source?.final_status, "")).toUpperCase();
+  return canonicalStatus(pick(source?.finalstatus, source?.final_status, ""));
 }
 
 function safeHost(url) {
@@ -147,6 +147,8 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const completedRef = useRef(false);
   const browserOpenedRef = useRef(false);
   const lastNavigatedUrlRef = useRef(null);
+  const returningRef = useRef(false);
+  const finishingRef = useRef(false);
 
   const { accessToken, user } = useAuthStore();
   const socket = useSocket(accessToken);
@@ -354,10 +356,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     };
   }, [allowedSites.length, safeElectron]);
 
-  const finishExam = useCallback(async () => {
-    if (completedRef.current) return;
-    completedRef.current = true;
-
+  const cleanupExamShell = useCallback(async () => {
     try {
       await window.electronAPI?.stopCapture?.();
     } catch (error) {
@@ -379,44 +378,33 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       console.log("setClosable failed", error);
     }
 
+    browserOpenedRef.current = false;
+    lastNavigatedUrlRef.current = null;
+  }, []);
+
+  const finishExam = useCallback(async () => {
+    if (completedRef.current || finishingRef.current) return;
+    finishingRef.current = true;
+    completedRef.current = true;
+
+    await cleanupExamShell();
     onComplete?.();
-  }, [onComplete]);
+  }, [cleanupExamShell, onComplete]);
 
   const returnToDashboardSafe = useCallback(async () => {
-    if (completedRef.current || returning) return;
+    if (completedRef.current || returningRef.current || returning) return;
 
+    returningRef.current = true;
     setReturning(true);
 
     try {
-      try {
-        await window.electronAPI?.stopCapture?.();
-      } catch (error) {
-        console.log("stopCapture failed", error);
-      }
-
-      try {
-        await window.electronAPI?.closeBrowser?.();
-      } catch (error) {
-        console.log("closeBrowser failed", error);
-      }
-
-      try {
-        await window.electronAPI?.disableLockdown?.();
-      } catch (error) {
-        console.log("disableLockdown failed", error);
-      }
-
-      try {
-        await window.electronAPI?.setClosable?.(true);
-      } catch (error) {
-        console.log("setClosable failed", error);
-      }
-
+      await cleanupExamShell();
       await onReturnToDashboard?.();
     } finally {
       setReturning(false);
+      returningRef.current = false;
     }
-  }, [onReturnToDashboard, returning]);
+  }, [cleanupExamShell, onReturnToDashboard, returning]);
 
   useEffect(() => {
     if (!socket || !examId) return;
@@ -439,16 +427,16 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
 
       if (!examMatch || !assessmentMatch || !candidateMatch) return;
 
-      const action = String(payload?.action ?? "").toLowerCase();
-      const status = String(payload?.status ?? "").toUpperCase();
+      const action = toUpper(payload?.action ?? payload);
+      const status = canonicalStatus(payload?.status);
 
-      if (action === "terminate" || status === "TERMINATED") {
+      if (action === "TERMINATE" || status === "TERMINATED") {
         setStatusMsg("Your assessment has been terminated by the examiner.");
         await finishExam();
         return;
       }
 
-      if (action === "pause") {
+      if (action === "PAUSE") {
         setLiveAssessment((prev) => ({
           ...(prev || {}),
           status: "PAUSED",
@@ -458,7 +446,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         return;
       }
 
-      if (action === "resume") {
+      if (action === "RESUME") {
         setLiveAssessment((prev) => ({
           ...(prev || {}),
           status: "ACTIVE",
@@ -517,7 +505,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       const shouldEnd =
         TERMINAL_EXAM_STATUSES.has(examStatus) ||
         TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus) ||
-        (finalStatus && finalStatus !== "NULL" && TERMINAL_ASSESSMENT_STATUSES.has(finalStatus));
+        (finalStatus && TERMINAL_ASSESSMENT_STATUSES.has(finalStatus));
 
       if (shouldEnd) {
         await finishExam();
@@ -565,7 +553,10 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     return () => {
       browserOpenedRef.current = false;
       lastNavigatedUrlRef.current = null;
-      window.electronAPI?.closeBrowser?.();
+
+      if (!completedRef.current && !returningRef.current) {
+        console.log("ActiveExam unmounted without completion; browser close skipped to avoid accidental teardown.");
+      }
     };
   }, []);
 
@@ -573,7 +564,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const examName = merged.name || normalizedExam?.name || "Exam";
   const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "-";
   const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "-";
-  const isPaused = String(assessmentStatus).toUpperCase() === "PAUSED";
+  const isPaused = canonicalStatus(assessmentStatus) === "PAUSED";
 
   return (
     <div
@@ -865,8 +856,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       </div>
 
       {typeof onReturnToDashboard === "function" &&
-      (String(assessmentStatus).toUpperCase() === "LOCKED" ||
-        String(assessmentStatus).toUpperCase() === "TERMINATED") ? (
+      (canonicalStatus(assessmentStatus) === "LOCKED" || canonicalStatus(assessmentStatus) === "TERMINATED") ? (
         <div style={{ position: "fixed", right: 16, bottom: 16, zIndex: 120 }}>
           <button
             onClick={returnToDashboardSafe}

@@ -4,8 +4,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from config.database import get_db
-from middleware.auth import require_role
+from config.database import getdb
+from middleware.auth import requirerole
 
 router = APIRouter(prefix="/api/requests", tags=["Requests"])
 
@@ -26,29 +26,47 @@ def _serialize(document: dict) -> dict:
     return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
 
 
+def _exam_query(examid: str) -> dict:
+    return {"$or": [{"examid": examid}, {"exam_id": examid}]}
+
+
 async def _ensure_exam_access(db, examid: str, current_user: dict):
-    exam = await db.exams.find_one({"examid": examid})
+    exam = await db.exams.find_one(_exam_query(examid))
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    if current_user["role"] == "Examiner" and exam.get("examinerid") != current_user["userid"]:
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
+    examiner_id = exam.get("examinerid") or exam.get("examiner_id")
+
+    if current_user["role"] == "Examiner" and examiner_id != current_user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     return exam
 
 
-@router.post("/")
+@router.post("")
 async def submit(
     req: CreateRequestBody,
-    current_user=Depends(require_role("Candidate")),
+    current_user=Depends(requirerole("Candidate")),
 ):
-    db = get_db()
+    db = getdb()
+
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
 
     assessment = await db.assessments.find_one(
         {
-            "assessmentid": req.assessmentid,
-            "examid": req.examid,
-            "candidateid": current_user["userid"],
+            "$or": [
+                {
+                    "assessmentid": req.assessmentid,
+                    "examid": req.examid,
+                    "candidateid": current_user_id,
+                },
+                {
+                    "assessment_id": req.assessmentid,
+                    "exam_id": req.examid,
+                    "candidate_id": current_user_id,
+                },
+            ]
         }
     )
     if not assessment:
@@ -66,7 +84,7 @@ async def submit(
     existing = await db.requests.find_one(
         {
             "assessmentid": req.assessmentid,
-            "candidateid": current_user["userid"],
+            "candidateid": current_user_id,
             "type": request_type,
             "status": "PENDING",
         }
@@ -81,7 +99,7 @@ async def submit(
         "requestid": request_id,
         "assessmentid": req.assessmentid,
         "examid": req.examid,
-        "candidateid": current_user["userid"],
+        "candidateid": current_user_id,
         "type": request_type,
         "reason": reason,
         "status": "PENDING",
@@ -95,11 +113,12 @@ async def submit(
 
     requested_status = "REENTRYREQUESTED" if request_type == "REENTRY" else "LATEENTRYREQUESTED"
     await db.assessments.update_one(
-        {"assessmentid": req.assessmentid},
+        {"$or": [{"assessmentid": req.assessmentid}, {"assessment_id": req.assessmentid}]},
         {
             "$set": {
                 "status": requested_status,
                 "updatedat": now,
+                "updated_at": now,
             }
         },
     )
@@ -107,7 +126,7 @@ async def submit(
     await db.auditlogs.insert_one(
         {
             "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-            "userid": current_user["userid"],
+            "userid": current_user_id,
             "examid": req.examid,
             "assessmentid": req.assessmentid,
             "action": "CreateRequest",
@@ -123,9 +142,9 @@ async def submit(
 async def review(
     requestid: str,
     req: ReviewBody,
-    current_user=Depends(require_role("Examiner", "Admin")),
+    current_user=Depends(requirerole("Examiner", "Admin")),
 ):
-    db = get_db()
+    db = getdb()
 
     decision = req.decision.strip().upper()
     review_reason = (req.reason or "").strip()
@@ -145,6 +164,7 @@ async def review(
 
     await _ensure_exam_access(db, request_doc["examid"], current_user)
 
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
     now = datetime.utcnow()
 
     await db.requests.update_one(
@@ -152,26 +172,26 @@ async def review(
         {
             "$set": {
                 "status": decision,
-                "reviewedby": current_user["userid"],
+                "reviewedby": current_user_id,
                 "reviewedat": now,
                 "reviewreason": review_reason if review_reason else None,
             }
         },
     )
 
-    assessment_status = "REENTRY_APPROVED" if decision == "APPROVED" else "REENTRY_REJECTED"
+    assessment_status = "REENTRYAPPROVED" if decision == "APPROVED" else "REENTRYREJECTED"
     if request_doc.get("type") == "LATEENTRY":
-        assessment_status = "LATEENTRY_APPROVED" if decision == "APPROVED" else "LATEENTRY_REJECTED"
+        assessment_status = "LATEENTRYAPPROVED" if decision == "APPROVED" else "LATEENTRYREJECTED"
 
     await db.assessments.update_one(
-        {"assessmentid": request_doc["assessmentid"]},
-        {"$set": {"status": assessment_status, "updatedat": now}},
+        {"$or": [{"assessmentid": request_doc["assessmentid"]}, {"assessment_id": request_doc["assessmentid"]}]},
+        {"$set": {"status": assessment_status, "updatedat": now, "updated_at": now}},
     )
 
     await db.auditlogs.insert_one(
         {
             "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-            "userid": current_user["userid"],
+            "userid": current_user_id,
             "examid": request_doc["examid"],
             "assessmentid": request_doc["assessmentid"],
             "action": "ReviewRequest",
@@ -191,9 +211,9 @@ async def review(
 @router.get("/exam/{examid}/pending")
 async def pending(
     examid: str,
-    current_user=Depends(require_role("Examiner", "Admin")),
+    current_user=Depends(requirerole("Examiner", "Admin")),
 ):
-    db = get_db()
+    db = getdb()
     await _ensure_exam_access(db, examid, current_user)
 
     requests = (
@@ -204,7 +224,14 @@ async def pending(
 
     result = []
     for request in requests:
-        user = await db.users.find_one({"userid": request.get("candidateid")})
+        user = await db.users.find_one(
+            {
+                "$or": [
+                    {"userid": request.get("candidateid")},
+                    {"user_id": request.get("candidateid")},
+                ]
+            }
+        )
         result.append(
             {
                 "requestid": request.get("requestid"),

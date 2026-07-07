@@ -21,17 +21,17 @@ const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
 const APPROVED_ENTRY_STATUSES = new Set([
   "ACTIVE",
   "PAUSED",
-  "REENTRY_APPROVED",
-  "LATEENTRY_APPROVED",
+  "REENTRYAPPROVED",
+  "LATEENTRYAPPROVED",
 ]);
 const WAITING_ENTRY_STATUSES = new Set([
   "ASSIGNED",
   "AVAILABLE",
   "READY",
-  "REENTRY_REQUESTED",
-  "LATEENTRY_REQUESTED",
-  "REENTRY_REJECTED",
-  "LATEENTRY_REJECTED",
+  "REENTRYREQUESTED",
+  "LATEENTRYREQUESTED",
+  "REENTRYREJECTED",
+  "LATEENTRYREJECTED",
 ]);
 
 function AppLogo({ size = 56 }) {
@@ -147,6 +147,10 @@ function toUpper(value) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function canonicalStatus(value) {
+  return toUpper(value).replace(/\s+/g, "").replace(/_/g, "");
+}
+
 function normalizeExam(raw) {
   if (!raw) return null;
 
@@ -231,15 +235,15 @@ function mergeExamAssessment(exam, assessment) {
 }
 
 function getAssessmentStatus(source) {
-  return toUpper(firstValue(source?.assessmentstatus));
+  return canonicalStatus(firstValue(source?.assessmentstatus, source?.status));
 }
 
 function getFinalStatus(source) {
-  return toUpper(firstValue(source?.finalstatus));
+  return canonicalStatus(firstValue(source?.finalstatus));
 }
 
 function getExamStatus(source) {
-  return toUpper(firstValue(source?.examstatus));
+  return canonicalStatus(firstValue(source?.examstatus, source?.status));
 }
 
 function isTerminalAssessmentState(source) {
@@ -601,6 +605,8 @@ function App() {
         clicked: examLike,
         finalAssessment,
         finalExam,
+        canonicalAssessmentStatus: getAssessmentStatus(finalAssessment),
+        canonicalExamStatus: getExamStatus(finalExam),
       });
 
       setAssessment(finalAssessment);

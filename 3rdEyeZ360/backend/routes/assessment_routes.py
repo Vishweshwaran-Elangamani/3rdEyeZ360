@@ -38,14 +38,18 @@ async def get_exam_doc(db, exam_id: str):
     return await db.exams.find_one(get_exam_query(exam_id))
 
 
+def normalize_status(value) -> str:
+    return str(value or "").strip().upper().replace(" ", "").replace("-", "_")
+
+
 def merge_exam_into_assessment(assessment: dict, exam: dict | None) -> dict:
     data = serialize(assessment)
 
     if not exam:
         data["allowedwebsites"] = data.get("allowedwebsites", []) or []
         data["allowedapplications"] = data.get("allowedapplications", []) or []
-        data["exam_status"] = data.get("exam_status", "")
-        data["examstatus"] = data.get("examstatus", "")
+        data["exam_status"] = data.get("exam_status", "") or data.get("examstatus", "")
+        data["examstatus"] = data.get("examstatus", "") or data.get("exam_status", "")
         return data
 
     exam_data = serialize(exam)
@@ -126,7 +130,7 @@ async def update_assessment_status(
     if current_user["role"] == "Examiner" and examiner_id != current_user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    new_status = str(body.get("status") or "").strip().upper()
+    new_status = normalize_status(body.get("status"))
     if not new_status:
         raise HTTPException(status_code=400, detail="status is required")
 
@@ -134,8 +138,8 @@ async def update_assessment_status(
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    exam_status = str(exam.get("status") or exam.get("examstatus") or "").upper()
-    current_status = str(assessment.get("status") or "").upper()
+    exam_status = normalize_status(exam.get("status") or exam.get("examstatus"))
+    current_status = normalize_status(assessment.get("status"))
 
     allowed_candidate_statuses = {"READY"}
     if current_user["role"] == "Candidate" and new_status not in allowed_candidate_statuses:
@@ -174,3 +178,107 @@ async def update_assessment_status(
     updated_exam = await get_exam_doc(db, exam_id) if exam_id else None
 
     return merge_exam_into_assessment(updated, updated_exam)
+
+
+@router.post("/{assessment_id}/action")
+async def assessment_action(
+    assessment_id: str,
+    body: dict,
+    current_user=Depends(requirerole("Examiner", "Admin"))
+):
+    db = getdb()
+
+    assessment = await get_assessment_doc(db, assessment_id)
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
+    examiner_id = assessment.get("examinerid") or assessment.get("examiner_id")
+    exam_id = assessment.get("examid") or assessment.get("exam_id")
+
+    if current_user["role"] == "Examiner" and examiner_id != current_user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    action = str(body.get("action") or "").strip().lower()
+    requested_status = normalize_status(
+        body.get("status") or body.get("assessmentstatus") or body.get("next_status")
+    )
+    decision = normalize_status(body.get("decision"))
+    request_type = normalize_status(body.get("requesttype") or body.get("request_type"))
+    reason = str(body.get("reason") or "").strip()
+
+    if action not in {"pause", "resume", "terminate"}:
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+    now = datetime.utcnow()
+    update_doc = {
+        "updatedat": now,
+        "updated_at": now,
+        "lastaction": action,
+        "lastactionby": current_user_id,
+    }
+
+    if reason:
+        update_doc["actionreason"] = reason
+
+    if action == "terminate":
+        update_doc["status"] = "TERMINATED"
+        update_doc["finalstatus"] = "TERMINATED"
+        update_doc["final_status"] = "TERMINATED"
+        update_doc["exittime"] = now
+        update_doc["exit_time"] = now
+
+    elif action == "pause":
+        if requested_status in {"REENTRY_REJECTED", "REENTRYREJECTED"}:
+            update_doc["status"] = "REENTRYREJECTED"
+        elif requested_status in {"LATEENTRY_REJECTED", "LATEENTRYREJECTED"}:
+            update_doc["status"] = "LATEENTRYREJECTED"
+        else:
+            update_doc["status"] = "PAUSED"
+
+    elif action == "resume":
+        if requested_status in {"REENTRY_APPROVED", "REENTRYAPPROVED"}:
+            update_doc["status"] = "REENTRYAPPROVED"
+        elif requested_status in {"LATEENTRY_APPROVED", "LATEENTRYAPPROVED"}:
+            update_doc["status"] = "LATEENTRYAPPROVED"
+        else:
+            update_doc["status"] = "ACTIVE"
+
+        if not assessment.get("activetime") and not assessment.get("active_time"):
+            update_doc["activetime"] = now
+            update_doc["active_time"] = now
+
+    await db.assessments.update_one(
+        get_assessment_query(assessment_id),
+        {"$set": update_doc}
+    )
+
+    if decision in {"APPROVED", "REJECTED"}:
+        request_query = {
+            "assessmentid": assessment_id,
+            "status": "PENDING",
+        }
+        if request_type in {"REENTRY", "LATEENTRY"}:
+            request_query["type"] = request_type
+
+        await db.requests.update_many(
+            request_query,
+            {
+                "$set": {
+                    "status": decision,
+                    "reviewedby": current_user_id,
+                    "reviewedat": now,
+                    "reviewreason": reason or None,
+                }
+            }
+        )
+
+    updated = await get_assessment_doc(db, assessment_id)
+    updated_exam = await get_exam_doc(db, exam_id) if exam_id else None
+
+    return {
+        "message": f"Assessment action '{action}' applied",
+        "assessment": merge_exam_into_assessment(updated, updated_exam),
+        "decision": decision or None,
+        "request_type": request_type or None,
+    }

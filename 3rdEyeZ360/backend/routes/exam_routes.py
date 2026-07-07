@@ -35,23 +35,35 @@ def _normalize_status(value, default=""):
     return str(value or default).strip().upper()
 
 
+def _clean_list(value):
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if item not in (None, "", [])]
+
+
 def _exam_payload(exam: dict) -> dict:
-    exam_data = _serialize(exam)
+    exam_data = _serialize(exam or {})
     exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
 
     exam_data["status"] = exam_status
     exam_data["examstatus"] = exam_status
     exam_data["exam_status"] = exam_status
 
-    exam_data["examid"] = exam.get("exam_id") or exam.get("examid")
-    exam_data["exam_id"] = exam.get("exam_id") or exam.get("examid")
-    exam_data["examinerid"] = exam.get("examiner_id") or exam.get("examinerid")
-    exam_data["examiner_id"] = exam.get("examiner_id") or exam.get("examinerid")
+    exam_id = exam.get("exam_id") or exam.get("examid")
+    examiner_id = exam.get("examiner_id") or exam.get("examinerid")
+
+    exam_data["examid"] = exam_id
+    exam_data["exam_id"] = exam_id
+    exam_data["examinerid"] = examiner_id
+    exam_data["examiner_id"] = examiner_id
     exam_data["name"] = exam.get("name") or exam.get("examname") or ""
+    exam_data["description"] = exam.get("description") or exam.get("examdescription") or ""
     exam_data["date"] = exam.get("date") or exam.get("examdate") or ""
     exam_data["starttime"] = exam.get("starttime") or exam.get("start_time") or exam.get("examstarttime") or ""
     exam_data["endtime"] = exam.get("endtime") or exam.get("end_time") or exam.get("examendtime") or ""
     exam_data["durationminutes"] = exam.get("durationminutes", exam.get("duration_minutes", 0))
+    exam_data["violationthreshold"] = exam.get("violationthreshold", exam.get("violation_threshold", 10))
+    exam_data["instructions"] = exam.get("instructions") or ""
     exam_data["allowedwebsites"] = exam.get("allowedwebsites", exam.get("allowed_websites", [])) or []
     exam_data["allowedapplications"] = exam.get("allowedapplications", exam.get("allowed_applications", [])) or []
 
@@ -59,7 +71,7 @@ def _exam_payload(exam: dict) -> dict:
 
 
 def _assessment_payload(assessment: dict) -> dict:
-    assessment_data = _serialize(assessment)
+    assessment_data = _serialize(assessment or {})
     assessment_status = _normalize_status(
         assessment.get("status") or assessment.get("assessmentstatus")
     )
@@ -73,14 +85,19 @@ def _assessment_payload(assessment: dict) -> dict:
     assessment_data["finalstatus"] = final_status
     assessment_data["final_status"] = final_status
 
-    assessment_data["assessmentid"] = assessment.get("assessment_id") or assessment.get("assessmentid")
-    assessment_data["assessment_id"] = assessment.get("assessment_id") or assessment.get("assessmentid")
-    assessment_data["examid"] = assessment.get("exam_id") or assessment.get("examid")
-    assessment_data["exam_id"] = assessment.get("exam_id") or assessment.get("examid")
-    assessment_data["candidateid"] = assessment.get("candidate_id") or assessment.get("candidateid")
-    assessment_data["candidate_id"] = assessment.get("candidate_id") or assessment.get("candidateid")
-    assessment_data["examinerid"] = assessment.get("examiner_id") or assessment.get("examinerid")
-    assessment_data["examiner_id"] = assessment.get("examiner_id") or assessment.get("examinerid")
+    assessment_id = assessment.get("assessment_id") or assessment.get("assessmentid")
+    exam_id = assessment.get("exam_id") or assessment.get("examid")
+    candidate_id = assessment.get("candidate_id") or assessment.get("candidateid")
+    examiner_id = assessment.get("examiner_id") or assessment.get("examinerid")
+
+    assessment_data["assessmentid"] = assessment_id
+    assessment_data["assessment_id"] = assessment_id
+    assessment_data["examid"] = exam_id
+    assessment_data["exam_id"] = exam_id
+    assessment_data["candidateid"] = candidate_id
+    assessment_data["candidate_id"] = candidate_id
+    assessment_data["examinerid"] = examiner_id
+    assessment_data["examiner_id"] = examiner_id
     assessment_data["allowedwebsites"] = assessment.get("allowedwebsites", assessment.get("allowed_websites", [])) or []
     assessment_data["allowedapplications"] = assessment.get("allowedapplications", assessment.get("allowed_applications", [])) or []
 
@@ -134,6 +151,87 @@ async def _ensure_exam_access(db, exam_id: str, current_user: dict):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return exam
+
+
+@router.post("")
+async def create_exam(
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    examiner_id = current_user.get("user_id") or current_user.get("userid")
+
+    name = (body.get("name") or "").strip()
+    description = (body.get("description") or "").strip()
+    date = (body.get("date") or "").strip()
+    start_time = (body.get("start_time") or body.get("starttime") or "").strip()
+    end_time = (body.get("end_time") or body.get("endtime") or "").strip()
+    instructions = (body.get("instructions") or "").strip()
+
+    duration_minutes = body.get("duration_minutes", body.get("durationminutes"))
+    violation_threshold = body.get("violation_threshold", body.get("violationthreshold", 10))
+    allowed_websites = _clean_list(body.get("allowed_websites", body.get("allowedwebsites", [])))
+    allowed_applications = _clean_list(body.get("allowed_applications", body.get("allowedapplications", [])))
+    status = _normalize_status(body.get("status"), "DRAFT")
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Exam name is required")
+
+    if not date or not start_time or not end_time:
+        raise HTTPException(
+            status_code=400,
+            detail="Exam date, start_time, and end_time are required"
+        )
+
+    if duration_minutes is None:
+        raise HTTPException(status_code=400, detail="duration_minutes is required")
+
+    now = datetime.utcnow()
+    exam_id = f"EXM-{uuid.uuid4().hex[:8].upper()}"
+
+    exam_doc = {
+        "exam_id": exam_id,
+        "examid": exam_id,
+        "name": name,
+        "description": description,
+        "examiner_id": examiner_id,
+        "examinerid": examiner_id,
+        "date": date,
+        "start_time": start_time,
+        "starttime": start_time,
+        "end_time": end_time,
+        "endtime": end_time,
+        "duration_minutes": int(duration_minutes),
+        "durationminutes": int(duration_minutes),
+        "violation_threshold": int(violation_threshold),
+        "violationthreshold": int(violation_threshold),
+        "allowed_websites": allowed_websites,
+        "allowedwebsites": allowed_websites,
+        "allowed_applications": allowed_applications,
+        "allowedapplications": allowed_applications,
+        "instructions": instructions,
+        "status": status,
+        "examstatus": status,
+        "created_at": now,
+        "createdat": now,
+        "updated_at": now,
+        "updatedat": now,
+    }
+
+    await db.exams.insert_one(exam_doc)
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": examiner_id,
+        "userid": examiner_id,
+        "exam_id": exam_id,
+        "examid": exam_id,
+        "action": "CreateExam",
+        "reason": f"Created exam {name}",
+        "timestamp": now,
+    })
+
+    return _exam_payload(exam_doc)
 
 
 @router.get("")

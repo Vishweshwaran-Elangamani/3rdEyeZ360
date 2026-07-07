@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 
 const RULES = [
   "👁️  Keep your face clearly visible in the camera at all times",
@@ -39,6 +39,39 @@ function LogoutButton({ onLogout }) {
   );
 }
 
+function normalizeList(...sources) {
+  const unique = new Set();
+
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const item of source) {
+      const value = String(item ?? "").trim();
+      if (value) unique.add(value);
+    }
+  }
+
+  return Array.from(unique);
+}
+
+function firstValue(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value) !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function getAssessmentStatus(source) {
+  return String(source?.status ?? source?.assessmentstatus ?? "").toUpperCase();
+}
+
+function getExamStatus(source) {
+  return String(
+    source?.examstatus ?? source?.exam_status ?? source?.status_exam ?? source?.status ?? ""
+  ).toUpperCase();
+}
+
 export default function Instructions({
   exam,
   assessment,
@@ -47,30 +80,123 @@ export default function Instructions({
   onLogout,
 }) {
   const [agreed, setAgreed] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [error, setError] = useState("");
+
+  const launchAttemptRef = useRef(false);
+  const launchTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (launchTimeoutRef.current) {
+        clearTimeout(launchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const sites = useMemo(() => {
-    if (Array.isArray(exam?.allowedwebsites)) return exam.allowedwebsites;
-    if (Array.isArray(assessment?.allowedwebsites)) return assessment.allowedwebsites;
-    return [];
+    return normalizeList(
+      exam?.allowedwebsites,
+      exam?.allowed_websites,
+      assessment?.allowedwebsites,
+      assessment?.allowed_websites
+    );
   }, [exam, assessment]);
 
   const apps = useMemo(() => {
-    if (Array.isArray(exam?.allowedapplications)) return exam.allowedapplications;
-    if (Array.isArray(assessment?.allowedapplications)) return assessment.allowedapplications;
-    return [];
+    return normalizeList(
+      exam?.allowedapplications,
+      exam?.allowed_applications,
+      assessment?.allowedapplications,
+      assessment?.allowed_applications
+    );
   }, [exam, assessment]);
 
-  const examName = exam?.name || assessment?.name || "Upcoming Exam";
-  const examDate = exam?.date || assessment?.date || "-";
-  const startTime = exam?.starttime || assessment?.starttime || "-";
-  const endTime = exam?.endtime || assessment?.endtime || "-";
-  const duration = exam?.durationminutes || assessment?.durationminutes || "-";
-  const instructions = exam?.instructions || assessment?.instructions || "";
-  const examId = exam?.examid || assessment?.examid || "-";
-  const assessmentId = assessment?.assessmentid || exam?.assessmentid || "-";
-  const examStatus = exam?.status || assessment?.status || "-";
-  const violationThreshold =
-    exam?.violationthreshold || assessment?.violationthreshold || "-";
+  const examName = firstValue(exam?.name, assessment?.name, "Upcoming Exam");
+  const examDate = firstValue(exam?.date, assessment?.date, "-");
+  const startTime = firstValue(
+    exam?.starttime,
+    exam?.start_time,
+    assessment?.starttime,
+    assessment?.start_time,
+    "-"
+  );
+  const endTime = firstValue(
+    exam?.endtime,
+    exam?.end_time,
+    assessment?.endtime,
+    assessment?.end_time,
+    "-"
+  );
+  const duration = firstValue(
+    exam?.durationminutes,
+    exam?.duration_minutes,
+    assessment?.durationminutes,
+    assessment?.duration_minutes,
+    "-"
+  );
+  const instructions = firstValue(exam?.instructions, assessment?.instructions, "");
+  const examId = firstValue(exam?.examid, exam?.exam_id, assessment?.examid, assessment?.exam_id, "-");
+  const assessmentId = firstValue(
+    assessment?.assessmentid,
+    assessment?.assessment_id,
+    exam?.assessmentid,
+    exam?.assessment_id,
+    "-"
+  );
+  const assessmentStatus = getAssessmentStatus(assessment ?? exam) || "-";
+  const examRuntimeStatus = getExamStatus(assessment ?? exam) || "-";
+  const violationThreshold = firstValue(
+    exam?.violationthreshold,
+    exam?.violation_threshold,
+    assessment?.violationthreshold,
+    assessment?.violation_threshold,
+    "-"
+  );
+
+  const canGoBack = typeof onBack === "function";
+
+  const handleStart = async () => {
+    if (!agreed || launching || launchAttemptRef.current) return;
+
+    launchAttemptRef.current = true;
+    setLaunching(true);
+    setError("");
+
+    if (launchTimeoutRef.current) {
+      clearTimeout(launchTimeoutRef.current);
+    }
+
+    launchTimeoutRef.current = setTimeout(() => {
+      setLaunching(false);
+      launchAttemptRef.current = false;
+      setError("The workspace is taking longer than expected to open. Please try again.");
+    }, 12000);
+
+    try {
+      await onStart?.();
+    } catch (e) {
+      console.log("Instructions launch failed", e);
+
+      if (launchTimeoutRef.current) {
+        clearTimeout(launchTimeoutRef.current);
+        launchTimeoutRef.current = null;
+      }
+
+      setError("Unable to launch the exam workspace right now. Please try again.");
+      setLaunching(false);
+      launchAttemptRef.current = false;
+      return;
+    }
+
+    if (launchTimeoutRef.current) {
+      clearTimeout(launchTimeoutRef.current);
+      launchTimeoutRef.current = null;
+    }
+
+    setLaunching(false);
+    launchAttemptRef.current = false;
+  };
 
   return (
     <div
@@ -173,7 +299,10 @@ export default function Instructions({
                   <strong>Assessment ID:</strong> {assessmentId}
                 </div>
                 <div>
-                  <strong>Status:</strong> {examStatus}
+                  <strong>Assessment Status:</strong> {assessmentStatus}
+                </div>
+                <div>
+                  <strong>Exam Status:</strong> {examRuntimeStatus}
                 </div>
                 <div>
                   <strong>Violation Threshold:</strong> {violationThreshold}
@@ -192,7 +321,7 @@ export default function Instructions({
               Exam Instructions
             </h2>
 
-            {instructions && (
+            {instructions ? (
               <div
                 style={{
                   background: "#22263a",
@@ -207,6 +336,21 @@ export default function Instructions({
                 }}
               >
                 {instructions}
+              </div>
+            ) : (
+              <div
+                style={{
+                  background: "#22263a",
+                  border: "1px solid #2e3347",
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  color: "#aeb4c3",
+                  marginBottom: 16,
+                  lineHeight: 1.7,
+                }}
+              >
+                No extra written instructions were provided for this exam.
               </div>
             )}
 
@@ -346,7 +490,7 @@ export default function Instructions({
                 alignItems: "flex-start",
                 gap: 10,
                 cursor: "pointer",
-                marginBottom: 24,
+                marginBottom: 14,
                 fontSize: 14,
                 color: "#e8eaf0",
               }}
@@ -355,10 +499,11 @@ export default function Instructions({
                 type="checkbox"
                 checked={agreed}
                 onChange={(e) => setAgreed(e.target.checked)}
+                disabled={launching}
                 style={{
                   width: 18,
                   height: 18,
-                  cursor: "pointer",
+                  cursor: launching ? "not-allowed" : "pointer",
                   marginTop: 2,
                   flexShrink: 0,
                 }}
@@ -366,9 +511,42 @@ export default function Instructions({
               <span>I have read and understood all the instructions</span>
             </label>
 
+            {error ? (
+              <div
+                style={{
+                  marginBottom: 20,
+                  background: "#2a1010",
+                  border: "1px solid #f75f5f",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  fontSize: 13,
+                  color: "#f3b0b0",
+                }}
+              >
+                {error}
+              </div>
+            ) : null}
+
+            {launching ? (
+              <div
+                style={{
+                  marginBottom: 20,
+                  background: "#10243a",
+                  border: "1px solid #2d4f75",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  fontSize: 13,
+                  color: "#8fc2ff",
+                }}
+              >
+                Preparing your monitored exam workspace...
+              </div>
+            ) : null}
+
             <div style={{ display: "flex", gap: 12 }}>
               <button
-                onClick={onBack}
+                onClick={() => onBack?.()}
+                disabled={!canGoBack || launching}
                 className="btn btn-ghost"
                 style={{
                   flex: 1,
@@ -378,28 +556,26 @@ export default function Instructions({
                   borderRadius: 10,
                   background: "#22263a",
                   color: "#e8eaf0",
-                  cursor: "pointer",
+                  cursor: !canGoBack || launching ? "not-allowed" : "pointer",
+                  opacity: !canGoBack || launching ? 0.45 : 1,
                 }}
               >
                 ← Back
               </button>
 
               <button
-                onClick={() => {
-                  if (!agreed) return;
-                  onStart?.();
-                }}
-                disabled={!agreed}
+                onClick={handleStart}
+                disabled={!agreed || launching}
                 className="btn btn-primary"
                 style={{
                   flex: 1.4,
                   padding: "12px 0",
                   fontSize: 15,
-                  opacity: agreed ? 1 : 0.4,
-                  cursor: agreed ? "pointer" : "not-allowed",
+                  opacity: agreed && !launching ? 1 : 0.4,
+                  cursor: agreed && !launching ? "pointer" : "not-allowed",
                 }}
               >
-                Launch Exam Workspace →
+                {launching ? "Launching..." : "Launch Exam Workspace →"}
               </button>
             </div>
           </div>

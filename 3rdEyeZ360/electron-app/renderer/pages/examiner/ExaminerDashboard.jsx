@@ -22,6 +22,11 @@ const STATUS_COLORS = {
   REENTRY_APPROVED: "#34c97a",
   LATEENTRYAPPROVED: "#34c97a",
   LATEENTRY_APPROVED: "#34c97a",
+  REENTRYREJECTED: "#f75f5f",
+  REENTRY_REJECTED: "#f75f5f",
+  LATEENTRYREJECTED: "#f75f5f",
+  LATEENTRY_REJECTED: "#f75f5f",
+  PENDING: "#f5a623",
 };
 
 function normalizeExam(exam) {
@@ -44,12 +49,14 @@ function normalizeCandidate(c) {
     ...c,
     assessmentid: c.assessmentid ?? c.assessment_id ?? null,
     candidateid: c.candidateid ?? c.candidate_id ?? null,
-    candidatename: c.candidatename ?? c.candidate_name ?? "Candidate",
+    candidatename: c.candidatename ?? c.candidate_name ?? c.name ?? "Candidate",
+    candidateemail: c.candidateemail ?? c.candidate_email ?? "",
     status: c.status ?? "ASSIGNED",
     violationcount: c.violationcount ?? c.violation_count ?? 0,
     warningcount: c.warningcount ?? c.warning_count ?? 0,
     riskscore: c.riskscore ?? c.risk_score ?? 0,
     credibilityscore: c.credibilityscore ?? c.credibility_score ?? 100,
+    attendancestatus: c.attendancestatus ?? c.attendance_status ?? "",
   };
 }
 
@@ -59,10 +66,15 @@ function normalizeRequest(r) {
     ...r,
     requestid: r.requestid ?? r.request_id ?? null,
     assessmentid: r.assessmentid ?? r.assessment_id ?? null,
+    examid: r.examid ?? r.exam_id ?? null,
     candidateid: r.candidateid ?? r.candidate_id ?? null,
+    candidatename: r.candidatename ?? r.candidate_name ?? r.name ?? null,
     status: String(r.status ?? "").toUpperCase(),
-    type: String(r.type ?? "").toUpperCase(),
-    reason: r.reason ?? "",
+    type: String(r.type ?? r.requesttype ?? r.request_type ?? "").toUpperCase(),
+    reason: r.reason ?? r.message ?? "",
+    reviewreason: r.reviewreason ?? r.review_reason ?? "",
+    createdat: r.createdat ?? r.created_at ?? null,
+    reviewedat: r.reviewedat ?? r.reviewed_at ?? null,
   };
 }
 
@@ -96,6 +108,7 @@ function LogoutButton() {
       localStorage.removeItem("auth-storage");
       localStorage.removeItem("exam-storage");
       useAuthStore.getState().clearAuth();
+      setLoading(false);
     }
   };
 
@@ -113,11 +126,75 @@ function LogoutButton() {
 
 function statusPill(status) {
   const s = String(status || "").toUpperCase();
+
   if (s === "RUNNING") return { bg: "#0f2a1a", color: "#34c97a", label: "Running" };
   if (s === "DRAFT") return { bg: "#22263a", color: "#8b90a0", label: "Draft" };
   if (s === "PUBLISHED") return { bg: "#10243a", color: "#4f8ef7", label: "Published" };
   if (s === "COMPLETED") return { bg: "#22263a", color: "#c8cad0", label: "Completed" };
+  if (s === "TERMINATED") return { bg: "#2a1010", color: "#f75f5f", label: "Terminated" };
+
   return { bg: "#22263a", color: "#c8cad0", label: status || "Unknown" };
+}
+
+function requestTypeLabel(type) {
+  const t = String(type || "").toUpperCase();
+  if (t === "REENTRY" || t === "RE-ENTRY") return "Re-entry";
+  if (t === "LATEENTRY" || t === "LATE_ENTRY") return "Late entry";
+  return t || "Request";
+}
+
+function requestStatusPill(status) {
+  const s = String(status || "").toUpperCase();
+
+  if (s === "PENDING") return { bg: "#2a2010", color: "#f5a623", label: "Pending" };
+  if (s === "APPROVED") return { bg: "#0f2a1a", color: "#34c97a", label: "Approved" };
+  if (s === "REJECTED") return { bg: "#2a1010", color: "#f75f5f", label: "Rejected" };
+
+  return { bg: "#22263a", color: "#c8cad0", label: status || "Unknown" };
+}
+
+function MonitorTabButton({ active, label, count, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        height: 34,
+        padding: "0 14px",
+        borderRadius: 8,
+        fontSize: 12,
+        fontWeight: 700,
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        background: active ? "#26314d" : "transparent",
+        color: active ? "#e8eaf0" : "#98a0b8",
+        border: active ? "1px solid #4f8ef7" : "1px solid transparent",
+      }}
+    >
+      <span>{label}</span>
+      {typeof count === "number" ? (
+        <span
+          style={{
+            minWidth: 18,
+            height: 18,
+            padding: "0 6px",
+            borderRadius: 999,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: count > 0 ? "#f5a623" : "#2a2f42",
+            color: count > 0 ? "#17120a" : "#a5acc0",
+            fontSize: 11,
+            fontWeight: 800,
+            lineHeight: 1,
+          }}
+        >
+          {count}
+        </span>
+      ) : null}
+    </button>
+  );
 }
 
 export default function ExaminerDashboard() {
@@ -139,6 +216,7 @@ export default function ExaminerDashboard() {
   const [endingExam, setEndingExam] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
   const [refreshTick, setRefreshTick] = useState(0);
+  const [reviewingRequestId, setReviewingRequestId] = useState(null);
 
   const headers = useMemo(
     () => ({ Authorization: `Bearer ${accessToken}` }),
@@ -149,6 +227,11 @@ export default function ExaminerDashboard() {
   const normalizedExamStatus = String(selectedExam?.status || "").toUpperCase();
   const isExamRunning = normalizedExamStatus === "RUNNING";
   const isExamCompleted = normalizedExamStatus === "COMPLETED";
+
+  const pendingRequestsCount = useMemo(
+    () => reentryRequests.filter((r) => String(r.status).toUpperCase() === "PENDING").length,
+    [reentryRequests]
+  );
 
   const loadExams = useCallback(async () => {
     setLoadingExams(true);
@@ -168,49 +251,76 @@ export default function ExaminerDashboard() {
     }
   }, [headers, selectedExamId]);
 
-  const loadExamById = useCallback(async (examId) => {
-    if (!examId) return null;
-    try {
-      const res = await axios.get(`${API}/api/exams/${examId}`, { headers });
-      const normalized = normalizeExam(res.data);
-      setSelectedExam(normalized);
-      setExams((prev) => prev.map((e) => (e.examid === examId ? normalized : e)));
-      return normalized;
-    } catch (e) {
-      console.error("loadExamById:", e.message);
-      return null;
-    }
-  }, [headers]);
+  const loadExamById = useCallback(
+    async (examId) => {
+      if (!examId) return null;
 
-  const loadCandidates = useCallback(async (examId) => {
-    if (!examId) return;
-    try {
-      const res = await axios.get(`${API}/api/exams/${examId}/assessments`, { headers });
-      setCandidates(Array.isArray(res.data) ? res.data.map(normalizeCandidate) : []);
-    } catch (e) {
-      console.error("loadCandidates:", e.message);
-    }
-  }, [headers]);
+      try {
+        const res = await axios.get(`${API}/api/exams/${examId}`, { headers });
+        const normalized = normalizeExam(res.data);
+        setSelectedExam(normalized);
+        setExams((prev) => prev.map((e) => (e.examid === examId ? normalized : e)));
+        return normalized;
+      } catch (e) {
+        console.error("loadExamById:", e.message);
+        return null;
+      }
+    },
+    [headers]
+  );
 
-  const loadViolations = useCallback(async (candidateId, examId) => {
-    if (!candidateId || !examId) return;
-    try {
-      const res = await axios.get(`${API}/api/violations/${examId}/${candidateId}`, { headers });
-      setViolations(res.data || []);
-    } catch (e) {
-      console.error("loadViolations:", e.message);
-    }
-  }, [headers]);
+  const loadCandidates = useCallback(
+    async (examId) => {
+      if (!examId) return;
 
-  const loadReentryRequests = useCallback(async () => {
-    try {
-      if (!selectedExamId) return;
-      const res = await axios.get(`${API}/api/exams/${selectedExamId}/requests`, { headers });
-      setReentryRequests(Array.isArray(res.data) ? res.data.map(normalizeRequest) : []);
-    } catch (e) {
-      console.error("loadReentryRequests:", e);
-    }
-  }, [selectedExamId, headers]);
+      try {
+        const res = await axios.get(`${API}/api/exams/${examId}/assessments`, { headers });
+        setCandidates(Array.isArray(res.data) ? res.data.map(normalizeCandidate) : []);
+      } catch (e) {
+        console.error("loadCandidates:", e.message);
+      }
+    },
+    [headers]
+  );
+
+  const loadViolations = useCallback(
+    async (candidateId, examId) => {
+      if (!candidateId || !examId) return;
+
+      try {
+        const res = await axios.get(`${API}/api/violations/${examId}/${candidateId}`, { headers });
+        setViolations(Array.isArray(res.data) ? res.data : []);
+      } catch (e) {
+        console.error("loadViolations:", e.message);
+        setViolations([]);
+      }
+    },
+    [headers]
+  );
+
+  const loadReentryRequests = useCallback(
+    async (examIdArg) => {
+      const examId = examIdArg ?? selectedExamId;
+      if (!examId) {
+        setReentryRequests([]);
+        return [];
+      }
+
+      try {
+        const res = await axios.get(`${API}/api/requests/exam/${examId}/pending`, {
+          headers,
+        });
+        const rows = Array.isArray(res.data) ? res.data.map(normalizeRequest) : [];
+        setReentryRequests(rows);
+        return rows;
+      } catch (e) {
+        console.error("loadReentryRequests:", e.message);
+        setReentryRequests([]);
+        return [];
+      }
+    },
+    [selectedExamId, headers]
+  );
 
   useEffect(() => {
     loadExams();
@@ -221,15 +331,16 @@ export default function ExaminerDashboard() {
 
     loadExamById(selectedExamId);
     loadCandidates(selectedExamId);
+    loadReentryRequests(selectedExamId);
 
     const poll = setInterval(() => {
       loadExamById(selectedExamId);
       loadCandidates(selectedExamId);
-      if (monitorTab === "requests") loadReentryRequests();
+      loadReentryRequests(selectedExamId);
     }, 5000);
 
     return () => clearInterval(poll);
-  }, [view, selectedExamId, monitorTab, loadExamById, loadCandidates, loadReentryRequests]);
+  }, [view, selectedExamId, loadExamById, loadCandidates, loadReentryRequests]);
 
   useEffect(() => {
     if (!socket || view !== "monitor" || !selectedExamId) return;
@@ -246,23 +357,30 @@ export default function ExaminerDashboard() {
     const onViolationAlert = ({ candidate_id, candidateid, violation }) => {
       const candidateId = candidate_id ?? candidateid;
       if (!candidateId) return;
+
       setLiveData((prev) => ({
         ...prev,
-        [candidateId]: { ...(prev[candidateId] || {}), latestViolation: violation },
+        [candidateId]: {
+          ...(prev[candidateId] || {}),
+          latestViolation: violation,
+        },
       }));
     };
 
     const onAssessmentUpdate = () => {
       loadCandidates(selectedExamId);
+      loadReentryRequests(selectedExamId);
     };
 
     const onExamStarted = (payload) => {
       const startedId = payload?.exam_id ?? payload?.examid;
       if (startedId && startedId !== selectedExamId) return;
+
       setActionMsg("✅ Exam is now running");
       setTimeout(() => setActionMsg(""), 4000);
       loadExamById(selectedExamId);
       loadCandidates(selectedExamId);
+      loadReentryRequests(selectedExamId);
       setRefreshTick((v) => v + 1);
     };
 
@@ -277,17 +395,30 @@ export default function ExaminerDashboard() {
       socket.off("assessment_updated", onAssessmentUpdate);
       socket.off("exam_started", onExamStarted);
     };
-  }, [socket, view, selectedExamId, loadCandidates, loadExamById]);
+  }, [socket, view, selectedExamId, loadCandidates, loadExamById, loadReentryRequests]);
 
   const openMonitor = async (exam) => {
     const normalized = normalizeExam(exam);
+
     setSelectedExam(normalized);
     setSelectedCandidate(null);
     setViolations([]);
     setLiveData({});
-    await loadExamById(normalized?.examid);
-    await loadCandidates(normalized?.examid);
+    setReentryRequests([]);
     setView("monitor");
+    setMonitorTab("grid");
+
+    const [requests] = await Promise.all([
+      loadReentryRequests(normalized?.examid),
+      loadExamById(normalized?.examid),
+      loadCandidates(normalized?.examid),
+    ]);
+
+    const hasPendingRequests =
+      Array.isArray(requests) &&
+      requests.some((r) => String(r.status).toUpperCase() === "PENDING");
+
+    setMonitorTab(hasPendingRequests ? "requests" : "grid");
   };
 
   const startExam = async () => {
@@ -301,8 +432,11 @@ export default function ExaminerDashboard() {
         socket.emit("start_exam", { exam_id: selectedExamId });
       }
 
-      await loadExamById(selectedExamId);
-      await loadCandidates(selectedExamId);
+      await Promise.all([
+        loadExamById(selectedExamId),
+        loadCandidates(selectedExamId),
+        loadReentryRequests(selectedExamId),
+      ]);
       setRefreshTick((v) => v + 1);
 
       setActionMsg("✅ Exam started successfully — status changed to Running");
@@ -327,9 +461,11 @@ export default function ExaminerDashboard() {
     try {
       await axios.patch(`${API}/api/exams/${selectedExamId}/end`, {}, { headers });
 
-      await loadExamById(selectedExamId);
-      await loadCandidates(selectedExamId);
-      if (monitorTab === "requests") await loadReentryRequests();
+      await Promise.all([
+        loadExamById(selectedExamId),
+        loadCandidates(selectedExamId),
+        loadReentryRequests(selectedExamId),
+      ]);
       setRefreshTick((v) => v + 1);
 
       setActionMsg("🛑 Exam ended successfully");
@@ -376,6 +512,7 @@ export default function ExaminerDashboard() {
         await loadViolations(selectedCandidate.candidateid, selectedExamId);
       }
       await loadExamById(selectedExamId);
+      await loadReentryRequests(selectedExamId);
     } catch (e) {
       setActionMsg(`❌ Action failed: ${e.response?.data?.detail || e.message}`);
       setTimeout(() => setActionMsg(""), 4000);
@@ -384,11 +521,13 @@ export default function ExaminerDashboard() {
 
   const sendBroadcast = () => {
     if (!broadcastMsg.trim() || !socket || !selectedExamId) return;
+
     socket.emit("broadcast_message", {
       exam_id: selectedExamId,
       examiner_id: user?.user_id ?? user?.userid,
       message: broadcastMsg.trim(),
     });
+
     setBroadcastMsg("");
     setActionMsg("📢 Broadcast sent to all candidates");
     setTimeout(() => setActionMsg(""), 3000);
@@ -402,35 +541,70 @@ export default function ExaminerDashboard() {
     setLiveData({});
     setViolations([]);
     setReentryRequests([]);
+    setMonitorTab("grid");
     loadExams();
   };
 
-  const handleReentry = async (assessmentId, requestId, approve) => {
-    try {
-      const url = `${API}/api/assessments/${assessmentId}/reentry/${requestId}/${approve ? "approve" : "reject"}`;
-      const body = approve ? {} : {
-        reason: window.prompt("Rejection reason:") || "Not approved",
-      };
+  const handleReentryReview = async (request, approve) => {
+    const requestId = request?.requestid;
+    if (!requestId) return;
 
-      await axios.post(url, body, { headers });
+    const decision = approve ? "APPROVED" : "REJECTED";
+    const rejectionReason = !approve
+      ? window.prompt("Rejection reason:", "Not approved")
+      : "";
+
+    if (!approve && rejectionReason === null) return;
+
+    setReviewingRequestId(requestId);
+
+    try {
+      await axios.patch(
+        `${API}/api/requests/${requestId}/review`,
+        {
+          decision,
+          reason: approve ? undefined : (rejectionReason || "Not approved").trim(),
+        },
+        { headers }
+      );
 
       if (socket) {
         socket.emit("reentry_decision", {
-          assessment_id: assessmentId,
+          request_id: requestId,
+          requestid: requestId,
+          assessment_id: request?.assessmentid,
+          assessmentid: request?.assessmentid,
+          candidate_id: request?.candidateid,
+          candidateid: request?.candidateid,
           approved: approve,
           exam_id: selectedExamId,
+          examid: selectedExamId,
+          decision,
+          type: request?.type,
+          next_status: approve
+            ? request?.type === "LATEENTRY" || request?.type === "LATE_ENTRY"
+              ? "LATEENTRY_APPROVED"
+              : "REENTRY_APPROVED"
+            : request?.type === "LATEENTRY" || request?.type === "LATE_ENTRY"
+              ? "LATEENTRY_REJECTED"
+              : "REENTRY_REJECTED",
         });
       }
 
-      await loadReentryRequests();
-      await loadCandidates(selectedExamId);
+      await Promise.all([
+        loadReentryRequests(selectedExamId),
+        loadCandidates(selectedExamId),
+        loadExamById(selectedExamId),
+      ]);
 
-      setActionMsg(approve ? "✅ Re-entry approved" : "❌ Re-entry rejected");
+      setActionMsg(approve ? "✅ Request approved" : "❌ Request rejected");
       setTimeout(() => setActionMsg(""), 3000);
     } catch (err) {
       console.error(err);
       setActionMsg(`❌ ${err.response?.data?.detail || err.message}`);
       setTimeout(() => setActionMsg(""), 4000);
+    } finally {
+      setReviewingRequestId(null);
     }
   };
 
@@ -479,6 +653,7 @@ export default function ExaminerDashboard() {
           <span style={{ fontSize: 20 }}>👁️</span>
           <span style={{ fontWeight: 700, fontSize: 16 }}>3rdEyeZ360</span>
           <span style={{ fontSize: 12, color: "#8b90a0" }}>— {user?.role} Dashboard</span>
+
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
             <span style={{ fontSize: 13, color: "#8b90a0" }}>{user?.name}</span>
             <LogoutButton />
@@ -513,7 +688,6 @@ export default function ExaminerDashboard() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
               {exams.map((exam) => {
                 const pill = statusPill(exam.status);
-
                 return (
                   <div
                     key={exam.examid}
@@ -528,6 +702,7 @@ export default function ExaminerDashboard() {
                     }}
                   >
                     <div style={{ fontWeight: 600, fontSize: 15 }}>{exam.name}</div>
+
                     <div style={{ fontSize: 12, color: "#8b90a0" }}>
                       {exam.date} &nbsp;&nbsp; {exam.starttime} - {exam.endtime}
                     </div>
@@ -578,9 +753,15 @@ export default function ExaminerDashboard() {
 
   if (view === "monitor") {
     const examPill = statusPill(selectedExam?.status);
-    const pendingRequests = reentryRequests.filter(
-      (r) => r.status === "PENDING" || r.status === "Pending"
-    ).length;
+    const activeCount = candidates.filter((c) => String(c.status).toUpperCase() === "ACTIVE").length;
+    const interruptedCount = candidates.filter((c) => String(c.status).toUpperCase() === "INTERRUPTED").length;
+    const lockedCount = candidates.filter((c) => String(c.status).toUpperCase() === "LOCKED").length;
+    const avgCredibility =
+      candidates.length > 0
+        ? Math.round(
+            candidates.reduce((sum, c) => sum + Number(c.credibilityscore || 0), 0) / candidates.length
+          )
+        : 0;
 
     return (
       <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0f1117" }}>
@@ -688,7 +869,7 @@ export default function ExaminerDashboard() {
               onClick={() => {
                 loadExamById(selectedExamId);
                 loadCandidates(selectedExamId);
-                if (monitorTab === "requests") loadReentryRequests();
+                loadReentryRequests(selectedExamId);
               }}
               className="btn btn-ghost"
               style={{ padding: "6px 12px", fontSize: 12 }}
@@ -700,39 +881,45 @@ export default function ExaminerDashboard() {
 
         <div
           style={{
-            height: 40,
+            padding: 16,
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: 12,
+            borderBottom: "1px solid #2e3347",
+            background: "#121520",
+            flexShrink: 0,
+          }}
+        >
+          <StatBox label="Active" value={activeCount} color="#34c97a" />
+          <StatBox label="Interrupted" value={interruptedCount} color="#f5a623" />
+          <StatBox label="Locked" value={lockedCount} color="#f75f5f" />
+          <StatBox label="Avg credibility" value={`${avgCredibility}%`} color="#4f8ef7" />
+        </div>
+
+        <div
+          style={{
+            minHeight: 48,
             background: "#1a1d27",
             borderBottom: "1px solid #2e3347",
             display: "flex",
             alignItems: "center",
-            padding: "0 16px",
-            gap: 4,
+            padding: "6px 16px",
+            gap: 8,
             flexShrink: 0,
+            flexWrap: "wrap",
           }}
         >
-          {[
-            { key: "grid", label: "🖥 Live Grid" },
-            { key: "requests", label: `📬 Requests${pendingRequests > 0 ? ` (${pendingRequests})` : ""}` },
-          ].map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                setMonitorTab(t.key);
-                if (t.key === "requests") loadReentryRequests();
-              }}
-              style={{
-                padding: "5px 14px",
-                borderRadius: 6,
-                fontSize: 12,
-                cursor: "pointer",
-                background: monitorTab === t.key ? "#22263a" : "transparent",
-                color: monitorTab === t.key ? "#e8eaf0" : "#8b90a0",
-                border: monitorTab === t.key ? "1px solid #2e3347" : "1px solid transparent",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+          <MonitorTabButton
+            active={monitorTab === "grid"}
+            label="🖥 Live Grid"
+            onClick={() => setMonitorTab("grid")}
+          />
+          <MonitorTabButton
+            active={monitorTab === "requests"}
+            label="📬 Requests"
+            count={pendingRequestsCount}
+            onClick={() => setMonitorTab("requests")}
+          />
         </div>
 
         {monitorTab === "requests" ? (
@@ -743,49 +930,87 @@ export default function ExaminerDashboard() {
               </div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
-                {reentryRequests.map((req) => (
-                  <div
-                    key={req.requestid}
-                    style={{
-                      background: "#1a1d27",
-                      border: "1px solid #2e3347",
-                      borderRadius: 12,
-                      padding: 16,
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: "#e8eaf0" }}>{req.type} Request</div>
-                      <div style={{ fontSize: 12, color: "#8b90a0" }}>{req.status}</div>
-                    </div>
-
-                    <div style={{ fontSize: 12, color: "#8b90a0", marginBottom: 10 }}>
-                      Candidate {req.candidateid} • Assessment {req.assessmentid}
-                    </div>
-
-                    <div style={{ fontSize: 13, color: "#c8cad0", marginBottom: 12 }}>
-                      {req.reason || "No reason provided"}
-                    </div>
-
-                    {req.status === "PENDING" ? (
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          onClick={() => handleReentry(req.assessmentid, req.requestid, true)}
-                          className="btn btn-success"
-                          style={{ padding: "7px 14px", fontSize: 12 }}
+                {reentryRequests.map((req) => {
+                  const pill = requestStatusPill(req.status);
+                  return (
+                    <div
+                      key={req.requestid}
+                      style={{
+                        background: "#1a1d27",
+                        border: "1px solid #2e3347",
+                        borderRadius: 12,
+                        padding: 16,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#e8eaf0" }}>
+                          {requestTypeLabel(req.type)} Request
+                        </div>
+                        <div
+                          style={{
+                            background: pill.bg,
+                            color: pill.color,
+                            padding: "3px 10px",
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                          }}
                         >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleReentry(req.assessmentid, req.requestid, false)}
-                          className="btn btn-danger"
-                          style={{ padding: "7px 14px", fontSize: 12 }}
-                        >
-                          Reject
-                        </button>
+                          {pill.label}
+                        </div>
                       </div>
-                    ) : null}
-                  </div>
-                ))}
+
+                      <div style={{ fontSize: 12, color: "#8b90a0", marginBottom: 10 }}>
+                        {req.candidatename ? `${req.candidatename} • ` : ""}
+                        Candidate {req.candidateid} • Assessment {req.assessmentid}
+                      </div>
+
+                      <div style={{ fontSize: 13, color: "#c8cad0", marginBottom: 12 }}>
+                        {req.reason || "No reason provided"}
+                      </div>
+
+                      {req.createdat && (
+                        <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 8 }}>
+                          Requested at {new Date(req.createdat).toLocaleString()}
+                        </div>
+                      )}
+
+                      {req.reviewedat && req.status !== "PENDING" && (
+                        <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 8 }}>
+                          Reviewed at {new Date(req.reviewedat).toLocaleString()}
+                        </div>
+                      )}
+
+                      {req.reviewreason && req.status !== "PENDING" && (
+                        <div style={{ fontSize: 12, color: "#c8cad0", marginBottom: 12 }}>
+                          Review reason: {req.reviewreason}
+                        </div>
+                      )}
+
+                      {req.status === "PENDING" ? (
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={() => handleReentryReview(req, true)}
+                            disabled={reviewingRequestId === req.requestid}
+                            className="btn btn-success"
+                            style={{ padding: "7px 14px", fontSize: 12 }}
+                          >
+                            {reviewingRequestId === req.requestid ? "Working..." : "Approve"}
+                          </button>
+                          <button
+                            onClick={() => handleReentryReview(req, false)}
+                            disabled={reviewingRequestId === req.requestid}
+                            className="btn btn-danger"
+                            style={{ padding: "7px 14px", fontSize: 12 }}
+                          >
+                            {reviewingRequestId === req.requestid ? "Working..." : "Reject"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -894,7 +1119,7 @@ export default function ExaminerDashboard() {
                             textOverflow: "ellipsis",
                           }}
                         >
-                          {live.latestViolation.type}
+                          {live.latestViolation?.type || "Violation alert"}
                         </div>
                       )}
                     </div>
@@ -903,91 +1128,101 @@ export default function ExaminerDashboard() {
               )}
             </div>
 
-            {selectedCandidate && (
-              <div
-                style={{
-                  width: 320,
-                  background: "#1a1d27",
-                  borderLeft: "1px solid #2e3347",
-                  display: "flex",
-                  flexDirection: "column",
-                  overflow: "hidden",
-                  flexShrink: 0,
-                }}
-              >
-                <div style={{ padding: "16px 20px", borderBottom: "1px solid #2e3347", flexShrink: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 15 }}>
-                        {selectedCandidate.candidatename || selectedCandidate.candidateid}
-                      </div>
-                      <div style={{ fontSize: 12, color: "#8b90a0", marginTop: 2 }}>{selectedCandidate.status}</div>
+            <div
+              style={{
+                width: 380,
+                borderLeft: "1px solid #2e3347",
+                background: "#131722",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              {!selectedCandidate ? (
+                <div style={{ padding: 20, color: "#8b90a0", fontSize: 13 }}>
+                  Select a candidate to view details.
+                </div>
+              ) : (
+                <>
+                  <div style={{ padding: 18, borderBottom: "1px solid #2e3347" }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+                      {selectedCandidate.candidatename}
                     </div>
+                    <div style={{ fontSize: 12, color: "#8b90a0", marginBottom: 10 }}>
+                      {selectedCandidate.candidateid}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+                      <StatBox
+                        label="Status"
+                        value={selectedCandidate.status}
+                        color={STATUS_COLORS[String(selectedCandidate.status).toUpperCase()] || "#c8cad0"}
+                      />
+                      <StatBox label="Warnings" value={selectedCandidate.warningcount} color="#f5a623" />
+                      <StatBox label="Violations" value={selectedCandidate.violationcount} color="#f75f5f" />
+                      <StatBox label="Credibility" value={`${selectedCandidate.credibilityscore}%`} color="#4f8ef7" />
+                    </div>
+                  </div>
+
+                  <div style={{ padding: 16, borderBottom: "1px solid #2e3347", display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
-                      onClick={() => {
-                        setSelectedCandidate(null);
-                        setViolations([]);
-                      }}
-                      style={{ background: "none", color: "#8b90a0", fontSize: 20, cursor: "pointer" }}
+                      onClick={() => doAction(selectedCandidate.assessmentid, "pause")}
+                      className="btn btn-ghost"
+                      style={{ padding: "7px 12px", fontSize: 12 }}
                     >
-                      ×
+                      Pause
                     </button>
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <StatBox label="Violations" value={selectedCandidate.violationcount ?? 0} color="#f75f5f" />
-                    <StatBox label="Risk Score" value={selectedCandidate.riskscore ?? 0} color="#f5a623" />
-                    <StatBox label="Credibility" value={selectedCandidate.credibilityscore ?? 100} color="#34c97a" />
-                    <StatBox label="Warnings" value={selectedCandidate.warningcount ?? 0} color="#8b90a0" />
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => doAction(selectedCandidate.assessmentid, "pause")}
-                        className="btn btn-ghost"
-                        style={{ flex: 1, fontSize: 12 }}
-                      >
-                        Pause
-                      </button>
-                      <button
-                        onClick={() => doAction(selectedCandidate.assessmentid, "resume")}
-                        className="btn btn-ghost"
-                        style={{ flex: 1, fontSize: 12 }}
-                      >
-                        Resume
-                      </button>
-                    </div>
-
+                    <button
+                      onClick={() => doAction(selectedCandidate.assessmentid, "resume")}
+                      className="btn btn-success"
+                      style={{ padding: "7px 12px", fontSize: 12 }}
+                    >
+                      Resume
+                    </button>
                     <button
                       onClick={() => doAction(selectedCandidate.assessmentid, "terminate")}
                       className="btn btn-danger"
-                      style={{ width: "100%", fontSize: 12 }}
+                      style={{ padding: "7px 12px", fontSize: 12 }}
                     >
-                      Terminate Assessment
+                      Terminate
                     </button>
                   </div>
-                </div>
 
-                <div style={{ flex: 1, overflowY: "auto" }}>
-                  <div style={{ padding: "14px 20px", borderBottom: "1px solid #2e3347" }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
-                      Violations ({violations.length})
+                  <div style={{ padding: 16, borderBottom: "1px solid #2e3347" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Latest live data</div>
+                    <div style={{ fontSize: 12, color: "#8b90a0", display: "grid", gap: 6 }}>
+                      <div>Status: {liveData[selectedCandidate.candidateid]?.status || "—"}</div>
+                      <div>Focus: {liveData[selectedCandidate.candidateid]?.focus ?? "—"}</div>
+                      <div>Noise: {liveData[selectedCandidate.candidateid]?.noise_level ?? "—"}</div>
+                      <div>Face count: {liveData[selectedCandidate.candidateid]?.face_count ?? "—"}</div>
                     </div>
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Violations</div>
 
                     {violations.length === 0 ? (
-                      <p style={{ fontSize: 12, color: "#8b90a0" }}>No violations recorded.</p>
+                      <div style={{ color: "#8b90a0", fontSize: 12 }}>No violations recorded.</div>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {violations.map((v, i) => (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {violations.map((v, idx) => (
                           <div
-                            key={v.violationid ?? v.violation_id ?? i}
-                            style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}
+                            key={v.violation_id ?? v.id ?? idx}
+                            style={{
+                              background: "#1a1d27",
+                              border: "1px solid #2e3347",
+                              borderRadius: 10,
+                              padding: 12,
+                            }}
                           >
-                            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{v.type}</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "#f5a623", marginBottom: 6 }}>
+                              {v.type ?? v.violation_type ?? "Violation"}
+                            </div>
+                            <div style={{ fontSize: 12, color: "#c8cad0", marginBottom: 6 }}>
+                              {v.message ?? v.description ?? "No description"}
+                            </div>
                             <div style={{ fontSize: 11, color: "#8b90a0" }}>
-                              {v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : ""}
-                              {v.confidence != null ? ` • ${Math.round(v.confidence * 100)}% confidence` : ""}
+                              {v.timestamp ? new Date(v.timestamp).toLocaleString() : "Time unavailable"}
                             </div>
                           </div>
                         ))}
@@ -995,18 +1230,17 @@ export default function ExaminerDashboard() {
                     )}
                   </div>
 
-                  <div style={{ padding: "14px 20px" }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Chat with Candidate</div>
+                  <div style={{ borderTop: "1px solid #2e3347", minHeight: 220 }}>
                     <ChatWindow
                       examId={selectedExamId}
-                      candidateId={selectedCandidate.candidateid}
-                      currentUser={{ userid: user?.user_id ?? user?.userid, role: user?.role }}
-                      token={accessToken}
+                      currentUser={user}
+                      selectedUserId={selectedCandidate.candidateid}
+                      selectedUserName={selectedCandidate.candidatename}
                     />
                   </div>
-                </div>
-              </div>
-            )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

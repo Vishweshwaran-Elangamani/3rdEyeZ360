@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu } = require("electron");
+const { app, BrowserWindow, Menu, dialog } = require("electron");
 const path = require("path");
 const { spawnPythonApi } = require("./services/python-spawner");
 const registerIpcHandlers = require("./ipc");
@@ -9,6 +9,18 @@ if (process.env.NODE_ENV !== "development") {
 
 let mainWindow = null;
 let pythonProcess = null;
+
+function getIconPath() {
+  return path.join(__dirname, "..", "assets", "icons", "app-icon.ico");
+}
+
+function getPreloadPath() {
+  return path.join(__dirname, "preload.js");
+}
+
+function getProdHtmlPath() {
+  return path.join(__dirname, "..", "dist-renderer", "index.html");
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -21,106 +33,53 @@ function createWindow() {
     autoHideMenuBar: true,
     show: false,
     backgroundColor: "#0b1114",
+    title: "3rdEyeZ360",
+    icon: getIconPath(),
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: getPreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
     },
-    icon: path.join(__dirname, "../dist-renderer/assets/icons/app-icon.ico"),
-    title: "3rdEyeZ360",
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error("Renderer process gone:", details);
+  });
+
+  mainWindow.webContents.on("did-fail-load", (_event, code, desc, url) => {
+    console.error("Main window failed to load:", { code, desc, url });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
 
   if (process.env.NODE_ENV === "development") {
     const DEV_URL = "http://localhost:5173";
 
     const tryLoad = (retries = 10) => {
-      mainWindow.loadURL(DEV_URL).catch(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+
+      mainWindow.loadURL(DEV_URL).catch((err) => {
         if (retries > 0) {
-          console.log("Main: Vite not ready, retrying...", retries, "retries left");
+          console.log("Vite not ready, retrying...", retries, "retries left");
           setTimeout(() => tryLoad(retries - 1), 1500);
         } else {
-          console.error("Main: Could not connect to Vite on port 5173");
+          console.error("Could not connect to Vite on port 5173", err);
         }
       });
     };
 
     tryLoad();
-
-    mainWindow.webContents.on("before-input-event", async (event, input) => {
-      // ORIGINAL SAFE CODE
-      /*
-      if (
-        (input.control && input.shift && input.key.toLowerCase() === "i") ||
-        input.key === "F12"
-      ) {
-        mainWindow.webContents.toggleDevTools();
-        event.preventDefault();
-      }
-      */
-
-      // Ctrl+Shift+I or F12 => toggle DevTools
-      if (
-        (input.control && input.shift && input.key.toLowerCase() === "i") ||
-        input.key === "F12"
-      ) {
-        mainWindow.webContents.toggleDevTools();
-        event.preventDefault();
-        return;
-      }
-
-      // Ctrl+Shift+L => DEV RESET to login
-      // Step 1: clear renderer storage
-      // Step 2: call devResetToLogin IPC (destroys BrowserView, removes lockdown)
-      // Step 3: IPC sends "dev-force-login" back to renderer to switch screen
-      if (input.control && input.shift && input.key.toLowerCase() === "l") {
-        event.preventDefault();
-
-        try {
-          await mainWindow.webContents.executeJavaScript(`
-            try {
-              localStorage.removeItem("auth-storage");
-              localStorage.removeItem("exam-storage");
-              localStorage.removeItem("app-screen");
-              localStorage.removeItem("zustand");
-              sessionStorage.clear();
-            } catch (e) {
-              console.error("Storage clear failed:", e);
-            }
-          `);
-        } catch (e) {
-          console.error("Storage clear JS failed:", e);
-        }
-
-        // Now call the IPC handler which destroys BrowserView + lockdown
-        // and sends "dev-force-login" to renderer
-        try {
-          const { destroyBrowserView } = require("./lockdown/browser-view");
-          const { removeLockdown } = require("./lockdown/window");
-          const { stopCapture } = require("./services/webcam");
-
-          try { stopCapture(mainWindow); } catch (_) {}
-          try { destroyBrowserView(mainWindow); } catch (_) {}
-          try { removeLockdown(mainWindow); } catch (_) {}
-          try { mainWindow.setClosable(true); } catch (_) {}
-
-          // small delay to let native BrowserView detach
-          await new Promise((r) => setTimeout(r, 200));
-
-          mainWindow.webContents.send("dev-force-login");
-        } catch (e) {
-          console.error("Failed to destroy BrowserView during reset:", e);
-        }
-
-        return;
-      }
-    });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
+    mainWindow.loadFile(getProdHtmlPath()).catch((err) => {
+      console.error("Failed to load production HTML:", err);
+    });
   }
 
   mainWindow.webContents.once("did-finish-load", () => {
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.show();
     mainWindow.focus();
   });
@@ -132,7 +91,7 @@ function createWindow() {
   registerIpcHandlers(mainWindow);
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   try {
     pythonProcess = spawnPythonApi();
     createWindow();
@@ -143,14 +102,20 @@ app.whenReady().then(async () => {
       }
     });
   } catch (err) {
-    console.error("Electron startup failed:", err);
+    console.error("Electron startup failed", err);
+    dialog.showErrorBox("Startup Error", String(err?.message || err));
   }
 });
 
 app.on("window-all-closed", () => {
   if (pythonProcess) {
-    pythonProcess.kill();
+    try {
+      pythonProcess.kill();
+    } catch (e) {
+      console.log("Failed to kill python process", e.message);
+    }
   }
+
   if (process.platform !== "darwin") {
     app.quit();
   }

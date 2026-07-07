@@ -1,0 +1,3165 @@
+﻿
+================================================================================
+FILE: electron-app\renderer\index.jsx
+================================================================================
+
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { createRoot } from "react-dom/client";
+import "./styles/global.css";
+import Login from "./pages/Login";
+import CandidateDashboard from "./pages/candidate/CandidateDashboard";
+import PreCheck from "./pages/candidate/PreCheck";
+import Instructions from "./pages/candidate/Instructions";
+import WaitScreen from "./pages/candidate/WaitScreen";
+import ActiveExam from "./pages/candidate/ActiveExam";
+import ExaminerDashboard from "./pages/examiner/ExaminerDashboard";
+import AdminPanel from "./pages/admin/AdminPanel";
+import useAuthStore from "./store/authStore";
+import useExamStore from "./store/examStore";
+import useSocket, { disconnectSocket } from "./hooks/useSocket";
+import axios from "axios";
+
+const API = "http://localhost:3000";
+
+const FLOW_SCREENS = new Set([
+  "candidate-dashboard",
+  "precheck",
+  "instructions",
+  "wait",
+  "exam",
+  "complete",
+]);
+
+const TERMINAL_ASSESSMENT_STATUSES = new Set(["COMPLETED", "TERMINATED", "LOCKED"]);
+const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
+
+const APPROVED_ENTRY_STATUSES = new Set([
+  "ACTIVE",
+  "PAUSED",
+  "REENTRY_APPROVED",
+  "REENTRYAPPROVED",
+  "LATEENTRY_APPROVED",
+  "LATEENTRYAPPROVED",
+]);
+
+const WAITING_ENTRY_STATUSES = new Set([
+  "ASSIGNED",
+  "AVAILABLE",
+  "READY",
+  "REENTRYREQUESTED",
+  "LATEENTRYREQUESTED",
+  "REENTRY_REQUESTED",
+  "LATEENTRY_REQUESTED",
+  "PENDING",
+]);
+
+const REJECTED_ENTRY_STATUSES = new Set([
+  "REENTRYREJECTED",
+  "LATEENTRYREJECTED",
+  "REENTRY_REJECTED",
+  "LATEENTRY_REJECTED",
+  "REJECTED",
+]);
+
+function AppLogo({ size = 56 }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 12,
+        background: "linear-gradient(135deg, #4f8ef7, #7c5ce7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#fff",
+        fontWeight: 800,
+        fontSize: Math.max(12, Math.round(size * 0.28)),
+        userSelect: "none",
+        flexShrink: 0,
+      }}
+    >
+      3E
+    </div>
+  );
+}
+
+function SplashScreen({ text = "Loading..." }) {
+  return (
+    <div
+      style={{
+        height: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#0b1114",
+        color: "#dbe3f0",
+        fontFamily: "Inter, sans-serif",
+        fontSize: 14,
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function CompletionView({ onLogout }) {
+  return (
+    <div
+      style={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+        color: "#fff",
+        fontFamily: "Inter, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          height: 56,
+          background: "#1a1d27",
+          borderBottom: "1px solid #2e3347",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <AppLogo size={22} />
+          <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
+        </div>
+
+        <button
+          onClick={onLogout}
+          className="btn btn-ghost"
+          style={{ padding: "8px 14px", fontSize: 12 }}
+        >
+          Logout
+        </button>
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div style={{ marginBottom: 18 }}>
+          <AppLogo size={72} />
+        </div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Exam Completed</h2>
+        <p
+          style={{
+            color: "#8b90a0",
+            fontSize: 14,
+            marginBottom: 20,
+            textAlign: "center",
+          }}
+        >
+          Your assessment has ended. You may now close this application.
+        </p>
+        <button
+          onClick={onLogout}
+          className="btn btn-primary"
+          style={{ padding: "10px 20px", fontSize: 14 }}
+        >
+          Finish and Logout
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function firstValue(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function toUpper(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeList(...sources) {
+  const unique = new Set();
+
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const item of source) {
+      const value = String(item || "").trim();
+      if (value) unique.add(value);
+    }
+  }
+
+  return Array.from(unique);
+}
+
+function normalizeExam(raw) {
+  if (!raw) return null;
+
+  const examStatus = toUpper(
+    firstValue(
+      raw.examstatus,
+      raw.exam_status,
+      raw.examStatus,
+      raw.runtime_status,
+      raw.runtimestatus,
+      raw.status
+    )
+  );
+
+  return {
+    ...raw,
+    examid: firstValue(raw.examid, raw.exam_id),
+    assessmentid: firstValue(raw.assessmentid, raw.assessment_id),
+    candidateid: firstValue(raw.candidateid, raw.candidate_id),
+    examinerid: firstValue(raw.examinerid, raw.examiner_id),
+    name: firstValue(raw.name, raw.examname, raw.exam_name, "Exam"),
+    description: firstValue(raw.description, raw.examdescription, raw.exam_description, ""),
+    date: firstValue(raw.date, raw.examdate, raw.exam_date, ""),
+    starttime: firstValue(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, ""),
+    endtime: firstValue(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, ""),
+    durationminutes: Number(firstValue(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(firstValue(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
+    instructions: firstValue(raw.instructions, ""),
+    allowedwebsites: normalizeList(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: normalizeList(raw.allowedapplications, raw.allowed_applications),
+    status: examStatus,
+    examstatus: examStatus,
+  };
+}
+
+function normalizeAssessment(raw) {
+  if (!raw) return null;
+
+  const assessmentStatus = toUpper(
+    firstValue(
+      raw.assessmentstatus,
+      raw.assessment_status,
+      raw.status,
+      raw.finalstatus,
+      raw.final_status
+    )
+  );
+
+  const examStatus = toUpper(
+    firstValue(
+      raw.examstatus,
+      raw.exam_status,
+      raw.examStatus,
+      raw.status_exam,
+      raw.runtimestatus,
+      raw.runtime_status
+    )
+  );
+
+  const finalStatus = toUpper(
+    firstValue(raw.finalstatus, raw.final_status)
+  );
+
+  return {
+    ...raw,
+    assessmentid: firstValue(raw.assessmentid, raw.assessment_id),
+    examid: firstValue(raw.examid, raw.exam_id),
+    candidateid: firstValue(raw.candidateid, raw.candidate_id),
+    examinerid: firstValue(raw.examinerid, raw.examiner_id),
+    name: firstValue(raw.name, raw.examname, raw.exam_name, "Upcoming Exam"),
+    description: firstValue(raw.description, raw.examdescription, raw.exam_description, ""),
+    date: firstValue(raw.date, raw.examdate, raw.exam_date, ""),
+    starttime: firstValue(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, ""),
+    endtime: firstValue(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, ""),
+    durationminutes: Number(firstValue(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(firstValue(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
+    instructions: firstValue(raw.instructions, ""),
+    allowedwebsites: normalizeList(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: normalizeList(raw.allowedapplications, raw.allowed_applications),
+    status: assessmentStatus,
+    assessmentstatus: assessmentStatus,
+    examstatus: examStatus,
+    finalstatus: finalStatus,
+  };
+}
+
+function mergeExamAssessment(exam, assessment) {
+  const normalizedExam = normalizeExam(exam);
+  const normalizedAssessment = normalizeAssessment(assessment);
+
+  return {
+    ...(normalizedExam || {}),
+    ...(normalizedAssessment || {}),
+    examid: firstValue(normalizedAssessment?.examid, normalizedExam?.examid),
+    assessmentid: firstValue(normalizedAssessment?.assessmentid, normalizedExam?.assessmentid),
+    candidateid: firstValue(normalizedAssessment?.candidateid, normalizedExam?.candidateid),
+    examinerid: firstValue(normalizedAssessment?.examinerid, normalizedExam?.examinerid),
+    name: firstValue(normalizedAssessment?.name, normalizedExam?.name, "Exam"),
+    description: firstValue(normalizedAssessment?.description, normalizedExam?.description, ""),
+    date: firstValue(normalizedAssessment?.date, normalizedExam?.date, ""),
+    starttime: firstValue(normalizedAssessment?.starttime, normalizedExam?.starttime, ""),
+    endtime: firstValue(normalizedAssessment?.endtime, normalizedExam?.endtime, ""),
+    durationminutes:
+      Number(firstValue(normalizedAssessment?.durationminutes, normalizedExam?.durationminutes, 0)) || 0,
+    violationthreshold:
+      Number(firstValue(normalizedAssessment?.violationthreshold, normalizedExam?.violationthreshold, 0)) || 0,
+    instructions: firstValue(normalizedAssessment?.instructions, normalizedExam?.instructions, ""),
+    allowedwebsites: normalizeList(
+      normalizedAssessment?.allowedwebsites,
+      normalizedExam?.allowedwebsites
+    ),
+    allowedapplications: normalizeList(
+      normalizedAssessment?.allowedapplications,
+      normalizedExam?.allowedapplications
+    ),
+    status: toUpper(firstValue(normalizedAssessment?.assessmentstatus, normalizedAssessment?.status)),
+    assessmentstatus: toUpper(
+      firstValue(normalizedAssessment?.assessmentstatus, normalizedAssessment?.status)
+    ),
+    examstatus: toUpper(firstValue(normalizedAssessment?.examstatus, normalizedExam?.examstatus)),
+    finalstatus: toUpper(firstValue(normalizedAssessment?.finalstatus)),
+  };
+}
+
+function getAssessmentStatus(source) {
+  return toUpper(firstValue(source?.assessmentstatus, source?.status));
+}
+
+function getFinalStatus(source) {
+  return toUpper(firstValue(source?.finalstatus));
+}
+
+function getExamStatus(source) {
+  return toUpper(firstValue(source?.examstatus, source?.status));
+}
+
+function isTerminalAssessmentState(source) {
+  const assessmentStatus = getAssessmentStatus(source);
+  const finalStatus = getFinalStatus(source);
+  return (
+    TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus) ||
+    TERMINAL_ASSESSMENT_STATUSES.has(finalStatus)
+  );
+}
+
+function isTerminalExamState(source) {
+  return TERMINAL_EXAM_STATUSES.has(getExamStatus(source));
+}
+
+function isExamRunning(source) {
+  return getExamStatus(source) === "RUNNING";
+}
+
+function shouldWait(source) {
+  const assessmentStatus = getAssessmentStatus(source);
+
+  if (REJECTED_ENTRY_STATUSES.has(assessmentStatus)) return false;
+  if (APPROVED_ENTRY_STATUSES.has(assessmentStatus) && isExamRunning(source)) return false;
+
+  return WAITING_ENTRY_STATUSES.has(assessmentStatus) || !isExamRunning(source);
+}
+
+function canGoDirectToExam(source) {
+  const assessmentStatus = getAssessmentStatus(source);
+  return isExamRunning(source) && APPROVED_ENTRY_STATUSES.has(assessmentStatus);
+}
+
+function choosePrimaryAssessment(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+
+  const normalized = list.map(normalizeAssessment).filter(Boolean);
+
+  const active = normalized.find((item) => canGoDirectToExam(item));
+  if (active) return active;
+
+  const waiting = normalized.find(
+    (item) =>
+      !isTerminalAssessmentState(item) &&
+      !isTerminalExamState(item) &&
+      (WAITING_ENTRY_STATUSES.has(getAssessmentStatus(item)) ||
+        APPROVED_ENTRY_STATUSES.has(getAssessmentStatus(item)) ||
+        getAssessmentStatus(item) === "ASSIGNED" ||
+        getAssessmentStatus(item) === "AVAILABLE" ||
+        getAssessmentStatus(item) === "READY")
+  );
+  if (waiting) return waiting;
+
+  const nonTerminal = normalized.find((item) => !isTerminalAssessmentState(item));
+  if (nonTerminal) return nonTerminal;
+
+  return normalized[0] || null;
+}
+
+function App() {
+  const { user, accessToken, hasHydrated, clearAuth } = useAuthStore();
+  const { currentExam, currentAssessment, setExam, setAssessment, clearExam, reset } = useExamStore();
+  const socket = useSocket(accessToken);
+
+  const [screen, setScreen] = useState("login");
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const isLoggingOutRef = useRef(false);
+  const screenRef = useRef("login");
+  const examRef = useRef(currentExam);
+  const assessmentRef = useRef(currentAssessment);
+  const bootstrapDoneRef = useRef(false);
+
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  useEffect(() => {
+    examRef.current = currentExam;
+  }, [currentExam]);
+
+  useEffect(() => {
+    assessmentRef.current = currentAssessment;
+  }, [currentAssessment]);
+
+  const headers = useMemo(
+    () => (accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    [accessToken]
+  );
+
+  const resetToLogin = useCallback(() => {
+    disconnectSocket();
+    clearExam?.();
+    reset?.();
+    clearAuth?.();
+    setScreen("login");
+    setBootstrapping(false);
+    setIsLoggingOut(false);
+    isLoggingOutRef.current = false;
+    bootstrapDoneRef.current = false;
+  }, [clearAuth, clearExam, reset]);
+
+  const cleanupElectron = useCallback(async () => {
+    try {
+      await window.electronAPI?.stopCapture?.();
+    } catch (e) {
+      console.log("stopCapture cleanup failed", e);
+    }
+    try {
+      await window.electronAPI?.closeBrowser?.();
+    } catch (e) {
+      console.log("closeBrowser cleanup failed", e);
+    }
+    try {
+      await window.electronAPI?.disableLockdown?.();
+    } catch (e) {
+      console.log("disableLockdown cleanup failed", e);
+    }
+    try {
+      await window.electronAPI?.setClosable?.(true);
+    } catch (e) {
+      console.log("setClosable cleanup failed", e);
+    }
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    if (isLoggingOutRef.current) return;
+    isLoggingOutRef.current = true;
+    setIsLoggingOut(true);
+    await cleanupElectron();
+    resetToLogin();
+  }, [cleanupElectron, resetToLogin]);
+
+  const fetchCandidateUpcoming = useCallback(async () => {
+    if (!accessToken) return [];
+    try {
+      const res = await axios.get(`${API}/api/exams/candidate/upcoming`, { headers });
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (e) {
+      console.log("Failed to load candidate upcoming exams", e);
+      return [];
+    }
+  }, [accessToken, headers]);
+
+  const fetchLiveAssessment = useCallback(
+    async (assessmentId) => {
+      if (!assessmentId || !accessToken) return null;
+      try {
+        const res = await axios.get(`${API}/api/assessments/${assessmentId}`, { headers });
+        return normalizeAssessment(res.data);
+      } catch (e) {
+        console.log("Failed to fetch live assessment", e);
+        return null;
+      }
+    },
+    [accessToken, headers]
+  );
+
+  const fetchLiveExam = useCallback(
+    async (examId) => {
+      if (!examId || !accessToken) return null;
+      try {
+        const res = await axios.get(`${API}/api/exams/${examId}`, { headers });
+        return normalizeExam(res.data);
+      } catch (e) {
+        console.log("Failed to fetch live exam", e);
+        return null;
+      }
+    },
+    [accessToken, headers]
+  );
+
+  const loadPrimaryCandidateState = useCallback(async () => {
+    const rows = await fetchCandidateUpcoming();
+    const primaryAssessment = choosePrimaryAssessment(rows);
+
+    if (!primaryAssessment) {
+      setAssessment(null);
+      setExam(null);
+      return { assessment: null, exam: null, merged: null };
+    }
+
+    const liveAssessment = primaryAssessment.assessmentid
+      ? await fetchLiveAssessment(primaryAssessment.assessmentid)
+      : primaryAssessment;
+
+    const baseAssessment = liveAssessment || primaryAssessment;
+    const liveExam = await fetchLiveExam(baseAssessment.examid);
+    const merged = mergeExamAssessment(liveExam, baseAssessment);
+
+    setAssessment(baseAssessment);
+    setExam(merged);
+
+    return {
+      assessment: baseAssessment,
+      exam: liveExam,
+      merged,
+    };
+  }, [fetchCandidateUpcoming, fetchLiveAssessment, fetchLiveExam, setAssessment, setExam]);
+
+  const refreshCurrentCandidateState = useCallback(async () => {
+    const currentAssessmentId = firstValue(
+      assessmentRef.current?.assessmentid,
+      examRef.current?.assessmentid
+    );
+    const currentExamId = firstValue(
+      assessmentRef.current?.examid,
+      examRef.current?.examid
+    );
+
+    if (!currentAssessmentId && !currentExamId) {
+      return { assessment: null, exam: null, merged: null };
+    }
+
+    const [liveAssessment, liveExam] = await Promise.all([
+      fetchLiveAssessment(currentAssessmentId),
+      fetchLiveExam(currentExamId),
+    ]);
+
+    const merged = mergeExamAssessment(liveExam, liveAssessment);
+
+    if (liveAssessment) setAssessment(liveAssessment);
+    if (merged) setExam(merged);
+
+    return {
+      assessment: liveAssessment,
+      exam: liveExam,
+      merged,
+    };
+  }, [fetchLiveAssessment, fetchLiveExam, setAssessment, setExam]);
+
+  const routeFromBootstrapState = useCallback((merged) => {
+    if (!merged) return "candidate-dashboard";
+    if (isTerminalAssessmentState(merged) || isTerminalExamState(merged)) return "candidate-dashboard";
+    return "candidate-dashboard";
+  }, []);
+
+  const routeFromLiveState = useCallback((merged, currentScreen) => {
+    if (!merged) return "candidate-dashboard";
+
+    const terminalAssessment = isTerminalAssessmentState(merged);
+    const terminalExam = isTerminalExamState(merged);
+
+    if (currentScreen === "precheck" || currentScreen === "instructions") {
+      if (terminalAssessment || terminalExam) return "candidate-dashboard";
+      return currentScreen;
+    }
+
+    if (currentScreen === "wait") {
+      if (terminalAssessment || terminalExam) return "complete";
+      if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
+      if (canGoDirectToExam(merged)) return "exam";
+      return "wait";
+    }
+
+    if (currentScreen === "exam") {
+      if (terminalAssessment || terminalExam) return "complete";
+      if (canGoDirectToExam(merged)) return "exam";
+      return "wait";
+    }
+
+    if (terminalAssessment || terminalExam) return "candidate-dashboard";
+
+    return "candidate-dashboard";
+  }, []);
+
+  const handleLogin = useCallback(
+    async (loggedUser) => {
+      disconnectSocket();
+      clearExam?.();
+      reset?.();
+      bootstrapDoneRef.current = false;
+
+      if (loggedUser.role === "Admin") {
+        setScreen("admin");
+        setBootstrapping(false);
+        return;
+      }
+
+      if (loggedUser.role === "Examiner") {
+        setScreen("examiner");
+        setBootstrapping(false);
+        return;
+      }
+
+      const state = await loadPrimaryCandidateState();
+      if (isLoggingOutRef.current) return;
+
+      setScreen(routeFromBootstrapState(state.merged));
+      setBootstrapping(false);
+      bootstrapDoneRef.current = true;
+    },
+    [clearExam, reset, loadPrimaryCandidateState, routeFromBootstrapState]
+  );
+
+  useEffect(() => {
+    document.body.style.margin = 0;
+    document.body.style.background = "#0b1114";
+    document.documentElement.style.background = "#0b1114";
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydrated || isLoggingOut) return;
+
+    const bootstrap = async () => {
+      try {
+        if (!user || !accessToken) {
+          setScreen("login");
+          setBootstrapping(false);
+          return;
+        }
+
+        if (user.role === "Admin") {
+          setScreen("admin");
+          setBootstrapping(false);
+          return;
+        }
+
+        if (user.role === "Examiner") {
+          setScreen("examiner");
+          setBootstrapping(false);
+          return;
+        }
+
+        if (user.role === "Candidate") {
+          const state = await loadPrimaryCandidateState();
+          if (isLoggingOutRef.current) return;
+
+          setScreen((prev) => {
+            if (FLOW_SCREENS.has(prev) && prev !== "login") return prev;
+            return routeFromBootstrapState(state.merged);
+          });
+
+          setBootstrapping(false);
+          bootstrapDoneRef.current = true;
+          return;
+        }
+
+        setScreen("login");
+        setBootstrapping(false);
+      } catch (e) {
+        console.log("Bootstrap failed", e);
+        resetToLogin();
+      }
+    };
+
+    bootstrap();
+  }, [
+    hasHydrated,
+    isLoggingOut,
+    user,
+    accessToken,
+    loadPrimaryCandidateState,
+    routeFromBootstrapState,
+    resetToLogin,
+  ]);
+
+  useEffect(() => {
+    if (!bootstrapDoneRef.current) return;
+    if (!accessToken || !user || user.role !== "Candidate") return;
+    if (!["wait", "exam"].includes(screen)) return;
+    if (isLoggingOut) return;
+
+    const timer = setInterval(async () => {
+      if (isLoggingOutRef.current) return;
+      const latest = await refreshCurrentCandidateState();
+      const next = routeFromLiveState(latest.merged, screenRef.current);
+      setScreen((prev) => {
+        if (isLoggingOutRef.current) return prev;
+        return next || prev;
+      });
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [
+    accessToken,
+    user,
+    screen,
+    isLoggingOut,
+    refreshCurrentCandidateState,
+    routeFromLiveState,
+  ]);
+
+  const handleEnterExam = useCallback(
+    async (examLike) => {
+      if (isLoggingOutRef.current) return;
+
+      const rawAssessment = normalizeAssessment(examLike);
+      const liveAssessment = rawAssessment?.assessmentid
+        ? await fetchLiveAssessment(rawAssessment.assessmentid)
+        : rawAssessment;
+
+      const baseAssessment = liveAssessment || rawAssessment;
+      const liveExam = baseAssessment?.examid
+        ? await fetchLiveExam(baseAssessment.examid)
+        : normalizeExam(examLike);
+
+      const merged = mergeExamAssessment(liveExam, baseAssessment);
+
+      setAssessment(baseAssessment);
+      setExam(merged);
+      setScreen("precheck");
+    },
+    [fetchLiveAssessment, fetchLiveExam, setAssessment, setExam]
+  );
+
+  const handlePreCheckPass = useCallback(() => {
+    if (isLoggingOutRef.current) return;
+    setScreen("instructions");
+  }, []);
+
+  const handleStartMonitoring = useCallback(async () => {
+    if (isLoggingOutRef.current) return;
+
+    const merged = mergeExamAssessment(examRef.current, assessmentRef.current);
+
+    if (socket && merged && user) {
+      socket.emit("joinexam", {
+        examid: merged.examid,
+        assessmentid: merged.assessmentid,
+        candidateid: user?.userid,
+        role: "Candidate",
+      });
+    }
+
+    const latest = await refreshCurrentCandidateState();
+    const live = latest.merged || merged;
+
+    if (isLoggingOutRef.current) return;
+
+    if (canGoDirectToExam(live)) {
+      setScreen("exam");
+      return;
+    }
+
+    setScreen("wait");
+  }, [socket, user, refreshCurrentCandidateState]);
+
+  const handleReturnToDashboard = useCallback(async () => {
+    await cleanupElectron();
+    await loadPrimaryCandidateState();
+    if (!isLoggingOutRef.current) setScreen("candidate-dashboard");
+  }, [cleanupElectron, loadPrimaryCandidateState]);
+
+  useEffect(() => {
+    if (!socket || isLoggingOut) return;
+
+    const onExamStarted = async () => {
+      if (isLoggingOutRef.current) return;
+      if (!["wait", "candidate-dashboard"].includes(screenRef.current)) return;
+
+      const latest = await refreshCurrentCandidateState();
+      const merged = latest.merged;
+      if (!merged) return;
+
+      if (screenRef.current === "wait" && canGoDirectToExam(merged)) {
+        setScreen("exam");
+      }
+    };
+
+    const onControlCommand = async (payload) => {
+      if (isLoggingOutRef.current) return;
+
+      const action = toUpper(payload?.action ?? payload);
+
+      if (action === "TERMINATE") {
+        if (screenRef.current === "wait" || screenRef.current === "exam") {
+          setScreen("complete");
+        }
+        return;
+      }
+
+      if (screenRef.current === "wait" || screenRef.current === "exam") {
+        const latest = await refreshCurrentCandidateState();
+        const next = routeFromLiveState(latest.merged, screenRef.current);
+        setScreen(next);
+      }
+    };
+
+    socket.on("examstarted", onExamStarted);
+    socket.on("controlcommand", onControlCommand);
+
+    return () => {
+      socket.off("examstarted", onExamStarted);
+      socket.off("controlcommand", onControlCommand);
+    };
+  }, [socket, isLoggingOut, refreshCurrentCandidateState, routeFromLiveState]);
+
+  const handleExamComplete = useCallback(() => {
+    setScreen("complete");
+  }, []);
+
+  if (!hasHydrated) return <SplashScreen text="Restoring session..." />;
+  if (isLoggingOut) return <SplashScreen text="Signing out..." />;
+  if (bootstrapping) return <SplashScreen text="Preparing application..." />;
+
+  if (screen === "login") return <Login onLogin={handleLogin} />;
+  if (screen === "admin") return <AdminPanel />;
+  if (screen === "examiner") return <ExaminerDashboard />;
+
+  if (screen === "candidate-dashboard") {
+    return (
+      <CandidateDashboard
+        onEnterExam={handleEnterExam}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === "precheck") {
+    return (
+      <PreCheck
+        exam={currentExam}
+        assessment={currentAssessment}
+        onPass={handlePreCheckPass}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === "instructions") {
+    return (
+      <Instructions
+        exam={currentExam}
+        assessment={currentAssessment}
+        onStart={handleStartMonitoring}
+        onBack={() => setScreen("precheck")}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === "wait") {
+    return (
+      <WaitScreen
+        exam={currentExam}
+        assessment={currentAssessment}
+        onExamStart={() => setScreen("exam")}
+        onLogout={handleLogout}
+        onComplete={handleExamComplete}
+        onReturnToDashboard={handleReturnToDashboard}
+      />
+    );
+  }
+
+  if (screen === "exam") {
+    return (
+      <ActiveExam
+        exam={currentExam}
+        assessment={currentAssessment}
+        onComplete={handleExamComplete}
+        onLogout={handleLogout}
+        onReturnToDashboard={handleReturnToDashboard}
+      />
+    );
+  }
+
+  if (screen === "complete") {
+    return <CompletionView onLogout={handleLogout} />;
+  }
+
+  return <Login onLogin={handleLogin} />;
+}
+
+createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+
+
+
+================================================================================
+FILE: electron-app\renderer\pages\candidate\WaitScreen.jsx
+================================================================================
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import axios from "axios";
+import useAuthStore from "../../store/authStore";
+
+const API = "http://localhost:3000";
+const POLL_INTERVAL = 3000;
+
+const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "LOCKED", "COMPLETED"]);
+const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
+const APPROVED_ENTRY_STATUSES = new Set([
+  "ACTIVE",
+  "PAUSED",
+  "REENTRY_APPROVED",
+  "REENTRYAPPROVED",
+  "LATEENTRY_APPROVED",
+  "LATEENTRYAPPROVED",
+]);
+const PENDING_ENTRY_STATUSES = new Set([
+  "REENTRY_REQUESTED",
+  "REENTRYREQUESTED",
+  "LATEENTRY_REQUESTED",
+  "LATEENTRYREQUESTED",
+  "PENDING",
+]);
+const REJECTED_ENTRY_STATUSES = new Set([
+  "REENTRY_REJECTED",
+  "REENTRYREJECTED",
+  "LATEENTRY_REJECTED",
+  "LATEENTRYREJECTED",
+  "REJECTED",
+]);
+
+function pick(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function normalizeSites(...sources) {
+  const unique = new Set();
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const item of source) {
+      const value = String(item || "").trim();
+      if (value) unique.add(value);
+    }
+  }
+  return Array.from(unique);
+}
+
+function normalizeExam(raw) {
+  if (!raw) return null;
+
+  const examStatus = String(
+    pick(raw.examstatus, raw.exam_status, raw.status, "")
+  ).toUpperCase();
+
+  return {
+    ...raw,
+    examid: pick(raw.examid, raw.exam_id),
+    assessmentid: pick(raw.assessmentid, raw.assessment_id),
+    candidateid: pick(raw.candidateid, raw.candidate_id),
+    name: pick(raw.name, raw.examname, raw.exam_name, "Exam"),
+    description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "--"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
+    durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(pick(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
+    instructions: pick(raw.instructions, ""),
+    allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: Array.isArray(pick(raw.allowedapplications, raw.allowed_applications))
+      ? pick(raw.allowedapplications, raw.allowed_applications)
+      : [],
+    status: examStatus,
+    examstatus: examStatus,
+  };
+}
+
+function normalizeAssessment(raw) {
+  if (!raw) return null;
+
+  const assessmentStatus = String(
+    pick(raw.status, raw.assessmentstatus, raw.assessment_status, raw.finalstatus, raw.final_status, "")
+  ).toUpperCase();
+
+  const finalStatus = String(
+    pick(raw.finalstatus, raw.final_status, "")
+  ).toUpperCase();
+
+  const examStatus = String(
+    pick(raw.examstatus, raw.exam_status, raw.statusexam, raw.runtimestatus, "")
+  ).toUpperCase();
+
+  return {
+    ...raw,
+    assessmentid: pick(raw.assessmentid, raw.assessment_id),
+    examid: pick(raw.examid, raw.exam_id),
+    candidateid: pick(raw.candidateid, raw.candidate_id),
+    examinerid: pick(raw.examinerid, raw.examiner_id),
+    name: pick(raw.name, raw.examname, raw.exam_name, "Upcoming Exam"),
+    description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "--"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
+    durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(pick(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
+    instructions: pick(raw.instructions, ""),
+    allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: Array.isArray(pick(raw.allowedapplications, raw.allowed_applications))
+      ? pick(raw.allowedapplications, raw.allowed_applications)
+      : [],
+    status: assessmentStatus,
+    assessmentstatus: assessmentStatus,
+    finalstatus: finalStatus,
+    examstatus: examStatus,
+  };
+}
+
+function getExamStatus(exam) {
+  return String(pick(exam?.examstatus, exam?.exam_status, exam?.status, "")).toUpperCase();
+}
+
+function getAssessmentStatus(assessment) {
+  return String(pick(assessment?.status, assessment?.assessmentstatus, assessment?.assessment_status, "")).toUpperCase();
+}
+
+function getFinalStatus(assessment) {
+  return String(pick(assessment?.finalstatus, assessment?.final_status, "")).toUpperCase();
+}
+
+function formatDateTime(date, time) {
+  if (!date || !time || date === "--" || time === "--:--") return "--";
+  try {
+    return new Date(`${date}T${time}:00`).toLocaleString();
+  } catch {
+    return `${date} ${time}`;
+  }
+}
+
+function safeHost(url) {
+  try {
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return new URL(normalized).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function statusChip(status) {
+  const value = String(status || "").toUpperCase();
+
+  if (APPROVED_ENTRY_STATUSES.has(value)) {
+    return { label: value, bg: "#0f2a1a", color: "#34c97a" };
+  }
+  if (PENDING_ENTRY_STATUSES.has(value)) {
+    return { label: value, bg: "#2a2010", color: "#f5a623" };
+  }
+  if (REJECTED_ENTRY_STATUSES.has(value)) {
+    return { label: value, bg: "#2a1010", color: "#f75f5f" };
+  }
+  if (value === "RUNNING") {
+    return { label: value, bg: "#10243a", color: "#4f8ef7" };
+  }
+  if (TERMINAL_ASSESSMENT_STATUSES.has(value) || TERMINAL_EXAM_STATUSES.has(value)) {
+    return { label: value, bg: "#2a1010", color: "#f75f5f" };
+  }
+  return { label: value || "-", bg: "#22263a", color: "#c8cad0" };
+}
+
+function CheckItem({ label, value }) {
+  const pill = statusChip(value);
+  return (
+    <div
+      style={{
+        background: "#1a1d27",
+        border: "1px solid #2e3347",
+        borderRadius: 12,
+        padding: "12px 14px",
+      }}
+    >
+      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 6 }}>{label}</div>
+      <span
+        style={{
+          background: pill.bg,
+          color: pill.color,
+          padding: "3px 10px",
+          borderRadius: 20,
+          fontSize: 12,
+          fontWeight: 600,
+        }}
+      >
+        {pill.label}
+      </span>
+    </div>
+  );
+}
+
+export default function WaitScreen({
+  exam,
+  assessment,
+  onExamStart,
+  onLogout,
+  onComplete,
+  onReturnToDashboard,
+}) {
+  const { accessToken } = useAuthStore();
+
+  const [now, setNow] = useState(new Date());
+  const [checking, setChecking] = useState(true);
+  const [liveExam, setLiveExam] = useState(normalizeExam(exam));
+  const [liveAssessment, setLiveAssessment] = useState(normalizeAssessment(assessment));
+  const [returning, setReturning] = useState(false);
+  const [actionMsg, setActionMsg] = useState("");
+  const [browserError, setBrowserError] = useState("");
+
+  const launchingRef = useRef(false);
+  const launchedRef = useRef(false);
+  const finishedRef = useRef(false);
+  const returningRef = useRef(false);
+
+  useEffect(() => {
+    setLiveExam(normalizeExam(exam));
+  }, [exam]);
+
+  useEffect(() => {
+    setLiveAssessment(normalizeAssessment(assessment));
+  }, [assessment]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const examId = pick(
+    liveAssessment?.examid,
+    assessment?.examid,
+    liveExam?.examid,
+    exam?.examid
+  );
+
+  const assessmentId = pick(
+    liveAssessment?.assessmentid,
+    assessment?.assessmentid,
+    liveExam?.assessmentid,
+    exam?.assessmentid
+  );
+
+  const allowedSites = useMemo(
+    () =>
+      normalizeSites(
+        liveAssessment?.allowedwebsites,
+        liveExam?.allowedwebsites,
+        assessment?.allowedwebsites,
+        exam?.allowedwebsites,
+        liveAssessment?.allowed_websites,
+        liveExam?.allowed_websites,
+        assessment?.allowed_websites,
+        exam?.allowed_websites
+      ),
+    [assessment, exam, liveAssessment, liveExam]
+  );
+
+  const mergedExamName = pick(
+    liveAssessment?.name,
+    liveExam?.name,
+    assessment?.name,
+    exam?.name,
+    "Exam"
+  );
+
+  const mergedDate = pick(
+    liveAssessment?.date,
+    liveExam?.date,
+    assessment?.date,
+    exam?.date,
+    "--"
+  );
+
+  const mergedStart = pick(
+    liveAssessment?.starttime,
+    liveExam?.starttime,
+    assessment?.starttime,
+    exam?.starttime,
+    "--:--"
+  );
+
+  const mergedEnd = pick(
+    liveAssessment?.endtime,
+    liveExam?.endtime,
+    assessment?.endtime,
+    exam?.endtime,
+    "--:--"
+  );
+
+  const mergedDuration = Number(
+    pick(
+      liveAssessment?.durationminutes,
+      liveExam?.durationminutes,
+      assessment?.durationminutes,
+      exam?.durationminutes,
+      0
+    )
+  ) || 0;
+
+  const currentExamStatus = getExamStatus(liveExam || exam);
+  const currentAssessmentStatus = getAssessmentStatus(liveAssessment || assessment);
+  const currentFinalStatus = getFinalStatus(liveAssessment || assessment);
+
+  const finishWaitingFlow = useCallback(async () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+
+    try {
+      await window.electronAPI?.closeBrowser?.();
+    } catch (error) {
+      console.log("closeBrowser failed", error);
+    }
+
+    try {
+      await window.electronAPI?.disableLockdown?.();
+    } catch (error) {
+      console.log("disableLockdown failed", error);
+    }
+
+    try {
+      await window.electronAPI?.setClosable?.(true);
+    } catch (error) {
+      console.log("setClosable failed", error);
+    }
+
+    onComplete?.();
+  }, [onComplete]);
+
+  const returnToDashboardSafe = useCallback(async () => {
+    if (returningRef.current) return;
+    returningRef.current = true;
+    setReturning(true);
+
+    try {
+      try {
+        await window.electronAPI?.closeBrowser?.();
+      } catch (error) {
+        console.log("closeBrowser failed", error);
+      }
+
+      try {
+        await window.electronAPI?.disableLockdown?.();
+      } catch (error) {
+        console.log("disableLockdown failed", error);
+      }
+
+      try {
+        await window.electronAPI?.setClosable?.(true);
+      } catch (error) {
+        console.log("setClosable failed", error);
+      }
+
+      await onReturnToDashboard?.();
+    } finally {
+      setReturning(false);
+    }
+  }, [onReturnToDashboard]);
+
+  const ensureBrowserVisible = useCallback(async () => {
+    if (!window.electronAPI) {
+      setBrowserError("Electron API is not available.");
+      return false;
+    }
+
+    if (!allowedSites.length) {
+      setBrowserError("No allowed websites were found for this exam.");
+      console.log("ensureBrowserVisible aborted: no allowed websites found");
+      return false;
+    }
+
+    setBrowserError("");
+
+    try {
+      await window.electronAPI?.enableLockdown?.();
+      await window.electronAPI?.setClosable?.(false);
+      await window.electronAPI?.openBrowser?.({ allowedWebsites: allowedSites });
+      await window.electronAPI?.navigateBrowser?.(allowedSites[0]);
+      await window.electronAPI?.showBrowser?.();
+      await window.electronAPI?.restoreBrowser?.();
+      await window.electronAPI?.focusBrowser?.();
+      return true;
+    } catch (error) {
+      console.log("ensureBrowserVisible failed", error);
+      setBrowserError(error?.message || "Failed to launch the exam browser.");
+
+      try {
+        await window.electronAPI?.closeBrowser?.();
+      } catch {}
+
+      try {
+        await window.electronAPI?.disableLockdown?.();
+      } catch {}
+
+      try {
+        await window.electronAPI?.setClosable?.(true);
+      } catch {}
+
+      return false;
+    }
+  }, [allowedSites]);
+
+  const checkExamStatus = useCallback(async () => {
+    if (finishedRef.current || returningRef.current) {
+      setChecking(false);
+      return;
+    }
+
+    if (!examId || !accessToken) {
+      setChecking(false);
+      return;
+    }
+
+    try {
+      const [examRes, assessmentRes] = await Promise.all([
+        axios.get(`${API}/api/exams/${examId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+        assessmentId
+          ? axios.get(`${API}/api/assessments/${assessmentId}`, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            })
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const latestExam = normalizeExam(examRes?.data);
+      const latestAssessment = normalizeAssessment(assessmentRes?.data);
+
+      if (latestExam) setLiveExam(latestExam);
+      if (latestAssessment) setLiveAssessment(latestAssessment);
+
+      const examStatus = getExamStatus(latestExam);
+      const assessmentStatus = getAssessmentStatus(latestAssessment);
+      const finalStatus = getFinalStatus(latestAssessment);
+
+      const assessmentTerminal =
+        TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus) ||
+        TERMINAL_ASSESSMENT_STATUSES.has(finalStatus);
+
+      const examTerminal = TERMINAL_EXAM_STATUSES.has(examStatus);
+      const examRunning = examStatus === "RUNNING";
+      const approvedToEnter = APPROVED_ENTRY_STATUSES.has(assessmentStatus);
+      const pendingApproval = PENDING_ENTRY_STATUSES.has(assessmentStatus);
+      const rejectedRequest = REJECTED_ENTRY_STATUSES.has(assessmentStatus);
+
+      if (assessmentTerminal || examTerminal) {
+        await finishWaitingFlow();
+        return;
+      }
+
+      if (rejectedRequest) {
+        setActionMsg("Your permission request was declined by the examiner.");
+        await returnToDashboardSafe();
+        return;
+      }
+
+      if (examRunning && approvedToEnter && !launchedRef.current && !launchingRef.current) {
+        launchingRef.current = true;
+        setActionMsg("Permission granted. Launching the exam workspace.");
+
+        const opened = await ensureBrowserVisible();
+
+        if (opened) {
+          launchedRef.current = true;
+          launchingRef.current = false;
+          onExamStart?.();
+          return;
+        }
+
+        launchingRef.current = false;
+        setActionMsg("Permission granted, but browser launch failed.");
+        return;
+      }
+
+      if (examRunning && pendingApproval) {
+        setActionMsg("Your request is pending examiner approval.");
+        return;
+      }
+
+      if (examRunning && !approvedToEnter && !pendingApproval) {
+        setActionMsg("The exam is running, but your entry is not approved yet.");
+        return;
+      }
+
+      if (!examRunning && approvedToEnter) {
+        setActionMsg("Permission approved. The exam has not started yet.");
+        return;
+      }
+
+      setActionMsg("Stay visible on camera and wait for the exam to go live.");
+    } catch (error) {
+      console.log("Wait screen status check failed", error);
+      setActionMsg(error?.response?.data?.detail || error?.message || "Failed to check exam status.");
+    } finally {
+      setChecking(false);
+    }
+  }, [
+    examId,
+    assessmentId,
+    accessToken,
+    finishWaitingFlow,
+    returnToDashboardSafe,
+    ensureBrowserVisible,
+    onExamStart,
+  ]);
+
+  useEffect(() => {
+    checkExamStatus();
+    const poll = setInterval(checkExamStatus, POLL_INTERVAL);
+    return () => clearInterval(poll);
+  }, [checkExamStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (!launchedRef.current) {
+        window.electronAPI?.closeBrowser?.();
+      }
+    };
+  }, []);
+
+  const examRunning = currentExamStatus === "RUNNING";
+  const approvedToEnter = APPROVED_ENTRY_STATUSES.has(currentAssessmentStatus);
+  const pendingApproval = PENDING_ENTRY_STATUSES.has(currentAssessmentStatus);
+  const rejectedRequest = REJECTED_ENTRY_STATUSES.has(currentAssessmentStatus);
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0f1117",
+        color: "#e8eaf0",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div
+        style={{
+          height: 56,
+          background: "#1a1d27",
+          borderBottom: "1px solid #2e3347",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 20px",
+          gap: 12,
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ fontWeight: 800, fontSize: 16 }}>3rdEyeZ360</span>
+        <span style={{ color: "#8b90a0", fontSize: 12 }}>Candidate Waiting Hall</span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
+          {typeof onReturnToDashboard === "function" ? (
+            <button
+              onClick={returnToDashboardSafe}
+              disabled={returning}
+              className="btn btn-ghost"
+              style={{ padding: "8px 14px", fontSize: 12 }}
+            >
+              {returning ? "Returning..." : "Back to Dashboard"}
+            </button>
+          ) : null}
+          {onLogout ? (
+            <button
+              onClick={onLogout}
+              className="btn btn-ghost"
+              style={{ padding: "8px 14px", fontSize: 12 }}
+            >
+              Logout
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: 24,
+        }}
+      >
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+          <div
+            style={{
+              background: "#1a1d27",
+              border: "1px solid #2e3347",
+              borderRadius: 16,
+              padding: 24,
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{mergedExamName}</div>
+            <div style={{ color: "#8b90a0", fontSize: 13, lineHeight: 1.7 }}>
+              Please remain available while the system checks your exam and assessment state. When permission is granted and the exam is running, the secured exam browser will open automatically.
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+                marginTop: 20,
+              }}
+            >
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Exam ID</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>{examId || "-"}</div>
+              </div>
+
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Assessment ID</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>{assessmentId || "-"}</div>
+              </div>
+
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Scheduled start</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>
+                  {formatDateTime(mergedDate, mergedStart)}
+                </div>
+              </div>
+
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Duration</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>
+                  {mergedDuration} minutes
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+              marginBottom: 20,
+            }}
+          >
+            <CheckItem label="Assessment status" value={currentAssessmentStatus || "-"} />
+            <CheckItem label="Exam status" value={currentExamStatus || "-"} />
+            <CheckItem label="Final status" value={currentFinalStatus || "-"} />
+            <CheckItem label="Current time" value={now.toLocaleTimeString()} />
+          </div>
+
+          <div
+            style={{
+              background: "#1a1d27",
+              border: "1px solid #2e3347",
+              borderRadius: 16,
+              padding: 20,
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Allowed websites</div>
+
+            {allowedSites.length ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {allowedSites.map((site, index) => (
+                  <div
+                    key={`${site}-${index}`}
+                    style={{
+                      background: "#10243a",
+                      border: "1px solid #2f4e77",
+                      color: "#8fc2ff",
+                      borderRadius: 20,
+                      padding: "6px 12px",
+                      fontSize: 12,
+                    }}
+                    title={site}
+                  >
+                    {safeHost(site)}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                style={{
+                  background: "#2a1010",
+                  border: "1px solid #f75f5f",
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  fontSize: 13,
+                  color: "#f3c2c2",
+                }}
+              >
+                No allowed websites are currently available in the payload.
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              background: "#1a1d27",
+              border: "1px solid #2e3347",
+              borderRadius: 16,
+              padding: 20,
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Live status</div>
+
+            {checking ? (
+              <div style={{ fontSize: 12, color: "#8b90a0", marginBottom: 14 }}>
+                Checking live exam status...
+              </div>
+            ) : null}
+
+            {approvedToEnter && examRunning ? (
+              <div
+                style={{
+                  background: "#0f2a1a",
+                  border: "1px solid #34c97a",
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  color: "#34c97a",
+                  marginBottom: actionMsg ? 12 : 0,
+                }}
+              >
+                Permission granted. Launching the exam workspace.
+              </div>
+            ) : null}
+
+            {pendingApproval ? (
+              <div
+                style={{
+                  background: "#2a2010",
+                  border: "1px solid #f5a623",
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  color: "#f5a623",
+                  marginBottom: actionMsg ? 12 : 0,
+                }}
+              >
+                Your request is pending examiner approval.
+              </div>
+            ) : null}
+
+            {rejectedRequest ? (
+              <div
+                style={{
+                  background: "#2a1010",
+                  border: "1px solid #f75f5f",
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  color: "#f75f5f",
+                  marginBottom: actionMsg ? 12 : 0,
+                }}
+              >
+                Your permission request was declined by the examiner.
+              </div>
+            ) : null}
+
+            {!approvedToEnter && examRunning && !pendingApproval && !rejectedRequest ? (
+              <div
+                style={{
+                  background: "#2a1010",
+                  border: "1px solid #f75f5f",
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  color: "#f75f5f",
+                  marginBottom: actionMsg ? 12 : 0,
+                }}
+              >
+                The exam is running, but your entry is not approved yet.
+              </div>
+            ) : null}
+
+            {!examRunning && !rejectedRequest ? (
+              <div
+                style={{
+                  background: "#0f2a1a",
+                  border: "1px solid #34c97a",
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  fontSize: 13,
+                  color: "#34c97a",
+                  marginBottom: actionMsg ? 12 : 0,
+                }}
+              >
+                Stay visible on camera and wait for the exam to go live.
+              </div>
+            ) : null}
+
+            {actionMsg ? (
+              <div style={{ fontSize: 13, color: "#c7ccda", lineHeight: 1.7, marginTop: 4 }}>
+                {actionMsg}
+              </div>
+            ) : null}
+
+            {browserError ? (
+              <div
+                style={{
+                  marginTop: 14,
+                  background: "#2a1010",
+                  border: "1px solid #f75f5f",
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  fontSize: 13,
+                  color: "#f3c2c2",
+                  lineHeight: 1.6,
+                }}
+              >
+                {browserError}
+              </div>
+            ) : null}
+
+            <div
+              style={{
+                marginTop: 18,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+              }}
+            >
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Exam end time</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>{mergedEnd}</div>
+              </div>
+
+              <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Browser readiness</div>
+                <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 600 }}>
+                  {allowedSites.length ? "Ready" : "Missing website config"}
+                </div>
+              </div>
+            </div>
+
+            {typeof onReturnToDashboard === "function" && rejectedRequest ? (
+              <div style={{ marginTop: 14 }}>
+                <button
+                  onClick={returnToDashboardSafe}
+                  disabled={returning}
+                  className="btn btn-ghost"
+                  style={{ padding: "10px 16px", fontSize: 13 }}
+                >
+                  {returning ? "Returning..." : "Back to Dashboard"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+================================================================================
+FILE: electron-app\renderer\pages\candidate\ActiveExam.jsx
+================================================================================
+
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import axios from "axios";
+import useAuthStore from "../../store/authStore";
+import useSocket from "../../hooks/useSocket";
+
+const API = "http://localhost:3000";
+const POLL_INTERVAL = 3000;
+
+const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "LOCKED", "COMPLETED"]);
+const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
+
+function pick(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function normalizeSites(...sources) {
+  const unique = new Set();
+
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const item of source) {
+      const value = String(item || "").trim();
+      if (value) unique.add(value);
+    }
+  }
+
+  return Array.from(unique);
+}
+
+function normalizeExam(raw) {
+  if (!raw) return null;
+
+  const examStatus = String(
+    pick(raw.examstatus, raw.exam_status, raw.status, "")
+  ).toUpperCase();
+
+  return {
+    ...raw,
+    examid: pick(raw.examid, raw.exam_id),
+    assessmentid: pick(raw.assessmentid, raw.assessment_id),
+    candidateid: pick(raw.candidateid, raw.candidate_id),
+    name: pick(raw.name, raw.examname, raw.exam_name, "Exam"),
+    description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "--"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
+    durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(pick(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
+    instructions: pick(raw.instructions, ""),
+    allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: Array.isArray(pick(raw.allowedapplications, raw.allowed_applications))
+      ? pick(raw.allowedapplications, raw.allowed_applications)
+      : [],
+    status: examStatus,
+    examstatus: examStatus,
+  };
+}
+
+function normalizeAssessment(raw) {
+  if (!raw) return null;
+
+  const assessmentStatus = String(
+    pick(raw.status, raw.assessmentstatus, raw.assessment_status, raw.finalstatus, raw.final_status, "")
+  ).toUpperCase();
+
+  const finalStatus = String(
+    pick(raw.finalstatus, raw.final_status, "")
+  ).toUpperCase();
+
+  const examStatus = String(
+    pick(raw.examstatus, raw.exam_status, raw.statusexam, raw.runtimestatus, "")
+  ).toUpperCase();
+
+  return {
+    ...raw,
+    assessmentid: pick(raw.assessmentid, raw.assessment_id),
+    examid: pick(raw.examid, raw.exam_id),
+    candidateid: pick(raw.candidateid, raw.candidate_id),
+    examinerid: pick(raw.examinerid, raw.examiner_id),
+    name: pick(raw.name, raw.examname, raw.exam_name, "Exam"),
+    description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "--"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
+    durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(pick(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
+    instructions: pick(raw.instructions, ""),
+    allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: Array.isArray(pick(raw.allowedapplications, raw.allowed_applications))
+      ? pick(raw.allowedapplications, raw.allowed_applications)
+      : [],
+    status: assessmentStatus,
+    assessmentstatus: assessmentStatus,
+    finalstatus: finalStatus,
+    examstatus: examStatus,
+  };
+}
+
+function getExamStatus(source) {
+  return String(pick(source?.examstatus, source?.exam_status, source?.status, "")).toUpperCase();
+}
+
+function getAssessmentStatus(source) {
+  return String(pick(source?.status, source?.assessmentstatus, source?.assessment_status, "")).toUpperCase();
+}
+
+function getFinalStatus(source) {
+  return String(pick(source?.finalstatus, source?.final_status, "")).toUpperCase();
+}
+
+function safeHost(url) {
+  try {
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return new URL(normalized).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function pill(bg, color) {
+  return {
+    background: bg,
+    color,
+    borderRadius: 10,
+    padding: "8px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+  };
+}
+
+function formatRemaining(ms) {
+  const totalSecs = Math.max(0, Math.floor(ms / 1000));
+  const hrs = Math.floor(totalSecs / 3600);
+  const remMins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+
+  return `${String(hrs).padStart(2, "0")}:${String(remMins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+export default function ActiveExam({ exam, assessment, onComplete, onLogout, onReturnToDashboard }) {
+  const shellRef = useRef(null);
+  const browserAreaRef = useRef(null);
+  const completedRef = useRef(false);
+
+  const { accessToken, user } = useAuthStore();
+  const socket = useSocket(accessToken);
+
+  const normalizedExam = useMemo(() => normalizeExam(exam), [exam]);
+  const normalizedAssessment = useMemo(() => normalizeAssessment(assessment), [assessment]);
+
+  const [liveExam, setLiveExam] = useState(normalizedExam);
+  const [liveAssessment, setLiveAssessment] = useState(normalizedAssessment);
+  const [activeTab, setActiveTab] = useState(0);
+  const [checking, setChecking] = useState(true);
+  const [now, setNow] = useState(Date.now());
+  const [returning, setReturning] = useState(false);
+  const [browserError, setBrowserError] = useState("");
+  const [statusMsg, setStatusMsg] = useState("");
+
+  useEffect(() => {
+    setLiveExam(normalizedExam);
+  }, [normalizedExam]);
+
+  useEffect(() => {
+    setLiveAssessment(normalizedAssessment);
+  }, [normalizedAssessment]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const examId = pick(
+    liveAssessment?.examid,
+    normalizedAssessment?.examid,
+    liveExam?.examid,
+    normalizedExam?.examid
+  );
+
+  const assessmentId = pick(
+    liveAssessment?.assessmentid,
+    normalizedAssessment?.assessmentid,
+    liveExam?.assessmentid,
+    normalizedExam?.assessmentid
+  );
+
+  const candidateId = pick(
+    liveAssessment?.candidateid,
+    normalizedAssessment?.candidateid,
+    liveExam?.candidateid,
+    normalizedExam?.candidateid,
+    user?.userid
+  );
+
+  const allowedSites = useMemo(
+    () =>
+      normalizeSites(
+        normalizedAssessment?.allowedwebsites,
+        normalizedExam?.allowedwebsites,
+        liveAssessment?.allowedwebsites,
+        liveExam?.allowedwebsites,
+        normalizedAssessment?.allowed_websites,
+        normalizedExam?.allowed_websites,
+        liveAssessment?.allowed_websites,
+        liveExam?.allowed_websites
+      ),
+    [normalizedAssessment, normalizedExam, liveAssessment, liveExam]
+  );
+
+  useEffect(() => {
+    if (activeTab > allowedSites.length - 1) {
+      setActiveTab(0);
+    }
+  }, [allowedSites, activeTab]);
+
+  const merged = useMemo(
+    () => ({
+      ...normalizedExam,
+      ...normalizedAssessment,
+      ...liveExam,
+      ...liveAssessment,
+    }),
+    [normalizedExam, normalizedAssessment, liveExam, liveAssessment]
+  );
+
+  const activeUrl = allowedSites[activeTab] || allowedSites[0] || null;
+
+  const positionAndFocusBrowser = useCallback(async () => {
+    if (!window.electronAPI || completedRef.current) return;
+
+    try {
+      const shellRect = shellRef.current?.getBoundingClientRect?.();
+      const browserRect = browserAreaRef.current?.getBoundingClientRect?.();
+
+      if (shellRect && browserRect) {
+        const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
+        const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
+        const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
+        const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
+
+        await window.electronAPI?.resizeBrowser?.({ top, left, right, bottom });
+      }
+
+      if (activeUrl) {
+        await window.electronAPI?.navigateBrowser?.(activeUrl);
+      }
+
+      await window.electronAPI?.showBrowser?.();
+      await window.electronAPI?.restoreBrowser?.();
+      await window.electronAPI?.focusBrowser?.();
+      setBrowserError("");
+    } catch (error) {
+      console.log("positionAndFocusBrowser failed", error);
+      setBrowserError(error?.message || "Unable to position the secured browser.");
+    }
+  }, [activeUrl]);
+
+  useEffect(() => {
+    positionAndFocusBrowser();
+  }, [positionAndFocusBrowser]);
+
+  useEffect(() => {
+    const sendBounds = () => {
+      if (!shellRef.current || !browserAreaRef.current || !window.electronAPI || completedRef.current) return;
+
+      const shellRect = shellRef.current.getBoundingClientRect();
+      const browserRect = browserAreaRef.current.getBoundingClientRect();
+
+      const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
+      const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
+      const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
+      const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
+
+      window.electronAPI?.resizeBrowser?.({ top, left, right, bottom });
+      window.electronAPI?.showBrowser?.();
+    };
+
+    sendBounds();
+    const id = setTimeout(sendBounds, 300);
+    window.addEventListener("resize", sendBounds);
+
+    return () => {
+      clearTimeout(id);
+      window.removeEventListener("resize", sendBounds);
+    };
+  }, [activeTab, allowedSites.length]);
+
+  const finishExam = useCallback(async () => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+
+    try {
+      await window.electronAPI?.stopCapture?.();
+    } catch (error) {
+      console.log("stopCapture failed", error);
+    }
+
+    try {
+      await window.electronAPI?.closeBrowser?.();
+    } catch (error) {
+      console.log("closeBrowser failed", error);
+    }
+
+    try {
+      await window.electronAPI?.disableLockdown?.();
+    } catch (error) {
+      console.log("disableLockdown failed", error);
+    }
+
+    try {
+      await window.electronAPI?.setClosable?.(true);
+    } catch (error) {
+      console.log("setClosable failed", error);
+    }
+
+    onComplete?.();
+  }, [onComplete]);
+
+  const returnToDashboardSafe = useCallback(async () => {
+    if (completedRef.current || returning) return;
+
+    setReturning(true);
+
+    try {
+      try {
+        await window.electronAPI?.stopCapture?.();
+      } catch (error) {
+        console.log("stopCapture failed", error);
+      }
+
+      try {
+        await window.electronAPI?.closeBrowser?.();
+      } catch (error) {
+        console.log("closeBrowser failed", error);
+      }
+
+      try {
+        await window.electronAPI?.disableLockdown?.();
+      } catch (error) {
+        console.log("disableLockdown failed", error);
+      }
+
+      try {
+        await window.electronAPI?.setClosable?.(true);
+      } catch (error) {
+        console.log("setClosable failed", error);
+      }
+
+      await onReturnToDashboard?.();
+    } finally {
+      setReturning(false);
+    }
+  }, [onReturnToDashboard, returning]);
+
+  useEffect(() => {
+    if (!socket || !examId) return;
+
+    socket.emit("joinexam", {
+      examid: examId,
+      assessmentid: assessmentId,
+      candidateid: candidateId,
+      role: "Candidate",
+    });
+
+    const onControlCommand = async (payload) => {
+      const payloadExamId = pick(payload?.examid, payload?.examId);
+      const payloadAssessmentId = pick(payload?.assessmentid, payload?.assessmentId);
+      const payloadCandidateId = pick(payload?.candidateid, payload?.candidateId);
+
+      const examMatch = !payloadExamId || String(payloadExamId) === String(examId);
+      const assessmentMatch = !payloadAssessmentId || String(payloadAssessmentId) === String(assessmentId);
+      const candidateMatch = !payloadCandidateId || String(payloadCandidateId) === String(candidateId);
+
+      if (!examMatch || !assessmentMatch || !candidateMatch) return;
+
+      const action = String(payload?.action ?? "").toLowerCase();
+      const status = String(payload?.status ?? "").toUpperCase();
+
+      if (action === "terminate" || status === "TERMINATED") {
+        setStatusMsg("Your assessment has been terminated by the examiner.");
+        await finishExam();
+        return;
+      }
+
+      if (action === "pause") {
+        setLiveAssessment((prev) => ({
+          ...(prev || {}),
+          status: "PAUSED",
+          assessmentstatus: "PAUSED",
+        }));
+        setStatusMsg("Your assessment has been paused by the examiner.");
+        return;
+      }
+
+      if (action === "resume") {
+        setLiveAssessment((prev) => ({
+          ...(prev || {}),
+          status: "ACTIVE",
+          assessmentstatus: "ACTIVE",
+        }));
+        setStatusMsg("Your assessment has been resumed.");
+      }
+    };
+
+    socket.on("controlcommand", onControlCommand);
+    return () => socket.off("controlcommand", onControlCommand);
+  }, [socket, examId, assessmentId, candidateId, finishExam]);
+
+  const checkLiveStatus = useCallback(async () => {
+    if (completedRef.current) {
+      setChecking(false);
+      return;
+    }
+
+    if (!examId || !assessmentId || !accessToken) {
+      setChecking(false);
+      return;
+    }
+
+    try {
+      const [examRes, assessmentRes] = await Promise.all([
+        axios.get(`${API}/api/exams/${examId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+        axios.get(`${API}/api/assessments/${assessmentId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }),
+      ]);
+
+      const latestExam = normalizeExam(examRes?.data);
+      const latestAssessment = normalizeAssessment(assessmentRes?.data);
+
+      if (latestExam) setLiveExam(latestExam);
+      if (latestAssessment) setLiveAssessment(latestAssessment);
+
+      const examStatus = getExamStatus(latestExam);
+      const assessmentStatus = getAssessmentStatus(latestAssessment);
+      const finalStatus = getFinalStatus(latestAssessment);
+
+      const shouldEnd =
+        examStatus !== "RUNNING" ||
+        TERMINAL_EXAM_STATUSES.has(examStatus) ||
+        TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus) ||
+        TERMINAL_ASSESSMENT_STATUSES.has(finalStatus);
+
+      if (shouldEnd) {
+        await finishExam();
+        return;
+      }
+
+      await window.electronAPI?.showBrowser?.();
+      await window.electronAPI?.focusBrowser?.();
+      setBrowserError("");
+    } catch (error) {
+      console.log("ActiveExam status check failed", error);
+      setStatusMsg(error?.response?.data?.detail || error?.message || "Live status check failed.");
+    } finally {
+      setChecking(false);
+    }
+  }, [examId, assessmentId, accessToken, finishExam]);
+
+  useEffect(() => {
+    checkLiveStatus();
+    const poll = setInterval(checkLiveStatus, POLL_INTERVAL);
+    return () => clearInterval(poll);
+  }, [checkLiveStatus]);
+
+  const startDate = merged.date || normalizedExam?.date;
+  const startClock = merged.starttime || normalizedExam?.starttime;
+  const durationMinutes = Number(merged.durationminutes || normalizedExam?.durationminutes || 0);
+
+  const startMs =
+    startDate && startClock && startDate !== "--" && startClock !== "--:--"
+      ? new Date(`${startDate}T${startClock}:00`).getTime()
+      : null;
+
+  const endMs = startMs && durationMinutes > 0 ? startMs + durationMinutes * 60 * 1000 : null;
+  const remainingMs = endMs ? Math.max(0, endMs - now) : 0;
+
+  useEffect(() => {
+    if (completedRef.current) return;
+    if (endMs && now >= endMs) {
+      finishExam();
+    }
+  }, [endMs, now, finishExam]);
+
+  useEffect(() => {
+    return () => {
+      window.electronAPI?.closeBrowser?.();
+    };
+  }, []);
+
+  const endLabel = merged.endtime || normalizedExam?.endtime || "--:--";
+  const examName = merged.name || normalizedExam?.name || "Exam";
+  const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "-";
+  const examStatus = liveExam?.status || liveExam?.examstatus || merged.examstatus || merged.status || "-";
+  const isPaused = String(assessmentStatus).toUpperCase() === "PAUSED";
+
+  return (
+    <div
+      ref={shellRef}
+      style={{
+        minHeight: "100vh",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0f1117",
+        color: "#e8eaf0",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          height: 58,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 18px",
+          background: "#1a1d27",
+          borderBottom: "1px solid #2c3143",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>3rdEyeZ360</div>
+          <div style={{ width: 1, height: 20, background: "#394055" }} />
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{examName}</div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={pill("#2b2230", "#ff6b6b")}>{formatRemaining(remainingMs)}</div>
+          <div style={pill("#252c40", "#b8d1ff")}>Ends at {endLabel}</div>
+          <div style={pill("#252937", "#f2c46d")}>Assessment {assessmentStatus}</div>
+          <div style={pill("#15281f", "#4ade80")}>Exam {examStatus}</div>
+          {onLogout ? (
+            <button
+              onClick={onLogout}
+              className="btn btn-ghost"
+              style={{ padding: "7px 14px", fontSize: 13 }}
+            >
+              Logout
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {allowedSites.length > 1 ? (
+        <div
+          style={{
+            height: 44,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "0 16px",
+            background: "#161925",
+            borderBottom: "1px solid #2c3143",
+            flexShrink: 0,
+            overflowX: "auto",
+          }}
+        >
+          <span style={{ fontSize: 11, color: "#8b90a0", marginRight: 6 }}>Allowed sites</span>
+          {allowedSites.map((site, index) => (
+            <button
+              key={`${site}-${index}`}
+              onClick={() => setActiveTab(index)}
+              style={{
+                background: index === activeTab ? "#10243a" : "#22263a",
+                border: index === activeTab ? "1px solid #4f8ef7" : "1px solid #2e3347",
+                color: index === activeTab ? "#8fc2ff" : "#c8cad0",
+                borderRadius: 8,
+                padding: "5px 12px",
+                fontSize: 12,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+              title={site}
+            >
+              {safeHost(site)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        <div
+          ref={browserAreaRef}
+          style={{
+            flex: 1,
+            background: "#0a0c14",
+            position: "relative",
+            borderRight: "1px solid #2c3143",
+          }}
+        >
+          {isPaused ? (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "rgba(0, 0, 0, 0.82)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 100,
+                textAlign: "center",
+                padding: 24,
+              }}
+            >
+              <div style={{ fontSize: 48, marginBottom: 16 }}>â¸ï¸</div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Assessment Paused</h2>
+              <p style={{ color: "#8b90a0", fontSize: 14, maxWidth: 360, lineHeight: 1.7 }}>
+                Your examiner has paused the assessment. Please stay available and wait for resume.
+              </p>
+            </div>
+          ) : null}
+
+          {browserError ? (
+            <div
+              style={{
+                position: "absolute",
+                top: 16,
+                left: 16,
+                right: 16,
+                zIndex: 101,
+                background: "#2a1010",
+                border: "1px solid #f75f5f",
+                borderRadius: 10,
+                padding: "12px 14px",
+                color: "#f3c2c2",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              {browserError}
+            </div>
+          ) : null}
+
+          {!allowedSites.length ? (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#8b90a0",
+                fontSize: 14,
+                zIndex: 50,
+                padding: 24,
+                textAlign: "center",
+              }}
+            >
+              No allowed website configured for this assessment.
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          style={{
+            width: 340,
+            background: "#1a1d27",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              padding: "16px 18px",
+              borderBottom: "1px solid #2e3347",
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Exam Status</div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Assessment</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#f2c46d" }}>{assessmentStatus}</div>
+              </div>
+              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Exam</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#4ade80" }}>{examStatus}</div>
+              </div>
+              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Start</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{merged.starttime || "--:--"}</div>
+              </div>
+              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Duration</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{durationMinutes} min</div>
+              </div>
+            </div>
+
+            {checking ? (
+              <div style={{ fontSize: 11, color: "#8b90a0", marginTop: 10 }}>Syncing live state...</div>
+            ) : null}
+
+            {statusMsg ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  background: "#22263a",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  color: "#c8cad0",
+                  lineHeight: 1.6,
+                }}
+              >
+                {statusMsg}
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Allowed websites</div>
+
+            {allowedSites.length === 0 ? (
+              <p style={{ fontSize: 12, color: "#8b90a0" }}>No allowed websites found.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {allowedSites.map((site, index) => (
+                  <button
+                    key={`${site}-${index}`}
+                    onClick={() => setActiveTab(index)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: index === activeTab ? "#10243a" : "#22263a",
+                      border: index === activeTab ? "1px solid #4f8ef7" : "1px solid #2e3347",
+                      borderRadius: 8,
+                      padding: "10px 12px",
+                      color: index === activeTab ? "#8fc2ff" : "#c8cad0",
+                      cursor: "pointer",
+                    }}
+                    title={site}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{safeHost(site)}</div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "#8b90a0",
+                        marginTop: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {site}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {merged.instructions ? (
+              <>
+                <div style={{ fontWeight: 700, fontSize: 13, marginTop: 18, marginBottom: 10 }}>
+                  Instructions
+                </div>
+                <div
+                  style={{
+                    background: "#22263a",
+                    borderRadius: 8,
+                    padding: "12px 14px",
+                    fontSize: 12,
+                    color: "#c8cad0",
+                    lineHeight: 1.7,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {merged.instructions}
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          <div
+            style={{
+              height: 48,
+              borderTop: "1px solid #2e3347",
+              display: "flex",
+              alignItems: "center",
+              padding: "0 16px",
+              gap: 16,
+              fontSize: 11,
+              color: "#8b90a0",
+              flexShrink: 0,
+            }}
+          >
+            <span>Secured Browser</span>
+            <span>{allowedSites.length ? "Domain restricted" : "No domain config"}</span>
+            <span style={{ marginLeft: "auto", color: "#f75f5f" }}>Do not close this window</span>
+          </div>
+        </div>
+      </div>
+
+      {typeof onReturnToDashboard === "function" &&
+      (String(assessmentStatus).toUpperCase() === "LOCKED" ||
+        String(assessmentStatus).toUpperCase() === "TERMINATED") ? (
+        <div
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            zIndex: 120,
+          }}
+        >
+          <button
+            onClick={returnToDashboardSafe}
+            disabled={returning}
+            className="btn btn-ghost"
+            style={{ padding: "10px 14px", fontSize: 13, background: "#1a1d27" }}
+          >
+            {returning ? "Returning..." : "Back to Dashboard"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+
+
+
+================================================================================
+FILE: electron-app\preload.js
+================================================================================
+
+FILE NOT FOUND: electron-app\preload.js
+
+
+
+
+================================================================================
+FILE: electron-app\main\ipc\index.js
+================================================================================
+
+const { ipcMain } = require("electron");
+const { setupLockdown, removeLockdown } = require("../lockdown/window");
+const {
+  createBrowserView,
+  destroyBrowserView,
+  navigateTo,
+  updateBrowserBounds,
+  showBrowser,
+  hideBrowser,
+  focusBrowser,
+  restoreBrowser,
+} = require("../lockdown/browser-view");
+const { runDetection, startCapture, stopCapture } = require("../services/webcam");
+const axios = require("axios");
+
+const BACKEND_URL = "http://localhost:3000";
+
+function isWindowAlive(win) {
+  return !!win && !win.isDestroyed() && !!win.webContents && !win.webContents.isDestroyed();
+}
+
+function safeSend(win, channel, payload) {
+  if (!isWindowAlive(win)) return false;
+  try {
+    win.webContents.send(channel, payload);
+    return true;
+  } catch (e) {
+    console.log(`safeSend failed for ${channel}:`, e.message);
+    return false;
+  }
+}
+
+function registerIpcHandlers(mainWindow) {
+  ipcMain.removeHandler("enable-lockdown");
+  ipcMain.removeHandler("disable-lockdown");
+  ipcMain.removeHandler("set-closable");
+  ipcMain.removeHandler("open-browser");
+  ipcMain.removeHandler("close-browser");
+  ipcMain.removeHandler("navigate-browser");
+  ipcMain.removeHandler("resize-browser");
+  ipcMain.removeHandler("show-browser");
+  ipcMain.removeHandler("hide-browser");
+  ipcMain.removeHandler("focus-browser");
+  ipcMain.removeHandler("restore-browser");
+  ipcMain.removeHandler("start-capture");
+  ipcMain.removeHandler("stop-capture");
+  ipcMain.removeHandler("dev-reset-to-login");
+  ipcMain.removeAllListeners("webcam-frame");
+
+  ipcMain.handle("enable-lockdown", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    setupLockdown(mainWindow);
+    return { success: true };
+  });
+
+  ipcMain.handle("disable-lockdown", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    removeLockdown(mainWindow);
+    return { success: true };
+  });
+
+  ipcMain.handle("set-closable", (_event, val) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    mainWindow.setClosable(!!val);
+    return { success: true };
+  });
+
+  ipcMain.handle("open-browser", (_event, data) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    createBrowserView(mainWindow, data?.allowedWebsites || []);
+    return { success: true };
+  });
+
+  ipcMain.handle("close-browser", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    destroyBrowserView(mainWindow);
+    return { success: true };
+  });
+
+  ipcMain.handle("navigate-browser", (_event, url) => {
+    const ok = navigateTo(url);
+    return ok
+      ? { success: true }
+      : { success: false, error: "Navigation blocked or BrowserView unavailable" };
+  });
+
+  ipcMain.handle("resize-browser", (_event, layout) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    updateBrowserBounds(mainWindow, layout || {});
+    return { success: true };
+  });
+
+  ipcMain.handle("show-browser", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    const ok = showBrowser(mainWindow);
+    return ok
+      ? { success: true }
+      : { success: false, error: "BrowserView unavailable" };
+  });
+
+  ipcMain.handle("hide-browser", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    const ok = hideBrowser(mainWindow);
+    return ok
+      ? { success: true }
+      : { success: false, error: "BrowserView unavailable" };
+  });
+
+  ipcMain.handle("focus-browser", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    const ok = focusBrowser(mainWindow);
+    return ok
+      ? { success: true }
+      : { success: false, error: "BrowserView unavailable" };
+  });
+
+  ipcMain.handle("restore-browser", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    const ok = restoreBrowser(mainWindow);
+    return ok
+      ? { success: true }
+      : { success: false, error: "BrowserView unavailable" };
+  });
+
+  ipcMain.handle("start-capture", (_event, data) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    startCapture(data, mainWindow);
+    return { success: true };
+  });
+
+  ipcMain.handle("stop-capture", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    stopCapture(mainWindow);
+    return { success: true };
+  });
+
+  ipcMain.handle("dev-reset-to-login", async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: "Main window unavailable" };
+    }
+
+    try {
+      stopCapture(mainWindow);
+    } catch (e) {
+      console.log("stopCapture cleanup", e.message);
+    }
+
+    try {
+      destroyBrowserView(mainWindow);
+    } catch (e) {
+      console.log("destroyBrowserView cleanup", e.message);
+    }
+
+    try {
+      removeLockdown(mainWindow);
+    } catch (e) {
+      console.log("removeLockdown cleanup", e.message);
+    }
+
+    try {
+      mainWindow.setClosable(true);
+    } catch (e) {
+      console.log("setClosable cleanup", e.message);
+    }
+
+    safeSend(mainWindow, "dev-force-login");
+    return { success: true };
+  });
+
+  ipcMain.on("webcam-frame", async (_event, data) => {
+    try {
+      const results = await runDetection(
+        data.frame,
+        data.assessmentId,
+        data.candidateId,
+        data.examId
+      );
+
+      for (const result of results) {
+        if (result.detail !== "ok" && result.detail !== "no_face") {
+          try {
+            const response = await axios.post(
+              `${BACKEND_URL}/api/assessments/detect`,
+              {
+                assessmentid: data.assessmentId,
+                candidateid: data.candidateId,
+                examid: data.examId,
+                detectiontype: result.type,
+                detail: result.detail,
+                confidence: result.confidence,
+                screenshotb64: data.frame,
+              },
+              {
+                headers: {
+                  Authorization: `Bearer ${data.token}`,
+                },
+              }
+            );
+
+            safeSend(mainWindow, "detection-result", response.data);
+          } catch (e) {
+            console.log("Detection post error", e.message);
+          }
+        }
+      }
+    } catch (e) {
+      console.log("Detection error", e.message);
+    }
+  });
+}
+
+module.exports = registerIpcHandlers;
+
+
+
+
+================================================================================
+FILE: electron-app\main\lockdown\browser-view.js
+================================================================================
+
+const { BrowserView } = require("electron");
+
+let browserView = null;
+let allowedDomains = [];
+let currentLayout = {
+  top: 132,
+  bottom: 34,
+  left: 0,
+  right: 0,
+};
+let resizeHandler = null;
+let attachedWindow = null;
+let browserVisible = false;
+
+function normalizeUrl(url) {
+  if (!url) return null;
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function extractHostname(url) {
+  try {
+    return new URL(normalizeUrl(url)).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function isAllowed(url) {
+  const hostname = extractHostname(url);
+  if (!hostname) return false;
+  return allowedDomains.some((d) => hostname === d || hostname.endsWith(`.${d}`));
+}
+
+function getBounds(mainWindow) {
+  const content = mainWindow.getContentBounds();
+
+  const x = currentLayout.left || 0;
+  const y = currentLayout.top || 0;
+  const width = Math.max(
+    content.width - (currentLayout.left || 0) - (currentLayout.right || 0),
+    200
+  );
+  const height = Math.max(
+    content.height - (currentLayout.top || 0) - (currentLayout.bottom || 0),
+    200
+  );
+
+  return { x, y, width, height };
+}
+
+function hasLiveView() {
+  return !!browserView && !!browserView.webContents && !browserView.webContents.isDestroyed();
+}
+
+function attachToWindow(mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed() || !hasLiveView()) return false;
+  try {
+    mainWindow.setBrowserView(browserView);
+    attachedWindow = mainWindow;
+    browserVisible = true;
+    applyBounds(mainWindow);
+    return true;
+  } catch (e) {
+    console.log("attachToWindow failed:", e.message);
+    return false;
+  }
+}
+
+function detachFromWindow(mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  try {
+    mainWindow.setBrowserView(null);
+    browserVisible = false;
+    return true;
+  } catch (e) {
+    console.log("detachFromWindow failed:", e.message);
+    return false;
+  }
+}
+
+function applyBounds(mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!hasLiveView()) return;
+  if (!browserVisible) return;
+
+  const bounds = getBounds(mainWindow);
+  browserView.setBounds(bounds);
+  browserView.setAutoResize({ width: true, height: true });
+}
+
+function cleanup(mainWindow) {
+  if (!browserView) return;
+
+  try {
+    if (mainWindow && resizeHandler) {
+      mainWindow.removeListener("resize", resizeHandler);
+      resizeHandler = null;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBrowserView(null);
+    }
+
+    if (browserView.webContents && !browserView.webContents.isDestroyed()) {
+      browserView.webContents.destroy();
+    }
+  } catch (e) {
+    console.log("BrowserView cleanup failed:", e.message);
+  }
+
+  browserView = null;
+  attachedWindow = null;
+  browserVisible = false;
+}
+
+function createBrowserView(mainWindow, websites = []) {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+
+  cleanup(mainWindow);
+
+  allowedDomains = (websites || [])
+    .map(normalizeUrl)
+    .map(extractHostname)
+    .filter(Boolean);
+
+  browserView = new BrowserView({
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  attachToWindow(mainWindow);
+
+  resizeHandler = () => applyBounds(mainWindow);
+  mainWindow.on("resize", resizeHandler);
+
+  browserView.webContents.on("will-navigate", (event, url) => {
+    if (!isAllowed(url)) {
+      event.preventDefault();
+      console.log("Blocked navigation to", url);
+    }
+  });
+
+  browserView.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isAllowed(url)) {
+      console.log("Blocked popup to", url);
+      return { action: "deny" };
+    }
+
+    browserView.webContents.loadURL(normalizeUrl(url));
+    return { action: "deny" };
+  });
+
+  browserView.webContents.on("context-menu", (e) => e.preventDefault());
+
+  browserView.webContents.on("did-fail-load", (_event, code, desc, url) => {
+    console.log("BrowserView failed:", code, desc, url);
+  });
+
+  browserView.webContents.on("dom-ready", () => {
+    applyBounds(mainWindow);
+  });
+
+  applyBounds(mainWindow);
+
+  if (websites.length > 0) {
+    const firstUrl = normalizeUrl(websites[0]);
+    browserView.webContents.loadURL(firstUrl).catch((e) => {
+      console.log("Initial load failed:", e.message);
+    });
+  } else {
+    browserView.webContents.loadURL(
+      "data:text/html;charset=utf-8," +
+        encodeURIComponent(`
+          <html>
+            <body style="margin:0;background:#0f1117;color:#fff;font-family:Arial, sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
+              <div>No allowed website configured</div>
+            </body>
+          </html>
+        `)
+    );
+  }
+
+  return browserView;
+}
+
+function navigateTo(url) {
+  if (!hasLiveView()) return false;
+
+  const normalized = normalizeUrl(url);
+  if (!isAllowed(normalized)) {
+    console.log("Blocked manual navigation to", normalized);
+    return false;
+  }
+
+  browserView.webContents.loadURL(normalized).catch((e) => {
+    console.log("Navigation failed:", e.message);
+  });
+
+  return true;
+}
+
+function updateBrowserBounds(mainWindow, layout = {}) {
+  currentLayout = {
+    top: Number.isFinite(layout.top) ? layout.top : currentLayout.top,
+    bottom: Number.isFinite(layout.bottom) ? layout.bottom : currentLayout.bottom,
+    left: Number.isFinite(layout.left) ? layout.left : currentLayout.left,
+    right: Number.isFinite(layout.right) ? layout.right : currentLayout.right,
+  };
+
+  applyBounds(mainWindow);
+  return true;
+}
+
+function showBrowser(mainWindow) {
+  if (!hasLiveView()) return false;
+  return attachToWindow(mainWindow);
+}
+
+function hideBrowser(mainWindow) {
+  if (!hasLiveView()) return false;
+  return detachFromWindow(mainWindow);
+}
+
+function focusBrowser(mainWindow) {
+  if (!hasLiveView()) return false;
+
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.focus();
+      if (!browserVisible) {
+        attachToWindow(mainWindow);
+      }
+    }
+    browserView.webContents.focus();
+    return true;
+  } catch (e) {
+    console.log("focusBrowser failed:", e.message);
+    return false;
+  }
+}
+
+function restoreBrowser(mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+
+  try {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+
+    if (hasLiveView() && !browserVisible) {
+      attachToWindow(mainWindow);
+    }
+
+    applyBounds(mainWindow);
+    return true;
+  } catch (e) {
+    console.log("restoreBrowser failed:", e.message);
+    return false;
+  }
+}
+
+function destroyBrowserView(mainWindow) {
+  cleanup(mainWindow);
+  allowedDomains = [];
+}
+
+module.exports = {
+  createBrowserView,
+  destroyBrowserView,
+  navigateTo,
+  updateBrowserBounds,
+  showBrowser,
+  hideBrowser,
+  focusBrowser,
+  restoreBrowser,
+};
+
+
+

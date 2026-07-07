@@ -11,26 +11,27 @@ router = APIRouter(prefix="/api/requests", tags=["Requests"])
 
 
 class CreateRequestBody(BaseModel):
-    assessment_id: str
-    exam_id: str
+    assessmentid: str
+    examid: str
     type: str
     reason: str
 
 
 class ReviewBody(BaseModel):
     decision: str
+    reason: str | None = None
 
 
 def _serialize(document: dict) -> dict:
     return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
 
 
-async def _ensure_exam_access(db, exam_id: str, current_user: dict):
-    exam = await db.exams.find_one({"exam_id": exam_id})
+async def _ensure_exam_access(db, examid: str, current_user: dict):
+    exam = await db.exams.find_one({"examid": examid})
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    if current_user["role"] == "Examiner" and exam.get("examiner_id") != current_user["user_id"]:
+    if current_user["role"] == "Examiner" and exam.get("examinerid") != current_user["userid"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
     return exam
@@ -43,90 +44,117 @@ async def submit(
 ):
     db = get_db()
 
-    assessment = await db.assessments.find_one({
-        "assessment_id": req.assessment_id,
-        "exam_id": req.exam_id,
-        "candidate_id": current_user["user_id"],
-    })
+    assessment = await db.assessments.find_one(
+        {
+            "assessmentid": req.assessmentid,
+            "examid": req.examid,
+            "candidateid": current_user["userid"],
+        }
+    )
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
 
     request_type = req.type.strip().upper()
     reason = req.reason.strip()
 
-    existing = await db.requests.find_one({
-        "assessment_id": req.assessment_id,
-        "candidate_id": current_user["user_id"],
-        "type": request_type,
-        "status": "PENDING",
-    })
-    if existing:
-        raise HTTPException(status_code=409, detail="A pending request already exists")
+    if request_type not in {"REENTRY", "LATEENTRY"}:
+        raise HTTPException(status_code=400, detail="Invalid request type")
 
     if not reason:
         raise HTTPException(status_code=400, detail="Reason is required")
+
+    existing = await db.requests.find_one(
+        {
+            "assessmentid": req.assessmentid,
+            "candidateid": current_user["userid"],
+            "type": request_type,
+            "status": "PENDING",
+        }
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="A pending request already exists")
 
     request_id = f"REQ-{uuid.uuid4().hex[:8].upper()}"
     now = datetime.utcnow()
 
     request_doc = {
-        "request_id": request_id,
-        "assessment_id": req.assessment_id,
-        "exam_id": req.exam_id,
-        "candidate_id": current_user["user_id"],
+        "requestid": request_id,
+        "assessmentid": req.assessmentid,
+        "examid": req.examid,
+        "candidateid": current_user["userid"],
         "type": request_type,
         "reason": reason,
         "status": "PENDING",
-        "reviewed_by": None,
-        "reviewed_at": None,
-        "created_at": now,
+        "reviewedby": None,
+        "reviewedat": None,
+        "reviewreason": None,
+        "createdat": now,
     }
 
     await db.requests.insert_one(request_doc)
 
-    await db.audit_logs.insert_one({
-        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-        "user_id": current_user["user_id"],
-        "exam_id": req.exam_id,
-        "assessment_id": req.assessment_id,
-        "action": "CreateRequest",
-        "reason": f"{request_doc['type']} request submitted",
-        "timestamp": now,
-    })
+    requested_status = "REENTRYREQUESTED" if request_type == "REENTRY" else "LATEENTRYREQUESTED"
+    await db.assessments.update_one(
+        {"assessmentid": req.assessmentid},
+        {
+            "$set": {
+                "status": requested_status,
+                "updatedat": now,
+            }
+        },
+    )
+
+    await db.auditlogs.insert_one(
+        {
+            "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+            "userid": current_user["userid"],
+            "examid": req.examid,
+            "assessmentid": req.assessmentid,
+            "action": "CreateRequest",
+            "reason": f"{request_type} request submitted",
+            "timestamp": now,
+        }
+    )
 
     return _serialize(request_doc)
 
 
-@router.patch("/{request_id}/review")
+@router.patch("/{requestid}/review")
 async def review(
-    request_id: str,
+    requestid: str,
     req: ReviewBody,
     current_user=Depends(require_role("Examiner", "Admin")),
 ):
     db = get_db()
 
     decision = req.decision.strip().upper()
+    review_reason = (req.reason or "").strip()
+
     if decision not in {"APPROVED", "REJECTED"}:
         raise HTTPException(status_code=400, detail="Decision must be APPROVED or REJECTED")
 
-    request_doc = await db.requests.find_one({"request_id": request_id})
+    if decision == "REJECTED" and not review_reason:
+        raise HTTPException(status_code=400, detail="Reason is required when rejecting a request")
+
+    request_doc = await db.requests.find_one({"requestid": requestid})
     if not request_doc:
         raise HTTPException(status_code=404, detail="Request not found")
 
     if request_doc.get("status") != "PENDING":
         raise HTTPException(status_code=400, detail="Request has already been reviewed")
 
-    await _ensure_exam_access(db, request_doc["exam_id"], current_user)
+    await _ensure_exam_access(db, request_doc["examid"], current_user)
 
     now = datetime.utcnow()
 
     await db.requests.update_one(
-        {"request_id": request_id},
+        {"requestid": requestid},
         {
             "$set": {
                 "status": decision,
-                "reviewed_by": current_user["user_id"],
-                "reviewed_at": now,
+                "reviewedby": current_user["userid"],
+                "reviewedat": now,
+                "reviewreason": review_reason if review_reason else None,
             }
         },
     )
@@ -136,49 +164,62 @@ async def review(
         assessment_status = "LATEENTRY_APPROVED" if decision == "APPROVED" else "LATEENTRY_REJECTED"
 
     await db.assessments.update_one(
-        {"assessment_id": request_doc["assessment_id"]},
-        {"$set": {"status": assessment_status, "updated_at": now}},
+        {"assessmentid": request_doc["assessmentid"]},
+        {"$set": {"status": assessment_status, "updatedat": now}},
     )
 
-    await db.audit_logs.insert_one({
-        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-        "user_id": current_user["user_id"],
-        "exam_id": request_doc["exam_id"],
-        "assessment_id": request_doc["assessment_id"],
-        "action": "ReviewRequest",
-        "reason": f"{request_doc.get('type', 'REQUEST')} {decision}",
-        "timestamp": now,
-    })
+    await db.auditlogs.insert_one(
+        {
+            "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+            "userid": current_user["userid"],
+            "examid": request_doc["examid"],
+            "assessmentid": request_doc["assessmentid"],
+            "action": "ReviewRequest",
+            "reason": review_reason or f"{request_doc.get('type', 'REQUEST')} {decision}",
+            "timestamp": now,
+        }
+    )
 
-    return {"message": f"Request {decision.lower()}"}
+    return {
+        "message": f"Request {decision.lower()}",
+        "requestid": requestid,
+        "status": decision,
+        "reviewreason": review_reason if review_reason else None,
+    }
 
 
-@router.get("/exam/{exam_id}/pending")
+@router.get("/exam/{examid}/pending")
 async def pending(
-    exam_id: str,
+    examid: str,
     current_user=Depends(require_role("Examiner", "Admin")),
 ):
     db = get_db()
-    await _ensure_exam_access(db, exam_id, current_user)
+    await _ensure_exam_access(db, examid, current_user)
 
-    requests = await db.requests.find(
-        {"exam_id": exam_id, "status": "PENDING"}
-    ).sort("created_at", -1).to_list(None)
+    requests = (
+        await db.requests.find({"examid": examid, "status": "PENDING"})
+        .sort("createdat", -1)
+        .to_list(None)
+    )
 
     result = []
     for request in requests:
-        user = await db.users.find_one({"user_id": request.get("candidate_id")})
-        result.append({
-            "request_id": request.get("request_id"),
-            "assessment_id": request.get("assessment_id"),
-            "exam_id": request.get("exam_id"),
-            "candidate_id": request.get("candidate_id"),
-            "candidate_name": user["name"] if user else request.get("candidate_id"),
-            "candidate_email": user["email"] if user else "",
-            "type": request.get("type"),
-            "reason": request.get("reason"),
-            "status": request.get("status"),
-            "created_at": request.get("created_at"),
-        })
+        user = await db.users.find_one({"userid": request.get("candidateid")})
+        result.append(
+            {
+                "requestid": request.get("requestid"),
+                "assessmentid": request.get("assessmentid"),
+                "examid": request.get("examid"),
+                "candidateid": request.get("candidateid"),
+                "candidatename": user["name"] if user else request.get("candidateid"),
+                "candidateemail": user["email"] if user else "",
+                "type": request.get("type"),
+                "reason": request.get("reason"),
+                "status": request.get("status"),
+                "createdat": request.get("createdat"),
+                "reviewedat": request.get("reviewedat"),
+                "reviewreason": request.get("reviewreason"),
+            }
+        )
 
     return result

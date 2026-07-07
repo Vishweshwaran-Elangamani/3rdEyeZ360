@@ -32,8 +32,8 @@ function CheckItem({ label, status }) {
       ? label === "Camera & Microphone"
         ? "Allow camera and microphone access"
         : label === "Internet Connection"
-        ? "Check backend/server connection"
-        : "Keep your face visible in the frame"
+          ? "Check backend/server connection"
+          : "Keep your face visible in the frame"
       : "";
 
   return (
@@ -183,6 +183,7 @@ export default function PreCheck({ exam, onPass, onLogout }) {
   }, [startChecks, stopMedia]);
 
   const allPassed = Object.values(checks).every((v) => v === true);
+  const hasAnyFailure = Object.values(checks).some((v) => v === false);
 
   return (
     <div
@@ -251,6 +252,23 @@ export default function PreCheck({ exam, onPass, onLogout }) {
           <p style={{ color: "#8b90a0", fontSize: 13, marginBottom: 18 }}>
             We need to verify your setup before the exam starts.
           </p>
+
+          <div
+            style={{
+              background: "#10243a",
+              border: "1px solid #4f8ef7",
+              borderRadius: 10,
+              padding: "12px 14px",
+              fontSize: 12,
+              color: "#b8d4ff",
+              marginBottom: 18,
+              lineHeight: 1.6,
+            }}
+          >
+            Development mode: checks are visible for review, but they will not block
+            the flow. Strict enforcement can be turned back on after routing and exam
+            flow are finalized.
+          </div>
 
           {exam && (
             <div
@@ -357,6 +375,24 @@ export default function PreCheck({ exam, onPass, onLogout }) {
             </p>
           )}
 
+          {!running && hasAnyFailure && (
+            <div
+              style={{
+                background: "#2a2010",
+                border: "1px solid #f5a623",
+                borderRadius: 10,
+                padding: "12px 14px",
+                fontSize: 12,
+                color: "#f5c46b",
+                marginBottom: 14,
+                lineHeight: 1.6,
+              }}
+            >
+              Some checks did not pass. You can still continue for flow testing, or
+              retry checks now.
+            </div>
+          )}
+
           {!running && !allPassed && (
             <button
               onClick={startChecks}
@@ -369,14 +405,13 @@ export default function PreCheck({ exam, onPass, onLogout }) {
 
           <button
             onClick={onPass}
-            disabled={!allPassed}
             className="btn btn-primary"
             style={{
               width: "100%",
               padding: "12px 0",
               fontSize: 15,
-              opacity: allPassed ? 1 : 0.4,
-              cursor: allPassed ? "pointer" : "not-allowed",
+              opacity: 1,
+              cursor: "pointer",
             }}
           >
             Continue →

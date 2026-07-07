@@ -15,13 +15,23 @@ export default function Login({ onLogin }) {
   const resetExam = useExamStore((s) => s.reset);
 
   const handleLogin = async () => {
+    if (loading) return;
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      setError("Email and password are required");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
       const res = await axios.post(`${API}/api/auth/login`, {
-        email: email.trim(),
-        password,
+        email: cleanEmail,
+        password: cleanPassword,
       });
 
       resetExam();
@@ -32,12 +42,17 @@ export default function Login({ onLogin }) {
         res.data.refresh_token
       );
 
-      onLogin(res.data.user);
+      onLogin?.(res.data.user);
     } catch (e) {
       setError(e?.response?.data?.detail || "Invalid email or password");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    handleLogin();
   };
 
   return (
@@ -50,7 +65,8 @@ export default function Login({ onLogin }) {
         background: "#0f1117",
       }}
     >
-      <div
+      <form
+        onSubmit={handleSubmit}
         style={{
           background: "#1a1d27",
           border: "1px solid #2e3347",
@@ -76,7 +92,7 @@ export default function Login({ onLogin }) {
           >
             👁
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#e8eaf0" }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#e8eaf0", margin: 0 }}>
             3rdEyeZ360
           </h1>
           <p style={{ color: "#8b90a0", fontSize: 13, marginTop: 4 }}>
@@ -117,7 +133,8 @@ export default function Login({ onLogin }) {
               onChange={(e) => setEmail(e.target.value)}
               type="email"
               placeholder="you@example.com"
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              autoComplete="username"
+              disabled={loading}
             />
           </div>
 
@@ -137,12 +154,13 @@ export default function Login({ onLogin }) {
               onChange={(e) => setPassword(e.target.value)}
               type="password"
               placeholder="••••••••"
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              autoComplete="current-password"
+              disabled={loading}
             />
           </div>
 
           <button
-            onClick={handleLogin}
+            type="submit"
             disabled={loading}
             className="btn btn-primary"
             style={{ width: "100%", marginTop: 8, padding: "11px 0", fontSize: 15 }}
@@ -150,7 +168,7 @@ export default function Login({ onLogin }) {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from config.database import get_db
 from middleware.auth import require_role
-from utils.id_generator import generate_exam_id, generate_assessment_id
+from utils.id_generator import generate_assessment_id
 
 router = APIRouter(prefix="/api/exams", tags=["Exams"])
 
@@ -31,13 +31,104 @@ def _get_assessment_query(exam_id: str, candidate_id: str):
     }
 
 
+def _normalize_status(value, default=""):
+    return str(value or default).strip().upper()
+
+
+def _exam_payload(exam: dict) -> dict:
+    exam_data = _serialize(exam)
+    exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
+
+    exam_data["status"] = exam_status
+    exam_data["examstatus"] = exam_status
+    exam_data["exam_status"] = exam_status
+
+    exam_data["examid"] = exam.get("exam_id") or exam.get("examid")
+    exam_data["exam_id"] = exam.get("exam_id") or exam.get("examid")
+    exam_data["examinerid"] = exam.get("examiner_id") or exam.get("examinerid")
+    exam_data["examiner_id"] = exam.get("examiner_id") or exam.get("examinerid")
+    exam_data["name"] = exam.get("name") or exam.get("examname") or ""
+    exam_data["date"] = exam.get("date") or exam.get("examdate") or ""
+    exam_data["starttime"] = exam.get("starttime") or exam.get("start_time") or exam.get("examstarttime") or ""
+    exam_data["endtime"] = exam.get("endtime") or exam.get("end_time") or exam.get("examendtime") or ""
+    exam_data["durationminutes"] = exam.get("durationminutes", exam.get("duration_minutes", 0))
+    exam_data["allowedwebsites"] = exam.get("allowedwebsites", exam.get("allowed_websites", [])) or []
+    exam_data["allowedapplications"] = exam.get("allowedapplications", exam.get("allowed_applications", [])) or []
+
+    return exam_data
+
+
+def _assessment_payload(assessment: dict) -> dict:
+    assessment_data = _serialize(assessment)
+    assessment_status = _normalize_status(
+        assessment.get("status") or assessment.get("assessmentstatus")
+    )
+    final_status = _normalize_status(
+        assessment.get("final_status") or assessment.get("finalstatus")
+    )
+
+    assessment_data["status"] = assessment_status
+    assessment_data["assessmentstatus"] = assessment_status
+    assessment_data["assessment_status"] = assessment_status
+    assessment_data["finalstatus"] = final_status
+    assessment_data["final_status"] = final_status
+
+    assessment_data["assessmentid"] = assessment.get("assessment_id") or assessment.get("assessmentid")
+    assessment_data["assessment_id"] = assessment.get("assessment_id") or assessment.get("assessmentid")
+    assessment_data["examid"] = assessment.get("exam_id") or assessment.get("examid")
+    assessment_data["exam_id"] = assessment.get("exam_id") or assessment.get("examid")
+    assessment_data["candidateid"] = assessment.get("candidate_id") or assessment.get("candidateid")
+    assessment_data["candidate_id"] = assessment.get("candidate_id") or assessment.get("candidateid")
+    assessment_data["examinerid"] = assessment.get("examiner_id") or assessment.get("examinerid")
+    assessment_data["examiner_id"] = assessment.get("examiner_id") or assessment.get("examinerid")
+    assessment_data["allowedwebsites"] = assessment.get("allowedwebsites", assessment.get("allowed_websites", [])) or []
+    assessment_data["allowedapplications"] = assessment.get("allowedapplications", assessment.get("allowed_applications", [])) or []
+
+    return assessment_data
+
+
+def _merge_exam_assessment(exam: dict, assessment: dict) -> dict:
+    exam_data = _exam_payload(exam)
+    assessment_data = _assessment_payload(assessment)
+
+    merged = {
+        **exam_data,
+        **assessment_data,
+        "examid": exam_data.get("examid"),
+        "exam_id": exam_data.get("exam_id"),
+        "assessmentid": assessment_data.get("assessmentid"),
+        "assessment_id": assessment_data.get("assessment_id"),
+        "candidateid": assessment_data.get("candidateid"),
+        "candidate_id": assessment_data.get("candidate_id"),
+        "examinerid": assessment_data.get("examinerid") or exam_data.get("examinerid"),
+        "examiner_id": assessment_data.get("examiner_id") or exam_data.get("examiner_id"),
+        "name": exam_data.get("name"),
+        "description": exam_data.get("description", ""),
+        "date": exam_data.get("date"),
+        "starttime": exam_data.get("starttime"),
+        "endtime": exam_data.get("endtime"),
+        "durationminutes": exam_data.get("durationminutes", 0),
+        "allowedwebsites": assessment_data.get("allowedwebsites") or exam_data.get("allowedwebsites") or [],
+        "allowedapplications": assessment_data.get("allowedapplications") or exam_data.get("allowedapplications") or [],
+        "examstatus": exam_data.get("examstatus", ""),
+        "exam_status": exam_data.get("exam_status", ""),
+        "assessmentstatus": assessment_data.get("assessmentstatus", ""),
+        "assessment_status": assessment_data.get("assessment_status", ""),
+        "finalstatus": assessment_data.get("finalstatus", ""),
+        "final_status": assessment_data.get("final_status", ""),
+        "status": assessment_data.get("assessmentstatus", ""),
+    }
+
+    return merged
+
+
 async def _ensure_exam_access(db, exam_id: str, current_user: dict):
     exam = await db.exams.find_one(_get_exam_query(exam_id))
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    examiner_id = exam.get("examiner_id") or exam.get("examinerid")
     current_user_id = current_user.get("user_id") or current_user.get("userid")
+    examiner_id = exam.get("examiner_id") or exam.get("examinerid")
 
     if current_user["role"] == "Examiner" and examiner_id != current_user_id:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -45,125 +136,50 @@ async def _ensure_exam_access(db, exam_id: str, current_user: dict):
     return exam
 
 
-@router.get("/candidate/upcoming")
-async def candidate_upcoming(
-    current_user=Depends(require_role("Candidate"))
-):
-    db = get_db()
-    candidate_id = current_user.get("user_id") or current_user.get("userid")
-
-    assessments = await db.assessments.find({
-        "$or": [
-            {"candidate_id": candidate_id},
-            {"candidateid": candidate_id},
-        ]
-    }).sort("created_at", -1).to_list(None)
-
-    result = []
-    for assessment in assessments:
-        exam_id = assessment.get("exam_id") or assessment.get("examid")
-        exam = await db.exams.find_one(_get_exam_query(exam_id))
-        if not exam:
-            continue
-
-        result.append({
-            "assessment_id": assessment.get("assessment_id") or assessment.get("assessmentid"),
-            "exam_id": exam.get("exam_id") or exam.get("examid"),
-            "name": exam.get("name", ""),
-            "description": exam.get("description", ""),
-            "date": exam.get("date", ""),
-            "start_time": exam.get("start_time") or exam.get("starttime", ""),
-            "end_time": exam.get("end_time") or exam.get("endtime", ""),
-            "duration_minutes": exam.get("duration_minutes") or exam.get("durationminutes", 120),
-            "status": assessment.get("status", "ASSIGNED"),
-            "exam_status": exam.get("status", "Draft"),
-            "instructions": exam.get("instructions", ""),
-            "allowed_websites": exam.get("allowed_websites") or exam.get("allowedwebsites", []),
-            "allowed_applications": exam.get("allowed_applications") or exam.get("allowedapplications", []),
-            "violation_threshold": exam.get("violation_threshold") or exam.get("violationthreshold", 10),
-        })
-
-    return result
-
-
 @router.get("")
-async def list_exams(
-    current_user=Depends(require_role("Examiner", "Admin"))
-):
+async def get_my_exams(current_user=Depends(require_role("Examiner", "Admin"))):
     db = get_db()
-    current_user_id = current_user.get("user_id") or current_user.get("userid")
 
-    query = {}
-    if current_user["role"] == "Examiner":
-        query = {
+    if current_user["role"] == "Admin":
+        exams = await db.exams.find({}).sort("created_at", -1).to_list(None)
+    else:
+        current_user_id = current_user.get("user_id") or current_user.get("userid")
+        exams = await db.exams.find({
             "$or": [
                 {"examiner_id": current_user_id},
                 {"examinerid": current_user_id},
             ]
-        }
+        }).sort("created_at", -1).to_list(None)
 
-    exams = await db.exams.find(query).sort("date", -1).to_list(None)
-    return [_serialize(exam) for exam in exams]
+    return [_exam_payload(exam) for exam in exams]
 
 
-@router.post("")
-async def create_exam(
-    body: dict,
-    current_user=Depends(require_role("Examiner", "Admin"))
-):
+@router.get("/candidate/upcoming")
+async def get_candidate_upcoming(current_user=Depends(require_role("Candidate"))):
     db = get_db()
-
-    name = (body.get("name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Exam name is required")
-
-    exam_id = await generate_exam_id()
-    now = datetime.utcnow()
     current_user_id = current_user.get("user_id") or current_user.get("userid")
-    violation_threshold = body.get("violation_threshold", body.get("threshold", 10))
 
-    exam = {
-        "exam_id": exam_id,
-        "examid": exam_id,
-        "examiner_id": current_user_id,
-        "examinerid": current_user_id,
-        "name": name,
-        "description": (body.get("description") or "").strip(),
-        "date": body.get("date", ""),
-        "start_time": body.get("start_time", ""),
-        "starttime": body.get("start_time", ""),
-        "end_time": body.get("end_time", ""),
-        "endtime": body.get("end_time", ""),
-        "duration_minutes": int(body.get("duration_minutes", 120)),
-        "durationminutes": int(body.get("duration_minutes", 120)),
-        "violation_threshold": int(violation_threshold),
-        "violationthreshold": int(violation_threshold),
-        "instructions": body.get("instructions", ""),
-        "allowed_websites": body.get("allowed_websites", []) or [],
-        "allowedwebsites": body.get("allowed_websites", []) or [],
-        "allowed_applications": body.get("allowed_applications", []) or [],
-        "allowedapplications": body.get("allowed_applications", []) or [],
-        "status": body.get("status", "Draft"),
-        "created_at": now,
-        "createdat": now,
-        "updated_at": now,
-        "updatedat": now,
-    }
+    assessments = await db.assessments.find({
+        "$or": [
+            {"candidate_id": current_user_id},
+            {"candidateid": current_user_id},
+        ]
+    }).sort("created_at", -1).to_list(None)
 
-    await db.exams.insert_one(exam)
+    result = []
 
-    await db.audit_logs.insert_one({
-        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-        "user_id": current_user_id,
-        "userid": current_user_id,
-        "exam_id": exam_id,
-        "examid": exam_id,
-        "action": "CreateExam",
-        "reason": f"Created exam: {name}",
-        "timestamp": now,
-    })
+    for assessment in assessments:
+        exam_id = assessment.get("exam_id") or assessment.get("examid")
+        if not exam_id:
+            continue
 
-    return _serialize(exam)
+        exam = await db.exams.find_one(_get_exam_query(exam_id))
+        if not exam:
+            continue
+
+        result.append(_merge_exam_assessment(exam, assessment))
+
+    return result
 
 
 @router.get("/{exam_id}")
@@ -192,7 +208,7 @@ async def get_exam(
         if not assignment:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    return _serialize(exam)
+    return _exam_payload(exam)
 
 
 @router.patch("/{exam_id}/start")
@@ -210,25 +226,8 @@ async def start_exam(
         _get_exam_query(exam_id),
         {
             "$set": {
-                "status": "Running",
-                "started_at": now,
-                "startedat": now,
-                "updated_at": now,
-                "updatedat": now,
-            }
-        }
-    )
-
-    await db.assessments.update_many(
-        {
-            "$or": [
-                {"exam_id": exam_id, "status": {"$in": ["READY", "ASSIGNED", "AVAILABLE"]}},
-                {"examid": exam_id, "status": {"$in": ["READY", "ASSIGNED", "AVAILABLE"]}},
-            ]
-        },
-        {
-            "$set": {
-                "status": "ACTIVE",
+                "status": "RUNNING",
+                "examstatus": "RUNNING",
                 "started_at": now,
                 "startedat": now,
                 "updated_at": now,
@@ -248,7 +247,7 @@ async def start_exam(
         "timestamp": now,
     })
 
-    return {"message": "Exam started", "exam_id": exam_id}
+    return {"message": "Exam started", "exam_id": exam_id, "examstatus": "RUNNING"}
 
 
 @router.patch("/{exam_id}/end")
@@ -266,7 +265,8 @@ async def end_exam(
         _get_exam_query(exam_id),
         {
             "$set": {
-                "status": "Completed",
+                "status": "COMPLETED",
+                "examstatus": "COMPLETED",
                 "ended_at": now,
                 "endedat": now,
                 "updated_at": now,
@@ -297,6 +297,7 @@ async def end_exam(
         {
             "$set": {
                 "status": "TERMINATED",
+                "assessmentstatus": "TERMINATED",
                 "final_status": "TERMINATED",
                 "finalstatus": "TERMINATED",
                 "exit_time": now,
@@ -318,7 +319,7 @@ async def end_exam(
         "timestamp": now,
     })
 
-    return {"message": "Exam ended", "exam_id": exam_id}
+    return {"message": "Exam ended", "exam_id": exam_id, "examstatus": "COMPLETED"}
 
 
 @router.get("/{exam_id}/assessments")
@@ -343,10 +344,13 @@ async def get_exam_assessments(
 
         result.append({
             "assessment_id": assessment.get("assessment_id") or assessment.get("assessmentid"),
+            "assessmentid": assessment.get("assessment_id") or assessment.get("assessmentid"),
             "candidate_id": candidate_id,
+            "candidateid": candidate_id,
             "candidate_name": user.get("name") if user else candidate_id,
             "candidate_email": user.get("email") if user else "",
-            "status": assessment.get("status", "ASSIGNED"),
+            "status": _normalize_status(assessment.get("status"), "ASSIGNED"),
+            "assessmentstatus": _normalize_status(assessment.get("status"), "ASSIGNED"),
             "violation_count": assessment.get("violation_count", assessment.get("violationcount", 0)),
             "risk_score": assessment.get("risk_score", assessment.get("riskscore", 0)),
             "credibility_score": assessment.get("credibility_score", assessment.get("credibilityscore", 100)),
@@ -393,6 +397,7 @@ async def assign_candidate(
         "examiner_id": current_user_id,
         "examinerid": current_user_id,
         "status": "ASSIGNED",
+        "assessmentstatus": "ASSIGNED",
         "violation_count": 0,
         "violationcount": 0,
         "warning_count": 0,
@@ -437,51 +442,3 @@ async def assign_candidate(
     })
 
     return {"message": "Candidate assigned", "assessment_id": assessment_id}
-
-
-@router.delete("/{exam_id}/assign/{candidate_id}")
-async def remove_candidate(
-    exam_id: str,
-    candidate_id: str,
-    current_user=Depends(require_role("Examiner", "Admin"))
-):
-    db = get_db()
-    current_user_id = current_user.get("user_id") or current_user.get("userid")
-    await _ensure_exam_access(db, exam_id, current_user)
-
-    assessment = await db.assessments.find_one(_get_assessment_query(exam_id, candidate_id))
-
-    if not assessment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
-
-    status = assessment.get("status")
-    if status not in ["ASSIGNED", "AVAILABLE"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Candidate cannot be removed after assessment has started"
-        )
-
-    assessment_id = assessment.get("assessment_id") or assessment.get("assessmentid")
-
-    await db.assessments.delete_one({"_id": assessment["_id"]})
-
-    now = datetime.utcnow()
-
-    await db.audit_logs.insert_one({
-        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-        "user_id": current_user_id,
-        "userid": current_user_id,
-        "exam_id": exam_id,
-        "examid": exam_id,
-        "assessment_id": assessment_id,
-        "assessmentid": assessment_id,
-        "action": "RemoveCandidate",
-        "reason": f"Removed candidate {candidate_id}",
-        "timestamp": now,
-    })
-
-    return {
-        "message": "Candidate removed from exam",
-        "candidate_id": candidate_id,
-        "exam_id": exam_id,
-    }

@@ -122,34 +122,17 @@ function formatApiError(error, fallback = "Failed to submit permission request."
 
 function isApprovedStatus(status) {
   const s = toUpper(status);
-  return [
-    "REENTRYAPPROVED",
-    "REENTRY_APPROVED",
-    "LATEENTRYAPPROVED",
-    "LATEENTRY_APPROVED",
-  ].includes(s);
+  return ["REENTRYAPPROVED", "REENTRY_APPROVED", "LATEENTRYAPPROVED", "LATEENTRY_APPROVED"].includes(s);
 }
 
 function isPendingRequestStatus(status) {
   const s = toUpper(status);
-  return [
-    "REENTRYREQUESTED",
-    "REENTRY_REQUESTED",
-    "LATEENTRYREQUESTED",
-    "LATEENTRY_REQUESTED",
-    "PENDING",
-  ].includes(s);
+  return ["REENTRYREQUESTED", "REENTRY_REQUESTED", "LATEENTRYREQUESTED", "LATEENTRY_REQUESTED", "PENDING"].includes(s);
 }
 
 function isRejectedStatus(status) {
   const s = toUpper(status);
-  return [
-    "REENTRYREJECTED",
-    "REENTRY_REJECTED",
-    "LATEENTRYREJECTED",
-    "LATEENTRY_REJECTED",
-    "REJECTED",
-  ].includes(s);
+  return ["REENTRYREJECTED", "REENTRY_REJECTED", "LATEENTRYREJECTED", "LATEENTRY_REJECTED", "REJECTED"].includes(s);
 }
 
 function isExamRunningStatus(examStatus) {
@@ -367,15 +350,13 @@ function RequestModal({
             Request Permission
           </div>
           <div style={{ fontSize: 13, color: "#8b90a0", lineHeight: 1.6 }}>
-            The exam has already started for <span style={{ color: "#c8cad0" }}>{exam.name}</span>.
-            Enter your reason to request permission from the examiner.
+            The exam has already started for <span style={{ color: "#c8cad0" }}>{exam.name}</span>. Enter your reason
+            to request permission from the examiner.
           </div>
         </div>
 
         <div style={{ padding: 20 }}>
-          <label style={{ display: "block", fontSize: 12, color: "#8b90a0", marginBottom: 8 }}>
-            Reason
-          </label>
+          <label style={{ display: "block", fontSize: 12, color: "#8b90a0", marginBottom: 8 }}>Reason</label>
 
           <textarea
             value={reason}
@@ -422,12 +403,7 @@ function RequestModal({
             borderTop: "1px solid #2e3347",
           }}
         >
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="btn btn-ghost"
-            style={{ padding: "10px 16px", fontSize: 13 }}
-          >
+          <button onClick={onClose} disabled={submitting} className="btn btn-ghost" style={{ padding: "10px 16px", fontSize: 13 }}>
             Cancel
           </button>
 
@@ -449,7 +425,7 @@ function RequestModal({
   );
 }
 
-export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessments }) {
+export default function CandidateDashboard({ onEnterExam, onLogout }) {
   const { user, accessToken } = useAuthStore();
 
   const [assessments, setAssessments] = useState([]);
@@ -465,12 +441,8 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
   const [submitRequestError, setSubmitRequestError] = useState("");
 
   const firstLoadResolvedRef = useRef(false);
-  const redirectedForEmptyRef = useRef(false);
 
-  const headers = useMemo(
-    () => ({ Authorization: `Bearer ${accessToken}` }),
-    [accessToken]
-  );
+  const headers = useMemo(() => ({ Authorization: `Bearer ${accessToken}` }), [accessToken]);
 
   const fetchAssessments = useCallback(
     async (silent = false) => {
@@ -492,21 +464,6 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
           ? res.data.map(normalizeItem).filter(Boolean).filter((item) => item.assessmentid || item.examid)
           : [];
 
-        if (rows.length === 0) {
-          setAssessments([]);
-          setPendingRequestsByAssessment({});
-          setLastUpdated(new Date());
-          setLoading(false);
-          setRefreshing(false);
-
-          if (!redirectedForEmptyRef.current) {
-            redirectedForEmptyRef.current = true;
-            await onNoAssessments?.();
-          }
-          return;
-        }
-
-        redirectedForEmptyRef.current = false;
         setAssessments(rows);
 
         setPendingRequestsByAssessment((prev) => {
@@ -548,7 +505,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
         setRefreshing(false);
       }
     },
-    [accessToken, headers, onNoAssessments, user]
+    [accessToken, headers, user]
   );
 
   useEffect(() => {
@@ -562,9 +519,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
 
   const allottedCount = assessments.length;
 
-  const completedCount = assessments.filter(
-    (a) => toUpper(a.status) === "COMPLETED"
-  ).length;
+  const completedCount = assessments.filter((a) => toUpper(a.status) === "COMPLETED").length;
 
   const activeCount = assessments.filter((a) => {
     const pending = pendingRequestsByAssessment[a.assessmentid];
@@ -610,8 +565,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
       const payload = {
         assessmentid: selectedExamForRequest.assessmentid,
         examid: selectedExamForRequest.examid,
-        candidateid:
-          selectedExamForRequest.candidateid ?? user?.userid ?? user?.user_id ?? null,
+        candidateid: selectedExamForRequest.candidateid ?? user?.userid ?? user?.user_id ?? null,
         type: requestType,
         reason,
       };
@@ -627,8 +581,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
             requestid: `created-${selectedExamForRequest.assessmentid}`,
             assessmentid: selectedExamForRequest.assessmentid,
             examid: selectedExamForRequest.examid,
-            candidateid:
-              selectedExamForRequest.candidateid ?? user?.userid ?? user?.user_id ?? null,
+            candidateid: selectedExamForRequest.candidateid ?? user?.userid ?? user?.user_id ?? null,
             type: requestType,
             status: "PENDING",
             reason,
@@ -702,8 +655,8 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
             Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
           </h2>
           <p style={{ fontSize: 14, color: "#8b90a0", margin: 0 }}>
-            Enter before the exam starts to complete precheck and wait inside the hall. If you miss
-            the start, request permission from the examiner.
+            Enter before the exam starts to complete precheck and wait inside the hall. If you miss the start, request
+            permission from the examiner.
           </p>
         </div>
 
@@ -731,20 +684,14 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
             flexWrap: "wrap",
           }}
         >
-          <h3 style={{ fontSize: 18, fontWeight: 700, color: "#e8eaf0", margin: 0 }}>
-            Your Assessments
-          </h3>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: "#e8eaf0", margin: 0 }}>Your Assessments</h3>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {lastUpdated ? (
-              <span style={{ fontSize: 11, color: "#555a6e" }}>
-                Updated {lastUpdated.toLocaleTimeString()}
-              </span>
+              <span style={{ fontSize: 11, color: "#555a6e" }}>Updated {lastUpdated.toLocaleTimeString()}</span>
             ) : null}
 
-            {refreshing ? (
-              <span style={{ fontSize: 11, color: "#4f8ef7" }}>Refreshing...</span>
-            ) : null}
+            {refreshing ? <span style={{ fontSize: 11, color: "#4f8ef7" }}>Refreshing...</span> : null}
 
             <button
               onClick={() => fetchAssessments(false)}
@@ -870,18 +817,12 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
                       <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Duration</div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>
-                        {exam.durationminutes} mins
-                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>{exam.durationminutes} mins</div>
                     </div>
 
                     <div style={{ background: "#22263a", borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>
-                        Allowed Sites
-                      </div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>
-                        {exam.allowedwebsites.length}
-                      </div>
+                      <div style={{ fontSize: 11, color: "#8b90a0", marginBottom: 4 }}>Allowed Sites</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>{exam.allowedwebsites.length}</div>
                     </div>
                   </div>
 
@@ -897,8 +838,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout, onNoAssessme
                   >
                     Assessment ID <span style={{ color: "#c8cad0" }}>{exam.assessmentid ?? "—"}</span>
                     <br />
-                    Assessment Status{" "}
-                    <span style={{ color: chip.color, fontWeight: 600 }}>{exam.status || "UNKNOWN"}</span>
+                    Assessment Status <span style={{ color: chip.color, fontWeight: 600 }}>{exam.status || "UNKNOWN"}</span>
                     <br />
                     Exam Status{" "}
                     <span

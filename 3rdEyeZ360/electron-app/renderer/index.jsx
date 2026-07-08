@@ -16,22 +16,46 @@ import axios from "axios";
 
 const API = "http://localhost:3000";
 
+const FLOW_SCREENS = new Set([
+  "candidate-dashboard",
+  "precheck",
+  "instructions",
+  "wait",
+  "exam",
+  "complete",
+]);
+
 const TERMINAL_ASSESSMENT_STATUSES = new Set(["COMPLETED", "TERMINATED", "LOCKED"]);
 const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
+
 const APPROVED_ENTRY_STATUSES = new Set([
+  "ASSIGNED",
+  "READY",
   "ACTIVE",
   "PAUSED",
   "REENTRYAPPROVED",
+  "REENTRY_APPROVED",
   "LATEENTRYAPPROVED",
+  "LATEENTRY_APPROVED",
 ]);
+
 const WAITING_ENTRY_STATUSES = new Set([
   "ASSIGNED",
   "AVAILABLE",
   "READY",
   "REENTRYREQUESTED",
+  "REENTRY_REQUESTED",
   "LATEENTRYREQUESTED",
+  "LATEENTRY_REQUESTED",
+  "PENDING",
+]);
+
+const REJECTED_ENTRY_STATUSES = new Set([
   "REENTRYREJECTED",
+  "REENTRY_REJECTED",
   "LATEENTRYREJECTED",
+  "LATEENTRY_REJECTED",
+  "REJECTED",
 ]);
 
 function AppLogo({ size = 56 }) {
@@ -147,39 +171,81 @@ function toUpper(value) {
   return String(value ?? "").trim().toUpperCase();
 }
 
-function canonicalStatus(value) {
-  return toUpper(value).replace(/\s+/g, "").replace(/_/g, "");
+function normalizeList(...sources) {
+  const unique = new Set();
+
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const item of source) {
+      const value = String(item || "").trim();
+      if (value) unique.add(value);
+    }
+  }
+
+  return Array.from(unique);
 }
 
 function normalizeExam(raw) {
   if (!raw) return null;
+
+  const examStatus = toUpper(
+    firstValue(
+      raw.examstatus,
+      raw.exam_status,
+      raw.examStatus,
+      raw.runtime_status,
+      raw.runtimestatus,
+      raw.status
+    )
+  );
 
   return {
     ...raw,
     examid: firstValue(raw.examid, raw.exam_id),
     assessmentid: firstValue(raw.assessmentid, raw.assessment_id),
     candidateid: firstValue(raw.candidateid, raw.candidate_id),
+    examinerid: firstValue(raw.examinerid, raw.examiner_id),
     name: firstValue(raw.name, raw.examname, raw.exam_name, "Exam"),
     description: firstValue(raw.description, raw.examdescription, raw.exam_description, ""),
-    date: firstValue(raw.date, raw.examdate, raw.exam_date),
-    starttime: firstValue(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time),
-    endtime: firstValue(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time),
-    durationminutes: Number(firstValue(raw.durationminutes, raw.duration_minutes, 0) || 0),
-    violationthreshold: Number(firstValue(raw.violationthreshold, raw.violation_threshold, 0) || 0),
+    date: firstValue(raw.date, raw.examdate, raw.exam_date, ""),
+    starttime: firstValue(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, ""),
+    endtime: firstValue(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, ""),
+    durationminutes: Number(firstValue(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(firstValue(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
     instructions: firstValue(raw.instructions, ""),
-    allowedwebsites: Array.isArray(firstValue(raw.allowedwebsites, raw.allowed_websites))
-      ? firstValue(raw.allowedwebsites, raw.allowed_websites)
-      : [],
-    allowedapplications: Array.isArray(firstValue(raw.allowedapplications, raw.allowed_applications))
-      ? firstValue(raw.allowedapplications, raw.allowed_applications)
-      : [],
-    status: toUpper(firstValue(raw.status, raw.examstatus, raw.exam_status)),
-    examstatus: toUpper(firstValue(raw.examstatus, raw.exam_status, raw.status)),
+    allowedwebsites: normalizeList(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: normalizeList(raw.allowedapplications, raw.allowed_applications),
+    status: examStatus,
+    examstatus: examStatus,
   };
 }
 
 function normalizeAssessment(raw) {
   if (!raw) return null;
+
+  const assessmentStatus = toUpper(
+    firstValue(
+      raw.assessmentstatus,
+      raw.assessment_status,
+      raw.assessmentStatus,
+      raw.status,
+      raw.finalstatus,
+      raw.final_status
+    )
+  );
+
+  const examStatus = toUpper(
+    firstValue(
+      raw.examstatus,
+      raw.exam_status,
+      raw.examStatus,
+      raw.status_exam,
+      raw.runtime_status,
+      raw.runtimestatus
+    )
+  );
+
+  const finalStatus = toUpper(firstValue(raw.finalstatus, raw.final_status));
 
   return {
     ...raw,
@@ -189,70 +255,66 @@ function normalizeAssessment(raw) {
     examinerid: firstValue(raw.examinerid, raw.examiner_id),
     name: firstValue(raw.name, raw.examname, raw.exam_name, "Upcoming Exam"),
     description: firstValue(raw.description, raw.examdescription, raw.exam_description, ""),
-    date: firstValue(raw.date, raw.examdate, raw.exam_date),
-    starttime: firstValue(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time),
-    endtime: firstValue(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time),
-    durationminutes: Number(firstValue(raw.durationminutes, raw.duration_minutes, 0) || 0),
-    violationthreshold: Number(firstValue(raw.violationthreshold, raw.violation_threshold, 0) || 0),
+    date: firstValue(raw.date, raw.examdate, raw.exam_date, ""),
+    starttime: firstValue(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, ""),
+    endtime: firstValue(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, ""),
+    durationminutes: Number(firstValue(raw.durationminutes, raw.duration_minutes, 0)) || 0,
+    violationthreshold: Number(firstValue(raw.violationthreshold, raw.violation_threshold, 0)) || 0,
     instructions: firstValue(raw.instructions, ""),
-    allowedwebsites: Array.isArray(firstValue(raw.allowedwebsites, raw.allowed_websites))
-      ? firstValue(raw.allowedwebsites, raw.allowed_websites)
-      : [],
-    allowedapplications: Array.isArray(firstValue(raw.allowedapplications, raw.allowed_applications))
-      ? firstValue(raw.allowedapplications, raw.allowed_applications)
-      : [],
-    status: toUpper(firstValue(raw.status, raw.assessmentstatus, raw.assessment_status)),
-    assessmentstatus: toUpper(firstValue(raw.assessmentstatus, raw.assessment_status, raw.status)),
-    examstatus: toUpper(firstValue(raw.examstatus, raw.exam_status, raw.status_exam, raw.runtimestatus)),
-    finalstatus: toUpper(firstValue(raw.finalstatus, raw.final_status)),
+    allowedwebsites: normalizeList(raw.allowedwebsites, raw.allowed_websites),
+    allowedapplications: normalizeList(raw.allowedapplications, raw.allowed_applications),
+    status: assessmentStatus,
+    assessmentstatus: assessmentStatus,
+    examstatus: examStatus,
+    finalstatus: finalStatus,
   };
 }
 
 function mergeExamAssessment(exam, assessment) {
+  const normalizedExam = normalizeExam(exam);
+  const normalizedAssessment = normalizeAssessment(assessment);
+
   return {
-    ...(exam || {}),
-    ...(assessment || {}),
-    examid: firstValue(assessment?.examid, exam?.examid),
-    assessmentid: firstValue(assessment?.assessmentid, exam?.assessmentid),
-    candidateid: firstValue(assessment?.candidateid, exam?.candidateid),
-    name: firstValue(assessment?.name, exam?.name, "Exam"),
-    description: firstValue(assessment?.description, exam?.description, ""),
-    date: firstValue(assessment?.date, exam?.date),
-    starttime: firstValue(assessment?.starttime, exam?.starttime),
-    endtime: firstValue(assessment?.endtime, exam?.endtime),
-    durationminutes: Number(firstValue(assessment?.durationminutes, exam?.durationminutes, 0) || 0),
-    allowedwebsites: Array.isArray(firstValue(assessment?.allowedwebsites, exam?.allowedwebsites))
-      ? firstValue(assessment?.allowedwebsites, exam?.allowedwebsites)
-      : [],
-    allowedapplications: Array.isArray(firstValue(assessment?.allowedapplications, exam?.allowedapplications))
-      ? firstValue(assessment?.allowedapplications, exam?.allowedapplications)
-      : [],
-    status: toUpper(firstValue(assessment?.status, assessment?.assessmentstatus)),
-    assessmentstatus: toUpper(firstValue(assessment?.assessmentstatus, assessment?.status)),
-    examstatus: toUpper(firstValue(assessment?.examstatus, exam?.examstatus, exam?.status)),
-    finalstatus: toUpper(firstValue(assessment?.finalstatus)),
+    ...normalizedExam,
+    ...normalizedAssessment,
+    examid: firstValue(normalizedAssessment?.examid, normalizedExam?.examid),
+    assessmentid: firstValue(normalizedAssessment?.assessmentid, normalizedExam?.assessmentid),
+    candidateid: firstValue(normalizedAssessment?.candidateid, normalizedExam?.candidateid),
+    examinerid: firstValue(normalizedAssessment?.examinerid, normalizedExam?.examinerid),
+    name: firstValue(normalizedAssessment?.name, normalizedExam?.name, "Exam"),
+    description: firstValue(normalizedAssessment?.description, normalizedExam?.description, ""),
+    date: firstValue(normalizedAssessment?.date, normalizedExam?.date, ""),
+    starttime: firstValue(normalizedAssessment?.starttime, normalizedExam?.starttime, ""),
+    endtime: firstValue(normalizedAssessment?.endtime, normalizedExam?.endtime, ""),
+    durationminutes: Number(firstValue(normalizedAssessment?.durationminutes, normalizedExam?.durationminutes, 0)) || 0,
+    violationthreshold:
+      Number(firstValue(normalizedAssessment?.violationthreshold, normalizedExam?.violationthreshold, 0)) || 0,
+    instructions: firstValue(normalizedAssessment?.instructions, normalizedExam?.instructions, ""),
+    allowedwebsites: normalizeList(normalizedAssessment?.allowedwebsites, normalizedExam?.allowedwebsites),
+    allowedapplications: normalizeList(normalizedAssessment?.allowedapplications, normalizedExam?.allowedapplications),
+    status: toUpper(firstValue(normalizedAssessment?.assessmentstatus, normalizedAssessment?.status)),
+    assessmentstatus: toUpper(firstValue(normalizedAssessment?.assessmentstatus, normalizedAssessment?.status)),
+    examstatus: toUpper(firstValue(normalizedAssessment?.examstatus, normalizedExam?.examstatus)),
+    finalstatus: toUpper(firstValue(normalizedAssessment?.finalstatus)),
   };
 }
 
 function getAssessmentStatus(source) {
-  return canonicalStatus(firstValue(source?.assessmentstatus, source?.status));
+  return toUpper(firstValue(source?.assessmentstatus, source?.status));
 }
 
 function getFinalStatus(source) {
-  return canonicalStatus(firstValue(source?.finalstatus));
+  return toUpper(firstValue(source?.finalstatus));
 }
 
 function getExamStatus(source) {
-  return canonicalStatus(firstValue(source?.examstatus, source?.status));
+  return toUpper(firstValue(source?.examstatus, source?.status));
 }
 
 function isTerminalAssessmentState(source) {
   const assessmentStatus = getAssessmentStatus(source);
   const finalStatus = getFinalStatus(source);
-  return (
-    (assessmentStatus && TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus)) ||
-    (finalStatus && TERMINAL_ASSESSMENT_STATUSES.has(finalStatus))
-  );
+  return TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus) || TERMINAL_ASSESSMENT_STATUSES.has(finalStatus);
 }
 
 function isTerminalExamState(source) {
@@ -265,6 +327,7 @@ function isExamRunning(source) {
 
 function shouldWait(source) {
   const assessmentStatus = getAssessmentStatus(source);
+  if (REJECTED_ENTRY_STATUSES.has(assessmentStatus)) return false;
   if (APPROVED_ENTRY_STATUSES.has(assessmentStatus) && isExamRunning(source)) return false;
   return WAITING_ENTRY_STATUSES.has(assessmentStatus) || !isExamRunning(source);
 }
@@ -272,6 +335,34 @@ function shouldWait(source) {
 function canGoDirectToExam(source) {
   const assessmentStatus = getAssessmentStatus(source);
   return isExamRunning(source) && APPROVED_ENTRY_STATUSES.has(assessmentStatus);
+}
+
+function choosePrimaryAssessment(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+
+  const normalized = list.map(normalizeAssessment).filter(Boolean);
+
+  const active = normalized.find((item) => canGoDirectToExam(item));
+  if (active) return active;
+
+  const waiting = normalized.find((item) => {
+    const status = getAssessmentStatus(item);
+    return (
+      !isTerminalAssessmentState(item) &&
+      !isTerminalExamState(item) &&
+      (WAITING_ENTRY_STATUSES.has(status) ||
+        APPROVED_ENTRY_STATUSES.has(status) ||
+        status === "ASSIGNED" ||
+        status === "AVAILABLE" ||
+        status === "READY")
+    );
+  });
+  if (waiting) return waiting;
+
+  const nonTerminal = normalized.find((item) => !isTerminalAssessmentState(item));
+  if (nonTerminal) return nonTerminal;
+
+  return normalized[0] || null;
 }
 
 function App() {
@@ -301,12 +392,10 @@ function App() {
     assessmentRef.current = currentAssessment;
   }, [currentAssessment]);
 
-  const headers = useMemo(() => {
-    return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-  }, [accessToken]);
+  const headers = useMemo(() => (accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), [accessToken]);
 
   const resetToLogin = useCallback(() => {
-    disconnectSocket(true);
+    disconnectSocket();
     clearExam?.();
     reset?.();
     clearAuth?.();
@@ -389,9 +478,27 @@ function App() {
 
   const loadPrimaryCandidateState = useCallback(async () => {
     const rows = await fetchCandidateUpcoming();
-    console.log("UPCOMING RAW", rows);
-    return { rows };
-  }, [fetchCandidateUpcoming]);
+    const primaryAssessment = choosePrimaryAssessment(rows);
+
+    if (!primaryAssessment) {
+      setAssessment(null);
+      setExam(null);
+      return { assessment: null, exam: null, merged: null };
+    }
+
+    const liveAssessment = primaryAssessment.assessmentid
+      ? await fetchLiveAssessment(primaryAssessment.assessmentid)
+      : primaryAssessment;
+
+    const baseAssessment = liveAssessment || primaryAssessment;
+    const liveExam = baseAssessment?.examid ? await fetchLiveExam(baseAssessment.examid) : null;
+    const merged = mergeExamAssessment(liveExam, baseAssessment);
+
+    setAssessment(baseAssessment);
+    setExam(merged);
+
+    return { assessment: baseAssessment, exam: liveExam, merged };
+  }, [fetchCandidateUpcoming, fetchLiveAssessment, fetchLiveExam, setAssessment, setExam]);
 
   const refreshCurrentCandidateState = useCallback(async () => {
     const currentAssessmentId = firstValue(assessmentRef.current?.assessmentid, examRef.current?.assessmentid);
@@ -402,8 +509,8 @@ function App() {
     }
 
     const [liveAssessment, liveExam] = await Promise.all([
-      currentAssessmentId ? fetchLiveAssessment(currentAssessmentId) : Promise.resolve(null),
-      currentExamId ? fetchLiveExam(currentExamId) : Promise.resolve(null),
+      fetchLiveAssessment(currentAssessmentId),
+      fetchLiveExam(currentExamId),
     ]);
 
     const merged = mergeExamAssessment(liveExam, liveAssessment);
@@ -414,43 +521,43 @@ function App() {
     return { assessment: liveAssessment, exam: liveExam, merged };
   }, [fetchLiveAssessment, fetchLiveExam, setAssessment, setExam]);
 
-  const routeFromLiveState = useCallback((merged, currentScreen) => {
-    console.log("LIVE ROUTE", {
-      currentScreen,
-      merged,
-      assessmentStatus: getAssessmentStatus(merged),
-      finalStatus: getFinalStatus(merged),
-      examStatus: getExamStatus(merged),
-    });
+  const routeFromBootstrapState = useCallback((merged) => {
+    if (!merged) return "candidate-dashboard";
+    if (isTerminalAssessmentState(merged) || isTerminalExamState(merged)) return "candidate-dashboard";
+    if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
+    if (canGoDirectToExam(merged)) return "exam";
+    if (shouldWait(merged)) return "wait";
+    return "candidate-dashboard";
+  }, []);
 
+  const routeFromLiveState = useCallback((merged, currentScreen) => {
     if (!merged) return "candidate-dashboard";
 
+    const terminalAssessment = isTerminalAssessmentState(merged);
+    const terminalExam = isTerminalExamState(merged);
+
     if (currentScreen === "precheck" || currentScreen === "instructions") {
+      if (terminalAssessment || terminalExam) return "candidate-dashboard";
       return currentScreen;
     }
 
-    if (currentScreen === "candidate-dashboard") {
-      return "candidate-dashboard";
-    }
-
-    if (isTerminalAssessmentState(merged) || isTerminalExamState(merged)) {
-      return "complete";
-    }
-
     if (currentScreen === "wait") {
+      if (terminalAssessment || terminalExam) return "complete";
+      if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
       if (canGoDirectToExam(merged)) return "exam";
       return "wait";
     }
 
     if (currentScreen === "exam") {
+      if (terminalAssessment || terminalExam) return "complete";
       if (canGoDirectToExam(merged)) return "exam";
-      if (shouldWait(merged)) return "wait";
-      return "exam";
+      return "wait";
     }
 
+    if (terminalAssessment || terminalExam) return "candidate-dashboard";
+    if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
     if (canGoDirectToExam(merged)) return "exam";
     if (shouldWait(merged)) return "wait";
-
     return "candidate-dashboard";
   }, []);
 
@@ -458,35 +565,29 @@ function App() {
     async (loggedUser) => {
       disconnectSocket();
       clearExam?.();
-      setAssessment(null);
-      setExam(null);
       reset?.();
       bootstrapDoneRef.current = false;
 
       if (loggedUser.role === "Admin") {
         setScreen("admin");
         setBootstrapping(false);
-        bootstrapDoneRef.current = true;
         return;
       }
 
       if (loggedUser.role === "Examiner") {
         setScreen("examiner");
         setBootstrapping(false);
-        bootstrapDoneRef.current = true;
         return;
       }
 
-      await cleanupElectron();
-      await loadPrimaryCandidateState();
-
+      const state = await loadPrimaryCandidateState();
       if (isLoggingOutRef.current) return;
 
-      setScreen("candidate-dashboard");
+      setScreen(routeFromBootstrapState(state.merged));
       setBootstrapping(false);
       bootstrapDoneRef.current = true;
     },
-    [clearExam, reset, cleanupElectron, loadPrimaryCandidateState, setAssessment, setExam]
+    [clearExam, reset, loadPrimaryCandidateState, routeFromBootstrapState]
   );
 
   useEffect(() => {
@@ -494,15 +595,6 @@ function App() {
     document.body.style.background = "#0b1114";
     document.documentElement.style.background = "#0b1114";
   }, []);
-
-  useEffect(() => {
-    console.log("STORE SNAPSHOT", {
-      user,
-      currentExam,
-      currentAssessment,
-      hasHydrated,
-    });
-  }, [user, currentExam, currentAssessment, hasHydrated]);
 
   useEffect(() => {
     if (!hasHydrated || isLoggingOut) return;
@@ -518,27 +610,24 @@ function App() {
         if (user.role === "Admin") {
           setScreen("admin");
           setBootstrapping(false);
-          bootstrapDoneRef.current = true;
           return;
         }
 
         if (user.role === "Examiner") {
           setScreen("examiner");
           setBootstrapping(false);
-          bootstrapDoneRef.current = true;
           return;
         }
 
         if (user.role === "Candidate") {
-          await cleanupElectron();
-          clearExam?.();
-          setAssessment(null);
-          setExam(null);
-          await loadPrimaryCandidateState();
-
+          const state = await loadPrimaryCandidateState();
           if (isLoggingOutRef.current) return;
 
-          setScreen("candidate-dashboard");
+          setScreen((prev) => {
+            if (FLOW_SCREENS.has(prev) && prev !== "login") return prev;
+            return routeFromBootstrapState(state.merged);
+          });
+
           setBootstrapping(false);
           bootstrapDoneRef.current = true;
           return;
@@ -553,18 +642,7 @@ function App() {
     };
 
     bootstrap();
-  }, [
-    hasHydrated,
-    isLoggingOut,
-    user,
-    accessToken,
-    cleanupElectron,
-    loadPrimaryCandidateState,
-    resetToLogin,
-    clearExam,
-    setAssessment,
-    setExam,
-  ]);
+  }, [hasHydrated, isLoggingOut, user, accessToken, loadPrimaryCandidateState, routeFromBootstrapState, resetToLogin]);
 
   useEffect(() => {
     if (!bootstrapDoneRef.current) return;
@@ -579,7 +657,7 @@ function App() {
 
       setScreen((prev) => {
         if (isLoggingOutRef.current) return prev;
-        return next;
+        return next || prev;
       });
     }, 4000);
 
@@ -590,27 +668,17 @@ function App() {
     async (examLike) => {
       if (isLoggingOutRef.current) return;
 
-      const assessment = normalizeAssessment(examLike);
-      const liveAssessment = assessment?.assessmentid
-        ? await fetchLiveAssessment(assessment.assessmentid)
-        : null;
+      const rawAssessment = normalizeAssessment(examLike);
+      const liveAssessment = rawAssessment?.assessmentid
+        ? await fetchLiveAssessment(rawAssessment.assessmentid)
+        : rawAssessment;
 
-      const examId = firstValue(assessment?.examid, liveAssessment?.examid);
-      const liveExam = examId ? await fetchLiveExam(examId) : null;
+      const baseAssessment = liveAssessment || rawAssessment;
+      const liveExam = baseAssessment?.examid ? await fetchLiveExam(baseAssessment.examid) : normalizeExam(examLike);
+      const merged = mergeExamAssessment(liveExam, baseAssessment);
 
-      const finalAssessment = liveAssessment || assessment;
-      const finalExam = mergeExamAssessment(liveExam || normalizeExam(examLike), finalAssessment);
-
-      console.log("ENTER EXAM SELECTED", {
-        clicked: examLike,
-        finalAssessment,
-        finalExam,
-        canonicalAssessmentStatus: getAssessmentStatus(finalAssessment),
-        canonicalExamStatus: getExamStatus(finalExam),
-      });
-
-      setAssessment(finalAssessment);
-      setExam(finalExam);
+      setAssessment(baseAssessment);
+      setExam(merged);
       setScreen("precheck");
     },
     [fetchLiveAssessment, fetchLiveExam, setAssessment, setExam]
@@ -627,8 +695,9 @@ function App() {
     const merged = mergeExamAssessment(examRef.current, assessmentRef.current);
 
     if (socket && merged && user) {
-      socket.emit("joinexam", {
+      socket.emit("join_exam", {
         examid: merged.examid,
+        assessmentid: merged.assessmentid,
         candidateid: user?.userid,
         role: "Candidate",
       });
@@ -649,14 +718,9 @@ function App() {
 
   const handleReturnToDashboard = useCallback(async () => {
     await cleanupElectron();
-    clearExam?.();
-    setAssessment(null);
-    setExam(null);
     await loadPrimaryCandidateState();
-    if (!isLoggingOutRef.current) {
-      setScreen("candidate-dashboard");
-    }
-  }, [cleanupElectron, loadPrimaryCandidateState, clearExam, setAssessment, setExam]);
+    if (!isLoggingOutRef.current) setScreen("candidate-dashboard");
+  }, [cleanupElectron, loadPrimaryCandidateState]);
 
   useEffect(() => {
     if (!socket || isLoggingOut) return;
@@ -669,15 +733,17 @@ function App() {
       const merged = latest.merged;
       if (!merged) return;
 
-      if (screenRef.current === "wait" && canGoDirectToExam(merged)) {
+      if (canGoDirectToExam(merged)) {
         setScreen("exam");
+      } else if (shouldWait(merged)) {
+        setScreen("wait");
       }
     };
 
     const onControlCommand = async (payload) => {
       if (isLoggingOutRef.current) return;
-      const action = toUpper(payload?.action ?? payload);
 
+      const action = toUpper(payload?.action ?? payload);
       if (action === "TERMINATE") {
         if (screenRef.current === "wait" || screenRef.current === "exam") {
           setScreen("complete");
@@ -692,12 +758,12 @@ function App() {
       }
     };
 
-    socket.on("examstarted", onExamStarted);
-    socket.on("controlcommand", onControlCommand);
+    socket.on("exam_started", onExamStarted);
+    socket.on("control_command", onControlCommand);
 
     return () => {
-      socket.off("examstarted", onExamStarted);
-      socket.off("controlcommand", onControlCommand);
+      socket.off("exam_started", onExamStarted);
+      socket.off("control_command", onControlCommand);
     };
   }, [socket, isLoggingOut, refreshCurrentCandidateState, routeFromLiveState]);
 
@@ -712,22 +778,12 @@ function App() {
   if (screen === "login") return <Login onLogin={handleLogin} />;
   if (screen === "admin") return <AdminPanel />;
   if (screen === "examiner") return <ExaminerDashboard />;
-
   if (screen === "candidate-dashboard") {
     return <CandidateDashboard onEnterExam={handleEnterExam} onLogout={handleLogout} />;
   }
-
   if (screen === "precheck") {
-    return (
-      <PreCheck
-        exam={currentExam}
-        assessment={currentAssessment}
-        onPass={handlePreCheckPass}
-        onLogout={handleLogout}
-      />
-    );
+    return <PreCheck exam={currentExam} assessment={currentAssessment} onPass={handlePreCheckPass} onLogout={handleLogout} />;
   }
-
   if (screen === "instructions") {
     return (
       <Instructions
@@ -739,7 +795,6 @@ function App() {
       />
     );
   }
-
   if (screen === "wait") {
     return (
       <WaitScreen
@@ -752,7 +807,6 @@ function App() {
       />
     );
   }
-
   if (screen === "exam") {
     return (
       <ActiveExam
@@ -764,12 +818,13 @@ function App() {
       />
     );
   }
-
-  if (screen === "complete") {
-    return <CompletionView onLogout={handleLogout} />;
-  }
+  if (screen === "complete") return <CompletionView onLogout={handleLogout} />;
 
   return <Login onLogin={handleLogin} />;
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

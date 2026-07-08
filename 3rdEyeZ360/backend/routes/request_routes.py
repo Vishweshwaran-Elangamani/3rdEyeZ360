@@ -38,6 +38,17 @@ def _assessment_query(assessment_id: str) -> dict:
     return {"$or": [{"assessmentid": assessment_id}, {"assessment_id": assessment_id}]}
 
 
+def _user_query(user_id: str) -> dict:
+    return {"$or": [{"userid": user_id}, {"user_id": user_id}]}
+
+
+def _get_audit_collection(db):
+    audit_collection = getattr(db, "audit_logs", None)
+    if audit_collection is None:
+        audit_collection = getattr(db, "auditlogs", None)
+    return audit_collection
+
+
 async def _ensure_exam_access(db, exam_id: str, current_user: dict):
     exam = await db.exams.find_one(_exam_query(exam_id))
     if not exam:
@@ -91,16 +102,27 @@ async def submit(
 
     existing = await db.requests.find_one(
         {
-            "assessmentid": req.assessmentid,
-            "candidateid": current_user_id,
-            "type": request_type,
-            "status": "PENDING",
+            "$or": [
+                {
+                    "assessmentid": req.assessmentid,
+                    "candidateid": current_user_id,
+                    "type": request_type,
+                    "status": "PENDING",
+                },
+                {
+                    "assessment_id": req.assessmentid,
+                    "candidate_id": current_user_id,
+                    "type": request_type,
+                    "status": "PENDING",
+                },
+            ]
         }
     )
     if existing:
         raise HTTPException(status_code=409, detail="A pending request already exists")
 
     request_id = f"REQ-{uuid.uuid4().hex[:8].upper()}"
+    audit_id = f"AUD-{uuid.uuid4().hex[:8].upper()}"
     now = datetime.utcnow()
 
     request_doc = {
@@ -117,8 +139,11 @@ async def submit(
         "reason": reason,
         "status": "PENDING",
         "reviewedby": None,
+        "reviewed_by": None,
         "reviewedat": None,
+        "reviewed_at": None,
         "reviewreason": None,
+        "review_reason": None,
         "createdat": now,
         "created_at": now,
     }
@@ -132,18 +157,19 @@ async def submit(
             "$set": {
                 "status": requested_status,
                 "assessmentstatus": requested_status,
+                "assessment_status": requested_status,
                 "updatedat": now,
                 "updated_at": now,
             }
         },
     )
 
-    audit_collection = getattr(db, "audit_logs", None) or getattr(db, "auditlogs", None)
+    audit_collection = _get_audit_collection(db)
     if audit_collection is not None:
         await audit_collection.insert_one(
             {
-                "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-                "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+                "logid": audit_id,
+                "log_id": audit_id,
                 "userid": current_user_id,
                 "user_id": current_user_id,
                 "examid": req.examid,
@@ -193,6 +219,7 @@ async def review(
 
     current_user_id = current_user.get("userid") or current_user.get("user_id")
     now = datetime.utcnow()
+    audit_id = f"AUD-{uuid.uuid4().hex[:8].upper()}"
 
     await db.requests.update_one(
         {"$or": [{"requestid": requestid}, {"request_id": requestid}]},
@@ -200,8 +227,11 @@ async def review(
             "$set": {
                 "status": decision,
                 "reviewedby": current_user_id,
+                "reviewed_by": current_user_id,
                 "reviewedat": now,
+                "reviewed_at": now,
                 "reviewreason": review_reason if review_reason else None,
+                "review_reason": review_reason if review_reason else None,
             }
         },
     )
@@ -217,18 +247,19 @@ async def review(
             "$set": {
                 "status": assessment_status,
                 "assessmentstatus": assessment_status,
+                "assessment_status": assessment_status,
                 "updatedat": now,
                 "updated_at": now,
             }
         },
     )
 
-    audit_collection = getattr(db, "audit_logs", None) or getattr(db, "auditlogs", None)
+    audit_collection = _get_audit_collection(db)
     if audit_collection is not None:
         await audit_collection.insert_one(
             {
-                "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-                "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+                "logid": audit_id,
+                "log_id": audit_id,
                 "userid": current_user_id,
                 "user_id": current_user_id,
                 "examid": exam_id,
@@ -270,14 +301,7 @@ async def pending(
     result = []
     for request in requests:
         candidate_id = request.get("candidateid") or request.get("candidate_id")
-        user = await db.users.find_one(
-            {
-                "$or": [
-                    {"userid": candidate_id},
-                    {"user_id": candidate_id},
-                ]
-            }
-        )
+        user = await db.users.find_one(_user_query(candidate_id))
 
         result.append(
             {
@@ -301,8 +325,8 @@ async def pending(
                 "created_at": request.get("createdat") or request.get("created_at"),
                 "reviewedat": request.get("reviewedat") or request.get("reviewed_at"),
                 "reviewed_at": request.get("reviewedat") or request.get("reviewed_at"),
-                "reviewreason": request.get("reviewreason"),
-                "review_reason": request.get("reviewreason"),
+                "reviewreason": request.get("reviewreason") or request.get("review_reason"),
+                "review_reason": request.get("reviewreason") or request.get("review_reason"),
             }
         )
 

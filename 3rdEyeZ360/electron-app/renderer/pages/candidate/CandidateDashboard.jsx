@@ -539,12 +539,16 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
     setRequestModalOpen(true);
   };
 
-  const closeRequestModal = () => {
-    if (submittingRequest) return;
+  const resetRequestModalState = () => {
     setRequestModalOpen(false);
     setSelectedExamForRequest(null);
     setRequestReason("");
     setSubmitRequestError("");
+  };
+
+  const closeRequestModal = () => {
+    if (submittingRequest) return;
+    resetRequestModalState();
   };
 
   const submitPermissionRequest = async () => {
@@ -565,33 +569,168 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
       const payload = {
         assessmentid: selectedExamForRequest.assessmentid,
         examid: selectedExamForRequest.examid,
-        candidateid: selectedExamForRequest.candidateid ?? user?.userid ?? user?.user_id ?? null,
+        candidateid:
+          selectedExamForRequest.candidateid ??
+          user?.userid ??
+          user?.user_id ??
+          null,
         type: requestType,
         reason,
       };
 
-      const res = await axios.post(`${API}/api/requests`, payload, { headers });
-      const createdRequest = normalizeRequest(res.data);
+      const res = await axios.post(`${API}/api/requests`, payload, {
+        headers,
+        timeout: 15000,
+        validateStatus: (status) => status >= 200 && status < 500,
+      });
 
-      setPendingRequestsByAssessment((prev) => ({
-        ...prev,
-        [selectedExamForRequest.assessmentid]:
-          createdRequest ||
-          normalizeRequest({
-            requestid: `created-${selectedExamForRequest.assessmentid}`,
+      if (res.status >= 200 && res.status < 300) {
+        const createdRequest = normalizeRequest(res.data);
+
+        setPendingRequestsByAssessment((prev) => ({
+          ...prev,
+          [selectedExamForRequest.assessmentid]:
+            createdRequest ??
+            normalizeRequest({
+              requestid: `created-${selectedExamForRequest.assessmentid}`,
+              assessmentid: selectedExamForRequest.assessmentid,
+              examid: selectedExamForRequest.examid,
+              candidateid:
+                selectedExamForRequest.candidateid ??
+                user?.userid ??
+                user?.user_id ??
+                null,
+              type: requestType,
+              status: "PENDING",
+              reason,
+            }),
+        }));
+
+        setAssessments((prev) =>
+          prev.map((item) =>
+            item.assessmentid === selectedExamForRequest.assessmentid
+              ? {
+                  ...item,
+                  status:
+                    requestType === "REENTRY"
+                      ? "REENTRYREQUESTED"
+                      : "LATEENTRYREQUESTED",
+                  assessmentstatus:
+                    requestType === "REENTRY"
+                      ? "REENTRYREQUESTED"
+                      : "LATEENTRYREQUESTED",
+                }
+              : item
+          )
+        );
+
+        resetRequestModalState();
+        void fetchAssessments(true);
+        return;
+      }
+
+      const detail = res?.data?.detail;
+      const serverMessage =
+        typeof detail === "string" && detail.trim()
+          ? detail
+          : "Failed to submit permission request.";
+
+      if (
+        res.status === 409 ||
+        serverMessage.toLowerCase().includes("already requested") ||
+        serverMessage.toLowerCase().includes("pending request already exists")
+      ) {
+        setPendingRequestsByAssessment((prev) => ({
+          ...prev,
+          [selectedExamForRequest.assessmentid]: normalizeRequest({
+            requestid: `existing-${selectedExamForRequest.assessmentid}`,
             assessmentid: selectedExamForRequest.assessmentid,
             examid: selectedExamForRequest.examid,
-            candidateid: selectedExamForRequest.candidateid ?? user?.userid ?? user?.user_id ?? null,
+            candidateid:
+              selectedExamForRequest.candidateid ??
+              user?.userid ??
+              user?.user_id ??
+              null,
             type: requestType,
             status: "PENDING",
             reason,
           }),
-      }));
+        }));
 
-      await fetchAssessments(true);
-      closeRequestModal();
+        setAssessments((prev) =>
+          prev.map((item) =>
+            item.assessmentid === selectedExamForRequest.assessmentid
+              ? {
+                  ...item,
+                  status:
+                    requestType === "REENTRY"
+                      ? "REENTRYREQUESTED"
+                      : "LATEENTRYREQUESTED",
+                  assessmentstatus:
+                    requestType === "REENTRY"
+                      ? "REENTRYREQUESTED"
+                      : "LATEENTRYREQUESTED",
+                }
+              : item
+          )
+        );
+
+        resetRequestModalState();
+        void fetchAssessments(true);
+        return;
+      }
+
+      setSubmitRequestError(serverMessage);
     } catch (e) {
-      setSubmitRequestError(formatApiError(e, "Failed to submit permission request."));
+      const apiMessage = formatApiError(e, "Failed to submit permission request.");
+
+      if (
+        apiMessage.toLowerCase().includes("already requested") ||
+        apiMessage.toLowerCase().includes("pending request already exists")
+      ) {
+        const requestType = getRequestType(selectedExamForRequest);
+
+        setPendingRequestsByAssessment((prev) => ({
+          ...prev,
+          [selectedExamForRequest.assessmentid]: normalizeRequest({
+            requestid: `existing-${selectedExamForRequest.assessmentid}`,
+            assessmentid: selectedExamForRequest.assessmentid,
+            examid: selectedExamForRequest.examid,
+            candidateid:
+              selectedExamForRequest.candidateid ??
+              user?.userid ??
+              user?.user_id ??
+              null,
+            type: requestType,
+            status: "PENDING",
+            reason,
+          }),
+        }));
+
+        setAssessments((prev) =>
+          prev.map((item) =>
+            item.assessmentid === selectedExamForRequest.assessmentid
+              ? {
+                  ...item,
+                  status:
+                    requestType === "REENTRY"
+                      ? "REENTRYREQUESTED"
+                      : "LATEENTRYREQUESTED",
+                  assessmentstatus:
+                    requestType === "REENTRY"
+                      ? "REENTRYREQUESTED"
+                      : "LATEENTRYREQUESTED",
+                }
+              : item
+          )
+        );
+
+        resetRequestModalState();
+        void fetchAssessments(true);
+        return;
+      }
+
+      setSubmitRequestError(apiMessage);
     } finally {
       setSubmittingRequest(false);
     }

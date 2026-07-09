@@ -32,7 +32,6 @@ const APPROVED_ENTRY_STATUSES = new Set([
   "ASSIGNED",
   "READY",
   "ACTIVE",
-  "PAUSED",
   "REENTRYAPPROVED",
   "REENTRY_APPROVED",
   "LATEENTRYAPPROVED",
@@ -328,6 +327,7 @@ function isExamRunning(source) {
 function shouldWait(source) {
   const assessmentStatus = getAssessmentStatus(source);
   if (REJECTED_ENTRY_STATUSES.has(assessmentStatus)) return false;
+  if (assessmentStatus === "PAUSED") return false;
   if (APPROVED_ENTRY_STATUSES.has(assessmentStatus) && isExamRunning(source)) return false;
   return WAITING_ENTRY_STATUSES.has(assessmentStatus) || !isExamRunning(source);
 }
@@ -344,6 +344,9 @@ function choosePrimaryAssessment(list) {
 
   const active = normalized.find((item) => canGoDirectToExam(item));
   if (active) return active;
+
+  const paused = normalized.find((item) => getAssessmentStatus(item) === "PAUSED");
+  if (paused) return paused;
 
   const waiting = normalized.find((item) => {
     const status = getAssessmentStatus(item);
@@ -525,6 +528,7 @@ function App() {
     if (!merged) return "candidate-dashboard";
     if (isTerminalAssessmentState(merged) || isTerminalExamState(merged)) return "candidate-dashboard";
     if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
+    if (getAssessmentStatus(merged) === "PAUSED") return "exam";
     if (canGoDirectToExam(merged)) return "exam";
     if (shouldWait(merged)) return "wait";
     return "candidate-dashboard";
@@ -535,6 +539,7 @@ function App() {
 
     const terminalAssessment = isTerminalAssessmentState(merged);
     const terminalExam = isTerminalExamState(merged);
+    const assessmentStatus = getAssessmentStatus(merged);
 
     if (currentScreen === "precheck" || currentScreen === "instructions") {
       if (terminalAssessment || terminalExam) return "candidate-dashboard";
@@ -543,19 +548,22 @@ function App() {
 
     if (currentScreen === "wait") {
       if (terminalAssessment || terminalExam) return "complete";
-      if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
+      if (REJECTED_ENTRY_STATUSES.has(assessmentStatus)) return "candidate-dashboard";
+      if (assessmentStatus === "PAUSED") return "exam";
       if (canGoDirectToExam(merged)) return "exam";
       return "wait";
     }
 
     if (currentScreen === "exam") {
       if (terminalAssessment || terminalExam) return "complete";
+      if (assessmentStatus === "PAUSED") return "exam";
       if (canGoDirectToExam(merged)) return "exam";
       return "wait";
     }
 
     if (terminalAssessment || terminalExam) return "candidate-dashboard";
-    if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
+    if (REJECTED_ENTRY_STATUSES.has(assessmentStatus)) return "candidate-dashboard";
+    if (assessmentStatus === "PAUSED") return "exam";
     if (canGoDirectToExam(merged)) return "exam";
     if (shouldWait(merged)) return "wait";
     return "candidate-dashboard";
@@ -708,6 +716,11 @@ function App() {
 
     if (isLoggingOutRef.current) return;
 
+    if (getAssessmentStatus(live) === "PAUSED") {
+      setScreen("exam");
+      return;
+    }
+
     if (canGoDirectToExam(live)) {
       setScreen("exam");
       return;
@@ -733,7 +746,9 @@ function App() {
       const merged = latest.merged;
       if (!merged) return;
 
-      if (canGoDirectToExam(merged)) {
+      if (getAssessmentStatus(merged) === "PAUSED") {
+        setScreen("exam");
+      } else if (canGoDirectToExam(merged)) {
         setScreen("exam");
       } else if (shouldWait(merged)) {
         setScreen("wait");

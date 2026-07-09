@@ -97,12 +97,13 @@ function ensureAttached(mainWindow) {
 }
 
 function detachFromWindow(mainWindow) {
-  if (!isWindowAlive(mainWindow)) return false;
+  const targetWindow = mainWindow || attachedWindow;
+  if (!isWindowAlive(targetWindow)) return false;
 
   try {
-    mainWindow.setBrowserView(null);
+    targetWindow.setBrowserView(null);
     browserVisible = false;
-    if (attachedWindow === mainWindow) {
+    if (attachedWindow === targetWindow) {
       attachedWindow = null;
     }
     return true;
@@ -302,13 +303,11 @@ function hideBrowser(mainWindow) {
 
 function focusBrowser(mainWindow) {
   if (!hasLiveView()) return false;
+  if (!browserVisible) return false;
 
   try {
     if (isWindowAlive(mainWindow)) {
       mainWindow.focus();
-      if (!browserVisible) {
-        ensureAttached(mainWindow);
-      }
     }
     browserView.webContents.focus();
     return true;
@@ -329,8 +328,8 @@ function restoreBrowser(mainWindow) {
     mainWindow.show();
     mainWindow.focus();
 
-    if (hasLiveView() && !browserVisible) {
-      ensureAttached(mainWindow);
+    if (!browserVisible) {
+      return true;
     }
 
     applyBounds(mainWindow);

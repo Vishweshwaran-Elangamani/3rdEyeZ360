@@ -1,5 +1,5 @@
 # start.ps1
-Write-Host "🚀 Starting 3rdEyeZ360..." -ForegroundColor Cyan
+Write-Host " Starting 3rdEyeZ360..." -ForegroundColor Cyan
 
 # 1. Docker
 Write-Host "Starting Docker services..." -ForegroundColor Yellow
@@ -15,4 +15,4 @@ Start-Sleep -Seconds 5
 Write-Host "Starting Electron App..." -ForegroundColor Yellow
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd D:\3rdEyez360V2\3rdEyeZ360\electron-app; npm run dev"
 
-Write-Host "✅ All services started!" -ForegroundColor Green
+Write-Host " All services started!" -ForegroundColor Green

@@ -11,9 +11,7 @@ const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
 
 function pick(...values) {
   for (const value of values) {
-    if (value !== undefined && value !== null && value !== "") {
-      return value;
-    }
+    if (value !== undefined && value !== null && value !== "") return value;
   }
   return null;
 }
@@ -28,7 +26,6 @@ function canonicalStatus(value) {
 
 function normalizeSites(...sources) {
   const unique = new Set();
-
   for (const source of sources) {
     if (!Array.isArray(source)) continue;
     for (const item of source) {
@@ -36,15 +33,12 @@ function normalizeSites(...sources) {
       if (value) unique.add(value);
     }
   }
-
   return Array.from(unique);
 }
 
 function normalizeExam(raw) {
   if (!raw) return null;
-
-  const examStatus = toUpper(pick(raw.examstatus, raw.exam_status, raw.status, ""));
-
+  const status = toUpper(pick(raw.examstatus, raw.exam_status, raw.status, ""));
   return {
     ...raw,
     examid: pick(raw.examid, raw.exam_id),
@@ -56,48 +50,42 @@ function normalizeExam(raw) {
     starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
     endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
     durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0) || 0),
-    violationthreshold: Number(pick(raw.violationthreshold, raw.violation_threshold, 0) || 0),
     instructions: pick(raw.instructions, ""),
     allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
     allowedapplications: Array.isArray(pick(raw.allowedapplications, raw.allowed_applications))
       ? pick(raw.allowedapplications, raw.allowed_applications)
       : [],
-    status: examStatus,
-    examstatus: examStatus,
+    status,
+    examstatus: status,
   };
 }
 
 function normalizeAssessment(raw) {
   if (!raw) return null;
-
-  const assessmentStatus = toUpper(pick(raw.status, raw.assessmentstatus, raw.assessment_status, ""));
-  const finalStatus = toUpper(pick(raw.finalstatus, raw.final_status, ""));
-  const examStatus = toUpper(
-    pick(raw.examstatus, raw.exam_status, raw.status_exam, raw.runtimestatus, "")
-  );
-
+  const status = toUpper(pick(raw.status, raw.assessmentstatus, raw.assessment_status, ""));
+  const finalstatus = toUpper(pick(raw.finalstatus, raw.final_status, ""));
+  const examstatus = toUpper(pick(raw.examstatus, raw.exam_status, raw.runtimestatus, raw.status_exam, ""));
   return {
     ...raw,
     assessmentid: pick(raw.assessmentid, raw.assessment_id),
     examid: pick(raw.examid, raw.exam_id),
     candidateid: pick(raw.candidateid, raw.candidate_id),
     examinerid: pick(raw.examinerid, raw.examiner_id),
-    name: pick(raw.name, raw.examname, raw.exam_name, "Exam"),
+    name: pick(raw.name, raw.examname, raw.exam_name, "Upcoming Exam"),
     description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
     date: pick(raw.date, raw.examdate, raw.exam_date, "--"),
     starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
     endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
     durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0) || 0),
-    violationthreshold: Number(pick(raw.violationthreshold, raw.violation_threshold, 0) || 0),
     instructions: pick(raw.instructions, ""),
     allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
     allowedapplications: Array.isArray(pick(raw.allowedapplications, raw.allowed_applications))
       ? pick(raw.allowedapplications, raw.allowed_applications)
       : [],
-    status: assessmentStatus,
-    assessmentstatus: assessmentStatus,
-    finalstatus: finalStatus,
-    examstatus: examStatus,
+    status,
+    assessmentstatus: status,
+    finalstatus,
+    examstatus,
   };
 }
 
@@ -148,7 +136,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const browserOpenedRef = useRef(false);
   const lastNavigatedUrlRef = useRef(null);
   const returningRef = useRef(false);
-  const finishingRef = useRef(false);
 
   const { accessToken, user } = useAuthStore();
   const socket = useSocket(accessToken);
@@ -164,14 +151,12 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const [returning, setReturning] = useState(false);
   const [browserError, setBrowserError] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
+  const [pauseLocked, setPauseLocked] = useState(
+    canonicalStatus(normalizedAssessment?.status) === "PAUSED"
+  );
 
-  useEffect(() => {
-    setLiveExam(normalizedExam);
-  }, [normalizedExam]);
-
-  useEffect(() => {
-    setLiveAssessment(normalizedAssessment);
-  }, [normalizedAssessment]);
+  useEffect(() => setLiveExam(normalizedExam), [normalizedExam]);
+  useEffect(() => setLiveAssessment(normalizedAssessment), [normalizedAssessment]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -212,9 +197,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   );
 
   useEffect(() => {
-    if (activeTab > allowedSites.length - 1) {
-      setActiveTab(0);
-    }
+    if (activeTab > allowedSites.length - 1) setActiveTab(0);
   }, [allowedSites, activeTab]);
 
   const merged = useMemo(
@@ -228,20 +211,83 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   );
 
   const activeUrl = allowedSites[activeTab] || allowedSites[0] || null;
+  const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "-";
+  const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "-";
+  const isPaused = pauseLocked || canonicalStatus(assessmentStatus) === "PAUSED";
 
-  const safeElectron = useCallback(async (runner, fallbackMessage) => {
+  const safeElectron = useCallback(async (runner, fallbackMessage, options = {}) => {
+    const { silent = false } = options;
     try {
       const result = await runner();
       if (result && typeof result === "object" && "success" in result && result.success !== true) {
         throw new Error(result?.error || fallbackMessage);
       }
+      if (!silent) setBrowserError("");
       return true;
     } catch (error) {
       console.log(fallbackMessage, error);
-      setBrowserError(error?.message || fallbackMessage);
+      if (!silent) setBrowserError(error?.message || fallbackMessage);
       return false;
     }
   }, []);
+
+  const resizeBrowserToArea = useCallback(async () => {
+  if (!shellRef.current || !browserAreaRef.current || !window.electronAPI || completedRef.current) {
+    return false;
+  }
+
+  const shellRect = shellRef.current.getBoundingClientRect();
+  const browserRect = browserAreaRef.current.getBoundingClientRect();
+
+  const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
+  const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
+  const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
+  const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
+
+  try {
+    const result = await window.electronAPI.resizeBrowser({ top, left, right, bottom });
+    return !result || result.success !== false;
+  } catch (error) {
+    console.log("Failed to resize BrowserView", error);
+    return false;
+  }
+}, []);
+  const showBrowserForActiveState = useCallback(async () => {
+  if (!window.electronAPI || completedRef.current) return false;
+
+  const shown = await safeElectron(
+    () => window.electronAPI.showBrowser(),
+    "Failed to show secured browser.",
+    { silent: true }
+  );
+  if (!shown) return false;
+
+  const resized = await safeElectron(
+    () => resizeBrowserToArea(),
+    "Failed to resize BrowserView",
+    { silent: false }
+  );
+  if (!resized) return false;
+
+  await safeElectron(
+    () => window.electronAPI.restoreBrowser(),
+    "Failed to restore secured browser.",
+    { silent: true }
+  );
+
+  await safeElectron(
+    () => window.electronAPI.focusBrowser(),
+    "Failed to focus secured browser.",
+    { silent: true }
+  );
+
+  return true;
+}, [resizeBrowserToArea, safeElectron]);
+
+  const hideBrowserForPause = useCallback(async () => {
+    if (!window.electronAPI || completedRef.current || !browserOpenedRef.current) return false;
+    return safeElectron(() => window.electronAPI.hideBrowser(), "Failed to hide secured browser.", { silent: true });
+  }, [safeElectron]);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,61 +298,48 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       if (browserOpenedRef.current) return;
 
       const ok = await safeElectron(
-        () =>
-          window.electronAPI.openBrowser({
-            allowedWebsites: allowedSites,
-          }),
+        () => window.electronAPI.openBrowser({ allowedWebsites: allowedSites }),
         "Failed to open secured browser."
       );
 
       if (!cancelled && ok) {
         browserOpenedRef.current = true;
         setBrowserError("");
+        if (isPaused) {
+          await hideBrowserForPause();
+        } else {
+          await showBrowserForActiveState();
+        }
       }
     };
 
     ensureBrowserOpen();
-
     return () => {
       cancelled = true;
     };
-  }, [allowedSites, safeElectron]);
-
-  const positionAndFocusBrowser = useCallback(async () => {
-    if (!window.electronAPI || completedRef.current) return;
-
-    const shellRect = shellRef.current?.getBoundingClientRect?.();
-    const browserRect = browserAreaRef.current?.getBoundingClientRect?.();
-
-    if (shellRect && browserRect) {
-      const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
-      const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
-      const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
-      const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
-
-      await safeElectron(
-        () => window.electronAPI.resizeBrowser({ top, left, right, bottom }),
-        "Failed to resize secured browser."
-      );
-    }
-
-    await safeElectron(() => window.electronAPI.showBrowser(), "Failed to show secured browser.");
-    await safeElectron(() => window.electronAPI.restoreBrowser(), "Failed to restore secured browser.");
-    await safeElectron(() => window.electronAPI.focusBrowser(), "Failed to focus secured browser.");
-  }, [safeElectron]);
+  }, [allowedSites, isPaused, hideBrowserForPause, showBrowserForActiveState, safeElectron]);
 
   useEffect(() => {
-    positionAndFocusBrowser();
-  }, [positionAndFocusBrowser]);
+    if (!browserOpenedRef.current || completedRef.current || !window.electronAPI) return;
+
+    const sync = async () => {
+      if (isPaused) {
+        await hideBrowserForPause();
+      } else {
+        await showBrowserForActiveState();
+      }
+    };
+
+    sync();
+  }, [isPaused, hideBrowserForPause, showBrowserForActiveState]);
 
   useEffect(() => {
-    if (!activeUrl || !window.electronAPI || completedRef.current) return;
-    if (!browserOpenedRef.current) return;
+    if (!activeUrl || !browserOpenedRef.current || completedRef.current || isPaused) return;
     if (lastNavigatedUrlRef.current === activeUrl) return;
 
     let cancelled = false;
 
-    const navigateToTab = async () => {
+    const navigate = async () => {
       const ok = await safeElectron(
         () => window.electronAPI.navigateBrowser(activeUrl),
         "Failed to navigate secured browser."
@@ -314,47 +347,30 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
 
       if (!cancelled && ok) {
         lastNavigatedUrlRef.current = activeUrl;
-        setBrowserError("");
-        await safeElectron(() => window.electronAPI.showBrowser(), "Failed to show secured browser.");
-        await safeElectron(() => window.electronAPI.focusBrowser(), "Failed to focus secured browser.");
+        await showBrowserForActiveState();
       }
     };
 
-    navigateToTab();
-
+    navigate();
     return () => {
       cancelled = true;
     };
-  }, [activeUrl, safeElectron]);
+  }, [activeUrl, isPaused, safeElectron, showBrowserForActiveState]);
 
   useEffect(() => {
-    const sendBounds = async () => {
-      if (!shellRef.current || !browserAreaRef.current || !window.electronAPI || completedRef.current) return;
-
-      const shellRect = shellRef.current.getBoundingClientRect();
-      const browserRect = browserAreaRef.current.getBoundingClientRect();
-
-      const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
-      const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
-      const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
-      const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
-
-      await safeElectron(
-        () => window.electronAPI.resizeBrowser({ top, left, right, bottom }),
-        "Failed to resize secured browser."
-      );
-      await safeElectron(() => window.electronAPI.showBrowser(), "Failed to show secured browser.");
+    const onResize = async () => {
+      if (!browserOpenedRef.current || completedRef.current) return;
+      if (isPaused) return;
+      await showBrowserForActiveState();
     };
 
-    sendBounds();
-    const id = setTimeout(sendBounds, 300);
-    window.addEventListener("resize", sendBounds);
-
+    const id = setTimeout(onResize, 300);
+    window.addEventListener("resize", onResize);
     return () => {
       clearTimeout(id);
-      window.removeEventListener("resize", sendBounds);
+      window.removeEventListener("resize", onResize);
     };
-  }, [allowedSites.length, safeElectron]);
+  }, [isPaused, showBrowserForActiveState]);
 
   const cleanupExamShell = useCallback(async () => {
     try {
@@ -383,17 +399,14 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   }, []);
 
   const finishExam = useCallback(async () => {
-    if (completedRef.current || finishingRef.current) return;
-    finishingRef.current = true;
+    if (completedRef.current) return;
     completedRef.current = true;
-
     await cleanupExamShell();
     onComplete?.();
   }, [cleanupExamShell, onComplete]);
 
   const returnToDashboardSafe = useCallback(async () => {
     if (completedRef.current || returningRef.current || returning) return;
-
     returningRef.current = true;
     setReturning(true);
 
@@ -409,7 +422,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   useEffect(() => {
     if (!socket || !examId) return;
 
-    socket.emit("joinexam", {
+    socket.emit("join_exam", {
       examid: examId,
       assessmentid: assessmentId,
       candidateid: candidateId,
@@ -437,31 +450,42 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       }
 
       if (action === "PAUSE") {
+        setPauseLocked(true);
         setLiveAssessment((prev) => ({
           ...(prev || {}),
           status: "PAUSED",
           assessmentstatus: "PAUSED",
         }));
         setStatusMsg("Your assessment has been paused by the examiner.");
+        setBrowserError("");
+        await hideBrowserForPause();
         return;
       }
 
       if (action === "RESUME") {
+        setPauseLocked(false);
         setLiveAssessment((prev) => ({
           ...(prev || {}),
           status: "ACTIVE",
           assessmentstatus: "ACTIVE",
         }));
         setStatusMsg("Your assessment has been resumed.");
+        setBrowserError("");
+        await showBrowserForActiveState();
       }
     };
 
-    socket.on("controlcommand", onControlCommand);
-
-    return () => {
-      socket.off("controlcommand", onControlCommand);
-    };
-  }, [socket, examId, assessmentId, candidateId, finishExam]);
+    socket.on("control_command", onControlCommand);
+    return () => socket.off("control_command", onControlCommand);
+  }, [
+    socket,
+    examId,
+    assessmentId,
+    candidateId,
+    finishExam,
+    hideBrowserForPause,
+    showBrowserForActiveState,
+  ]);
 
   const checkLiveStatus = useCallback(async () => {
     if (completedRef.current) {
@@ -490,21 +514,13 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       if (latestExam) setLiveExam(latestExam);
       if (latestAssessment) setLiveAssessment(latestAssessment);
 
-      const examStatus = getExamStatus(latestExam);
-      const assessmentStatus = getAssessmentStatus(latestAssessment);
+      const examStatusValue = getExamStatus(latestExam);
+      const assessmentStatusValue = getAssessmentStatus(latestAssessment);
       const finalStatus = getFinalStatus(latestAssessment);
 
-      console.log("ACTIVE checkLiveStatus", {
-        examStatus,
-        assessmentStatus,
-        finalStatus,
-        latestExam,
-        latestAssessment,
-      });
-
       const shouldEnd =
-        TERMINAL_EXAM_STATUSES.has(examStatus) ||
-        TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus) ||
+        TERMINAL_EXAM_STATUSES.has(examStatusValue) ||
+        TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatusValue) ||
         (finalStatus && TERMINAL_ASSESSMENT_STATUSES.has(finalStatus));
 
       if (shouldEnd) {
@@ -512,15 +528,24 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         return;
       }
 
-      await safeElectron(() => window.electronAPI?.showBrowser?.(), "Failed to show secured browser.");
-      await safeElectron(() => window.electronAPI?.focusBrowser?.(), "Failed to focus secured browser.");
+      if (assessmentStatusValue === "PAUSED") {
+        setPauseLocked(true);
+        setBrowserError("");
+        await hideBrowserForPause();
+        return;
+      }
+
+      if (assessmentStatusValue === "ACTIVE") {
+        setPauseLocked(false);
+        await showBrowserForActiveState();
+      }
     } catch (error) {
       console.log("ActiveExam status check failed", error);
       setStatusMsg(error?.response?.data?.detail || error?.message || "Live status check failed.");
     } finally {
       setChecking(false);
     }
-  }, [examId, assessmentId, accessToken, finishExam, safeElectron]);
+  }, [examId, assessmentId, accessToken, finishExam, hideBrowserForPause, showBrowserForActiveState]);
 
   useEffect(() => {
     checkLiveStatus();
@@ -541,30 +566,15 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const remainingMs = endMs ? Math.max(0, endMs - now) : 0;
 
   useEffect(() => {
-    if (completedRef.current) return;
-    if (!endMs) return;
-    if (now >= endMs) {
-      console.log("Timer reached scheduled end, waiting for backend terminal status.");
-      setStatusMsg("Scheduled end time reached. Waiting for final confirmation from server.");
-    }
-  }, [endMs, now]);
-
-  useEffect(() => {
     return () => {
-      browserOpenedRef.current = false;
-      lastNavigatedUrlRef.current = null;
-
       if (!completedRef.current && !returningRef.current) {
-        console.log("ActiveExam unmounted without completion; browser close skipped to avoid accidental teardown.");
+        console.log("ActiveExam unmounted without explicit cleanup; browser close skipped.");
       }
     };
   }, []);
 
   const endLabel = merged.endtime || normalizedExam?.endtime || "--:--";
   const examName = merged.name || normalizedExam?.name || "Exam";
-  const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "-";
-  const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "-";
-  const isPaused = canonicalStatus(assessmentStatus) === "PAUSED";
 
   return (
     <div
@@ -629,6 +639,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
             <button
               key={`${site}-${index}`}
               onClick={() => setActiveTab(index)}
+              disabled={isPaused}
               style={{
                 background: index === activeTab ? "#10243a" : "#22263a",
                 border: index === activeTab ? "1px solid #4f8ef7" : "1px solid #2e3347",
@@ -636,8 +647,9 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
                 borderRadius: 8,
                 padding: "5px 12px",
                 fontSize: 12,
-                cursor: "pointer",
+                cursor: isPaused ? "not-allowed" : "pointer",
                 whiteSpace: "nowrap",
+                opacity: isPaused ? 0.6 : 1,
               }}
               title={site}
             >
@@ -662,7 +674,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
               style={{
                 position: "absolute",
                 inset: 0,
-                background: "rgba(0, 0, 0, 0.82)",
+                background: "rgba(0, 0, 0, 0.94)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
@@ -675,12 +687,13 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
               <div style={{ fontSize: 48, marginBottom: 16 }}>⏸️</div>
               <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Assessment Paused</h2>
               <p style={{ color: "#8b90a0", fontSize: 14, maxWidth: 360, lineHeight: 1.7 }}>
-                Your examiner has paused the assessment. Please stay available and wait for resume.
+                Your examiner has paused the assessment. Website access has been locked. Please stay available and wait
+                for resume.
               </p>
             </div>
           ) : null}
 
-          {browserError ? (
+          {browserError && !isPaused ? (
             <div
               style={{
                 position: "absolute",
@@ -785,6 +798,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
                   <button
                     key={`${site}-${index}`}
                     onClick={() => setActiveTab(index)}
+                    disabled={isPaused}
                     style={{
                       width: "100%",
                       textAlign: "left",
@@ -793,7 +807,8 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
                       borderRadius: 8,
                       padding: "10px 12px",
                       color: index === activeTab ? "#8fc2ff" : "#c8cad0",
-                      cursor: "pointer",
+                      cursor: isPaused ? "not-allowed" : "pointer",
+                      opacity: isPaused ? 0.6 : 1,
                     }}
                     title={site}
                   >
@@ -849,8 +864,10 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
             }}
           >
             <span>Secured Browser</span>
-            <span>{allowedSites.length ? "Domain restricted" : "No domain config"}</span>
-            <span style={{ marginLeft: "auto", color: "#f75f5f" }}>Do not close this window</span>
+            <span>{isPaused ? "Hidden during pause" : allowedSites.length ? "Domain restricted" : "No domain config"}</span>
+            <span style={{ marginLeft: "auto", color: isPaused ? "#f5a623" : "#f75f5f" }}>
+              {isPaused ? "Waiting for resume" : "Do not close this window"}
+            </span>
           </div>
         </div>
       </div>

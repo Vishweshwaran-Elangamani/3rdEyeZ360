@@ -171,21 +171,21 @@ function getCardState(exam, pendingRequest) {
     };
   }
 
-  if (pendingRequest || isPendingRequestStatus(assessmentStatus)) {
-    return {
-      mode: "pending-request",
-      cta: "Request Pending",
-      disabled: true,
-      helper: "Your request is pending examiner approval.",
-    };
-  }
-
   if (isApprovedStatus(assessmentStatus)) {
     return {
       mode: "enter",
       cta: "Enter Exam Hall",
       disabled: false,
       helper: "Permission granted. Continue to precheck and enter the exam.",
+    };
+  }
+
+  if (pendingRequest || isPendingRequestStatus(assessmentStatus)) {
+    return {
+      mode: "pending-request",
+      cta: "Request Pending",
+      disabled: true,
+      helper: "Your request is pending examiner approval.",
     };
   }
 
@@ -231,11 +231,11 @@ function getStatusChip(status, examStatus, pendingRequest) {
   if (s === "COMPLETED") return { label: "Completed", bg: "#0f2a1a", color: "#34c97a" };
   if (s === "TERMINATED") return { label: "Terminated", bg: "#2a1010", color: "#f75f5f" };
   if (s === "LOCKED") return { label: "Locked", bg: "#2a1010", color: "#f75f5f" };
-  if (pendingRequest || isPendingRequestStatus(s)) {
-    return { label: "Permission Requested", bg: "#2a2010", color: "#f5a623" };
-  }
   if (isApprovedStatus(s)) {
     return { label: "Permission Approved", bg: "#0f2a1a", color: "#34c97a" };
+  }
+  if (pendingRequest || isPendingRequestStatus(s)) {
+    return { label: "Permission Requested", bg: "#2a2010", color: "#f5a623" };
   }
   if (isRejectedStatus(s)) {
     return { label: "Permission Declined", bg: "#2a1010", color: "#f75f5f" };
@@ -470,23 +470,36 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
           const next = {};
 
           for (const item of rows) {
-            const existing = prev[item.assessmentid];
+            const assessmentId = item.assessmentid;
+            if (!assessmentId) continue;
 
-            if (existing && isPendingRequestStatus(existing.status)) {
-              next[item.assessmentid] = existing;
+            const assessmentStatus = toUpper(item.status);
+            const existing = prev[assessmentId];
+
+            if (isApprovedStatus(assessmentStatus) || isRejectedStatus(assessmentStatus)) {
               continue;
             }
 
-            if (isPendingRequestStatus(item.status)) {
-              next[item.assessmentid] = normalizeRequest({
-                requestid: `derived-${item.assessmentid}`,
-                assessmentid: item.assessmentid,
-                examid: item.examid,
-                candidateid: item.candidateid ?? user?.userid ?? user?.user_id ?? null,
-                type: getRequestType(item),
-                status: "PENDING",
-                reason: "",
-              });
+            if (isPendingRequestStatus(assessmentStatus)) {
+              next[assessmentId] =
+                normalizeRequest({
+                  requestid: `derived-${assessmentId}`,
+                  assessmentid: assessmentId,
+                  examid: item.examid,
+                  candidateid: item.candidateid ?? user?.userid ?? user?.user_id ?? null,
+                  type: getRequestType(item),
+                  status: "PENDING",
+                  reason: "",
+                }) || existing;
+              continue;
+            }
+
+            if (
+              existing &&
+              isPendingRequestStatus(existing.status) &&
+              !["ACTIVE", "PAUSED", "COMPLETED", "TERMINATED"].includes(assessmentStatus)
+            ) {
+              next[assessmentId] = existing;
             }
           }
 
@@ -563,17 +576,13 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
     setSubmittingRequest(true);
     setSubmitRequestError("");
 
-    try {
-      const requestType = getRequestType(selectedExamForRequest);
+    const requestType = getRequestType(selectedExamForRequest);
+    const requestedStatus = requestType === "REENTRY" ? "REENTRYREQUESTED" : "LATEENTRYREQUESTED";
 
+    try {
       const payload = {
         assessmentid: selectedExamForRequest.assessmentid,
         examid: selectedExamForRequest.examid,
-        candidateid:
-          selectedExamForRequest.candidateid ??
-          user?.userid ??
-          user?.user_id ??
-          null,
         type: requestType,
         reason,
       };
@@ -611,21 +620,21 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
             item.assessmentid === selectedExamForRequest.assessmentid
               ? {
                   ...item,
-                  status:
-                    requestType === "REENTRY"
-                      ? "REENTRYREQUESTED"
-                      : "LATEENTRYREQUESTED",
-                  assessmentstatus:
-                    requestType === "REENTRY"
-                      ? "REENTRYREQUESTED"
-                      : "LATEENTRYREQUESTED",
+                  status: requestedStatus,
+                  assessmentstatus: requestedStatus,
                 }
               : item
           )
         );
 
         resetRequestModalState();
-        void fetchAssessments(true);
+
+        try {
+          await fetchAssessments(true);
+        } catch (refreshError) {
+          console.error("Request created, but refresh failed", refreshError);
+        }
+
         return;
       }
 
@@ -662,21 +671,21 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
             item.assessmentid === selectedExamForRequest.assessmentid
               ? {
                   ...item,
-                  status:
-                    requestType === "REENTRY"
-                      ? "REENTRYREQUESTED"
-                      : "LATEENTRYREQUESTED",
-                  assessmentstatus:
-                    requestType === "REENTRY"
-                      ? "REENTRYREQUESTED"
-                      : "LATEENTRYREQUESTED",
+                  status: requestedStatus,
+                  assessmentstatus: requestedStatus,
                 }
               : item
           )
         );
 
         resetRequestModalState();
-        void fetchAssessments(true);
+
+        try {
+          await fetchAssessments(true);
+        } catch (refreshError) {
+          console.error("Existing request confirmed, but refresh failed", refreshError);
+        }
+
         return;
       }
 
@@ -688,8 +697,6 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
         apiMessage.toLowerCase().includes("already requested") ||
         apiMessage.toLowerCase().includes("pending request already exists")
       ) {
-        const requestType = getRequestType(selectedExamForRequest);
-
         setPendingRequestsByAssessment((prev) => ({
           ...prev,
           [selectedExamForRequest.assessmentid]: normalizeRequest({
@@ -712,21 +719,21 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
             item.assessmentid === selectedExamForRequest.assessmentid
               ? {
                   ...item,
-                  status:
-                    requestType === "REENTRY"
-                      ? "REENTRYREQUESTED"
-                      : "LATEENTRYREQUESTED",
-                  assessmentstatus:
-                    requestType === "REENTRY"
-                      ? "REENTRYREQUESTED"
-                      : "LATEENTRYREQUESTED",
+                  status: requestedStatus,
+                  assessmentstatus: requestedStatus,
                 }
               : item
           )
         );
 
         resetRequestModalState();
-        void fetchAssessments(true);
+
+        try {
+          await fetchAssessments(true);
+        } catch (refreshError) {
+          console.error("Recovered from duplicate request state, but refresh failed", refreshError);
+        }
+
         return;
       }
 
@@ -988,7 +995,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
                     >
                       {exam.examstatus || "UNKNOWN"}
                     </span>
-                    {pendingRequest ? (
+                    {pendingRequest && !isApprovedStatus(exam.status) && !isRejectedStatus(exam.status) ? (
                       <>
                         <br />
                         Request Status <span style={{ color: "#f5a623", fontWeight: 700 }}>PENDING</span>

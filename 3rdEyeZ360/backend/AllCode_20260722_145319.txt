@@ -1,6 +1,6 @@
 ===== FILE START =====
 NAME : server.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\server.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\server.py
 =====================
 
 from fastapi import FastAPI
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
 ===== FILE START =====
 NAME : database.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\config\database.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\config\database.py
 =====================
 
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -139,7 +139,7 @@ getdb = get_db
 
 ===== FILE START =====
 NAME : keycloak_client.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\config\keycloak_client.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\config\keycloak_client.py
 =====================
 
 from keycloak import KeycloakOpenID, KeycloakAdmin
@@ -178,7 +178,7 @@ keycloak_admin = keycloakadmin
 
 ===== FILE START =====
 NAME : minio_client.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\config\minio_client.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\config\minio_client.py
 =====================
 
 from minio import Minio
@@ -222,7 +222,7 @@ def getminio():
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\config\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\config\__init__.py
 =====================
 
 
@@ -231,7 +231,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\config\__init__.py
 
 ===== FILE START =====
 NAME : assessment_controller.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\assessment_controller.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\controllers\assessment_controller.py
 =====================
 
 from config.database import get_db
@@ -335,7 +335,7 @@ async def examiner_action(assessment_id: str, action: str, reason: str, examiner
 
 ===== FILE START =====
 NAME : auth_controller.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\auth_controller.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\controllers\auth_controller.py
 =====================
 
 from datetime import datetime
@@ -456,7 +456,7 @@ async def refreshtoken(refresh_token_value: str):
 
 ===== FILE START =====
 NAME : chat_controller.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\chat_controller.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\controllers\chat_controller.py
 =====================
 
 from datetime import datetime
@@ -520,7 +520,7 @@ async def get_all_candidates_in_exam(exam_id: str):
 
 ===== FILE START =====
 NAME : exam_controller.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\exam_controller.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\controllers\exam_controller.py
 =====================
 
 from datetime import datetime
@@ -656,7 +656,7 @@ async def publish_exam(exam_id: str):
 
 ===== FILE START =====
 NAME : request_controller.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\request_controller.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\controllers\request_controller.py
 =====================
 
 from datetime import datetime
@@ -804,7 +804,7 @@ async def get_pending_requests(exam_id: str):
 
 ===== FILE START =====
 NAME : user_controller.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\user_controller.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\controllers\user_controller.py
 =====================
 
 from datetime import datetime
@@ -1052,7 +1052,7 @@ async def sendpasswordsetupemail(user_id: str):
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\controllers\__init__.py
 =====================
 
 
@@ -1061,7 +1061,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\controllers\__init__.py
 
 ===== FILE START =====
 NAME : auth.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\middleware\auth.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\middleware\auth.py
 =====================
 
 import os
@@ -1177,7 +1177,7 @@ requirerole = require_role
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\middleware\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\middleware\__init__.py
 =====================
 
 
@@ -1186,7 +1186,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\middleware\__init__.py
 
 ===== FILE START =====
 NAME : assessment.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\assessment.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\assessment.py
 =====================
 
 from datetime import datetime
@@ -1225,7 +1225,7 @@ class AssessmentModel(BaseModel):
 
 ===== FILE START =====
 NAME : audit_log.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\audit_log.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\audit_log.py
 =====================
 
 from pydantic import BaseModel
@@ -1246,7 +1246,7 @@ class AuditLogModel(BaseModel):
 
 ===== FILE START =====
 NAME : chat.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\chat.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\chat.py
 =====================
 
 from datetime import datetime
@@ -1272,7 +1272,7 @@ class ChatMessage(BaseModel):
 
 ===== FILE START =====
 NAME : exam.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\exam.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\exam.py
 =====================
 
 from pydantic import BaseModel
@@ -1298,7 +1298,7 @@ class ExamModel(BaseModel):
 
 ===== FILE START =====
 NAME : notification.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\notification.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\notification.py
 =====================
 
 from pydantic import BaseModel
@@ -1318,7 +1318,7 @@ class NotificationModel(BaseModel):
 
 ===== FILE START =====
 NAME : request.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\request.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\request.py
 =====================
 
 from datetime import datetime
@@ -1349,7 +1349,7 @@ class RequestModel(BaseModel):
 
 ===== FILE START =====
 NAME : user.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\user.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\user.py
 =====================
 
 from datetime import datetime
@@ -1377,7 +1377,7 @@ class UserModel(BaseModel):
 
 ===== FILE START =====
 NAME : violation.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\violation.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\violation.py
 =====================
 
 from datetime import datetime
@@ -1410,7 +1410,7 @@ class ViolationModel(BaseModel):
 
 ===== FILE START =====
 NAME : warning.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\warning.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\warning.py
 =====================
 
 from pydantic import BaseModel
@@ -1430,7 +1430,7 @@ class WarningModel(BaseModel):
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\models\__init__.py
 =====================
 
 
@@ -1439,7 +1439,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\__init__.py
 
 ===== FILE START =====
 NAME : admin_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\admin_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\admin_routes.py
 =====================
 
 from fastapi import APIRouter, Depends
@@ -1474,72 +1474,176 @@ async def get_audit_logs(current_user=Depends(require_role("Admin"))):
 
 ===== FILE START =====
 NAME : assessment_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\assessment_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\assessment_routes.py
 =====================
 
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from config.database import get_db
-from middleware.auth import require_role
+from config.database import getdb
+from middleware.auth import requirerole
 
 router = APIRouter(prefix="/api/assessments", tags=["Assessments"])
 
 
 def _serialize(document: dict) -> dict:
-    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+    return {k: str(v) if k == "_id" else v for k, v in (document or {}).items() if k != "_id"}
 
 
-def _get_assessment_doc(db, assessment_id: str):
-    return db.assessments.find_one({
+def _normalize_status(value, default="") -> str:
+    return str(value or default).strip().upper().replace(" ", "").replace("-", "_")
+
+
+def _assessment_query(assessment_id: str) -> dict:
+    return {
         "$or": [
-            {"assessment_id": assessment_id},
             {"assessmentid": assessment_id},
+            {"assessment_id": assessment_id},
         ]
-    })
+    }
+
+
+def _exam_query(exam_id: str) -> dict:
+    return {
+        "$or": [
+            {"examid": exam_id},
+            {"exam_id": exam_id},
+        ]
+    }
+
+
+async def _get_assessment_doc(db, assessment_id: str):
+    return await db.assessments.find_one(_assessment_query(assessment_id))
+
+
+async def _get_exam_doc(db, exam_id: str):
+    return await db.exams.find_one(_exam_query(exam_id))
+
+
+def _merge_exam_into_assessment(assessment: dict, exam: dict | None) -> dict:
+    assessment = assessment or {}
+    data = _serialize(assessment)
+
+    assessment_id = assessment.get("assessmentid") or assessment.get("assessment_id")
+    exam_id = assessment.get("examid") or assessment.get("exam_id")
+    candidate_id = assessment.get("candidateid") or assessment.get("candidate_id")
+    examiner_id = assessment.get("examinerid") or assessment.get("examiner_id")
+
+    status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    final_status = _normalize_status(assessment.get("finalstatus") or assessment.get("final_status"))
+
+    data["assessmentid"] = assessment_id
+    data["assessment_id"] = assessment_id
+    data["examid"] = exam_id
+    data["exam_id"] = exam_id
+    data["candidateid"] = candidate_id
+    data["candidate_id"] = candidate_id
+    data["examinerid"] = examiner_id
+    data["examiner_id"] = examiner_id
+
+    data["status"] = status
+    data["assessmentstatus"] = status
+    data["assessment_status"] = status
+    data["finalstatus"] = final_status
+    data["final_status"] = final_status
+
+    if not exam:
+        data["allowedwebsites"] = assessment.get("allowedwebsites", assessment.get("allowed_websites", [])) or []
+        data["allowed_websites"] = data["allowedwebsites"]
+        data["allowedapplications"] = assessment.get("allowedapplications", assessment.get("allowed_applications", [])) or []
+        data["allowed_applications"] = data["allowedapplications"]
+        exam_status = _normalize_status(
+            assessment.get("examstatus") or assessment.get("exam_status") or assessment.get("statusexam")
+        )
+        data["examstatus"] = exam_status
+        data["exam_status"] = exam_status
+        return data
+
+    exam_data = _serialize(exam)
+    exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
+
+    data["name"] = assessment.get("name") or exam_data.get("name") or exam_data.get("examname") or ""
+    data["description"] = assessment.get("description") or exam_data.get("description") or exam_data.get("examdescription") or ""
+    data["date"] = assessment.get("date") or exam_data.get("date") or exam_data.get("examdate") or ""
+    data["start_time"] = assessment.get("start_time") or assessment.get("starttime") or exam_data.get("start_time") or exam_data.get("starttime") or ""
+    data["starttime"] = data["start_time"]
+    data["end_time"] = assessment.get("end_time") or assessment.get("endtime") or exam_data.get("end_time") or exam_data.get("endtime") or ""
+    data["endtime"] = data["end_time"]
+    data["duration_minutes"] = assessment.get("duration_minutes", assessment.get("durationminutes", exam_data.get("duration_minutes", exam_data.get("durationminutes", 0))))
+    data["durationminutes"] = data["duration_minutes"]
+    data["violation_threshold"] = assessment.get("violation_threshold", assessment.get("violationthreshold", exam_data.get("violation_threshold", exam_data.get("violationthreshold", 10))))
+    data["violationthreshold"] = data["violation_threshold"]
+    data["instructions"] = assessment.get("instructions") or exam_data.get("instructions") or ""
+
+    allowed_websites = (
+        assessment.get("allowedwebsites")
+        or assessment.get("allowed_websites")
+        or exam_data.get("allowedwebsites")
+        or exam_data.get("allowed_websites")
+        or []
+    )
+    allowed_applications = (
+        assessment.get("allowedapplications")
+        or assessment.get("allowed_applications")
+        or exam_data.get("allowedapplications")
+        or exam_data.get("allowed_applications")
+        or []
+    )
+
+    data["allowedwebsites"] = allowed_websites
+    data["allowed_websites"] = allowed_websites
+    data["allowedapplications"] = allowed_applications
+    data["allowed_applications"] = allowed_applications
+    data["examstatus"] = exam_status
+    data["exam_status"] = exam_status
+
+    return data
 
 
 @router.get("/{assessment_id}")
 async def get_assessment(
     assessment_id: str,
-    current_user=Depends(require_role("Candidate", "Examiner", "Admin"))
+    current_user=Depends(requirerole("Candidate", "Examiner", "Admin"))
 ):
-    db = get_db()
+    db = getdb()
+
     assessment = await _get_assessment_doc(db, assessment_id)
-
     if not assessment:
-      raise HTTPException(status_code=404, detail="Assessment not found")
+        raise HTTPException(status_code=404, detail="Assessment not found")
 
-    current_user_id = current_user.get("user_id") or current_user.get("userid")
-    candidate_id = assessment.get("candidate_id") or assessment.get("candidateid")
-    examiner_id = assessment.get("examiner_id") or assessment.get("examinerid")
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
+    candidate_id = assessment.get("candidateid") or assessment.get("candidate_id")
+    examiner_id = assessment.get("examinerid") or assessment.get("examiner_id")
 
     if current_user["role"] == "Candidate" and candidate_id != current_user_id:
-      raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if current_user["role"] == "Examiner" and examiner_id != current_user_id:
-      raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    return _serialize(assessment)
+    exam_id = assessment.get("examid") or assessment.get("exam_id")
+    exam = await _get_exam_doc(db, exam_id) if exam_id else None
+
+    return _merge_exam_into_assessment(assessment, exam)
 
 
 @router.patch("/{assessment_id}/status")
 async def update_assessment_status(
     assessment_id: str,
     body: dict,
-    current_user=Depends(require_role("Candidate", "Examiner", "Admin"))
+    current_user=Depends(requirerole("Candidate", "Examiner", "Admin"))
 ):
-    db = get_db()
-    assessment = await _get_assessment_doc(db, assessment_id)
+    db = getdb()
 
+    assessment = await _get_assessment_doc(db, assessment_id)
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
 
-    current_user_id = current_user.get("user_id") or current_user.get("userid")
-    candidate_id = assessment.get("candidate_id") or assessment.get("candidateid")
-    examiner_id = assessment.get("examiner_id") or assessment.get("examinerid")
-    exam_id = assessment.get("exam_id") or assessment.get("examid")
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
+    candidate_id = assessment.get("candidateid") or assessment.get("candidate_id")
+    examiner_id = assessment.get("examinerid") or assessment.get("examiner_id")
+    exam_id = assessment.get("examid") or assessment.get("exam_id")
 
     if current_user["role"] == "Candidate" and candidate_id != current_user_id:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -1547,30 +1651,21 @@ async def update_assessment_status(
     if current_user["role"] == "Examiner" and examiner_id != current_user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    new_status = str(body.get("status") or "").strip().upper()
+    new_status = _normalize_status(body.get("status"))
     if not new_status:
         raise HTTPException(status_code=400, detail="status is required")
 
-    exam = await db.exams.find_one({
-        "$or": [
-            {"exam_id": exam_id},
-            {"examid": exam_id},
-        ]
-    })
+    exam = await _get_exam_doc(db, exam_id)
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    exam_status = str(exam.get("status") or exam.get("examstatus") or "").upper()
-    current_status = str(assessment.get("status") or "").upper()
+    exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
+    current_status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
 
-    allowed_candidate_statuses = {
-        "READY",
-    }
+    if current_user["role"] == "Candidate":
+        if new_status != "READY":
+            raise HTTPException(status_code=403, detail="Candidate cannot set this status")
 
-    if current_user["role"] == "Candidate" and new_status not in allowed_candidate_statuses:
-        raise HTTPException(status_code=403, detail="Candidate cannot set this status")
-
-    if new_status == "READY":
         if exam_status == "RUNNING":
             raise HTTPException(
                 status_code=400,
@@ -1580,39 +1675,118 @@ async def update_assessment_status(
         if current_status not in {"ASSIGNED", "AVAILABLE", "READY"}:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot move assessment from {current_status} to READY"
+                detail=f"Cannot move assessment from {current_status or 'UNKNOWN'} to READY"
             )
 
     now = datetime.utcnow()
-
     update_doc = {
         "status": new_status,
-        "updated_at": now,
+        "assessmentstatus": new_status,
         "updatedat": now,
+        "updated_at": now,
     }
 
-    if new_status == "READY" and not assessment.get("join_time") and not assessment.get("jointime"):
-        update_doc["join_time"] = now
+    if new_status == "READY" and not (assessment.get("jointime") or assessment.get("join_time")):
         update_doc["jointime"] = now
+        update_doc["join_time"] = now
 
     await db.assessments.update_one(
-        {
-            "$or": [
-                {"assessment_id": assessment_id},
-                {"assessmentid": assessment_id},
-            ]
-        },
+        _assessment_query(assessment_id),
         {"$set": update_doc}
     )
 
     updated = await _get_assessment_doc(db, assessment_id)
-    return _serialize(updated)
+    updated_exam = await _get_exam_doc(db, exam_id) if exam_id else None
+
+    return _merge_exam_into_assessment(updated, updated_exam)
+
+
+@router.post("/{assessment_id}/action")
+async def assessment_action(
+    assessment_id: str,
+    body: dict,
+    current_user=Depends(requirerole("Examiner", "Admin"))
+):
+    db = getdb()
+
+    assessment = await _get_assessment_doc(db, assessment_id)
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
+    examiner_id = assessment.get("examinerid") or assessment.get("examiner_id")
+    exam_id = assessment.get("examid") or assessment.get("exam_id")
+
+    if current_user["role"] == "Examiner" and examiner_id != current_user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    action = str(body.get("action") or "").strip().lower()
+    reason = str(body.get("reason") or "").strip()
+
+    if action not in {"pause", "resume", "terminate"}:
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+    exam = await _get_exam_doc(db, exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+
+    exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
+    current_status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+
+    now = datetime.utcnow()
+    update_doc = {
+        "updatedat": now,
+        "updated_at": now,
+        "lastaction": action,
+        "lastactionby": current_user_id,
+    }
+
+    if reason:
+        update_doc["actionreason"] = reason
+
+    if action == "terminate":
+        update_doc["status"] = "TERMINATED"
+        update_doc["assessmentstatus"] = "TERMINATED"
+        update_doc["finalstatus"] = "TERMINATED"
+        update_doc["final_status"] = "TERMINATED"
+        update_doc["exittime"] = now
+        update_doc["exit_time"] = now
+
+    elif action == "pause":
+        if current_status in {"TERMINATED", "COMPLETED", "LOCKED"}:
+            raise HTTPException(status_code=400, detail=f"Cannot pause assessment in {current_status}")
+        update_doc["status"] = "PAUSED"
+        update_doc["assessmentstatus"] = "PAUSED"
+
+    elif action == "resume":
+        if exam_status != "RUNNING":
+            raise HTTPException(status_code=400, detail="Exam must be RUNNING to resume assessment")
+        if current_status in {"TERMINATED", "COMPLETED", "LOCKED"}:
+            raise HTTPException(status_code=400, detail=f"Cannot resume assessment in {current_status}")
+        update_doc["status"] = "ACTIVE"
+        update_doc["assessmentstatus"] = "ACTIVE"
+        if not (assessment.get("activetime") or assessment.get("active_time")):
+            update_doc["activetime"] = now
+            update_doc["active_time"] = now
+
+    await db.assessments.update_one(
+        _assessment_query(assessment_id),
+        {"$set": update_doc}
+    )
+
+    updated = await _get_assessment_doc(db, assessment_id)
+    updated_exam = await _get_exam_doc(db, exam_id) if exam_id else None
+
+    return {
+        "message": f"Assessment action '{action}' applied",
+        "assessment": _merge_exam_into_assessment(updated, updated_exam),
+    }
 
 ===== FILE END =====
 
 ===== FILE START =====
 NAME : auth_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\auth_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\auth_routes.py
 =====================
 
 from fastapi import APIRouter, HTTPException
@@ -1669,7 +1843,7 @@ async def logout_route(req: LogoutRequest):
 
 ===== FILE START =====
 NAME : chat_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\chat_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\chat_routes.py
 =====================
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -1715,7 +1889,7 @@ async def history(
 
 ===== FILE START =====
 NAME : exam_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\exam_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\exam_routes.py
 =====================
 
 from datetime import datetime
@@ -1751,6 +1925,114 @@ def _get_assessment_query(exam_id: str, candidate_id: str):
     }
 
 
+def _normalize_status(value, default=""):
+    return str(value or default).strip().upper()
+
+
+def _clean_list(value):
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if item not in (None, "", [])]
+
+
+def _exam_payload(exam: dict) -> dict:
+    exam_data = _serialize(exam or {})
+    exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
+
+    exam_data["status"] = exam_status
+    exam_data["examstatus"] = exam_status
+    exam_data["exam_status"] = exam_status
+
+    exam_id = exam.get("exam_id") or exam.get("examid")
+    examiner_id = exam.get("examiner_id") or exam.get("examinerid")
+
+    exam_data["examid"] = exam_id
+    exam_data["exam_id"] = exam_id
+    exam_data["examinerid"] = examiner_id
+    exam_data["examiner_id"] = examiner_id
+    exam_data["name"] = exam.get("name") or exam.get("examname") or ""
+    exam_data["description"] = exam.get("description") or exam.get("examdescription") or ""
+    exam_data["date"] = exam.get("date") or exam.get("examdate") or ""
+    exam_data["starttime"] = exam.get("starttime") or exam.get("start_time") or exam.get("examstarttime") or ""
+    exam_data["endtime"] = exam.get("endtime") or exam.get("end_time") or exam.get("examendtime") or ""
+    exam_data["durationminutes"] = exam.get("durationminutes", exam.get("duration_minutes", 0))
+    exam_data["violationthreshold"] = exam.get("violationthreshold", exam.get("violation_threshold", 10))
+    exam_data["instructions"] = exam.get("instructions") or ""
+    exam_data["allowedwebsites"] = exam.get("allowedwebsites", exam.get("allowed_websites", [])) or []
+    exam_data["allowedapplications"] = exam.get("allowedapplications", exam.get("allowed_applications", [])) or []
+
+    return exam_data
+
+
+def _assessment_payload(assessment: dict) -> dict:
+    assessment_data = _serialize(assessment or {})
+    assessment_status = _normalize_status(
+        assessment.get("status") or assessment.get("assessmentstatus")
+    )
+    final_status = _normalize_status(
+        assessment.get("final_status") or assessment.get("finalstatus")
+    )
+
+    assessment_data["status"] = assessment_status
+    assessment_data["assessmentstatus"] = assessment_status
+    assessment_data["assessment_status"] = assessment_status
+    assessment_data["finalstatus"] = final_status
+    assessment_data["final_status"] = final_status
+
+    assessment_id = assessment.get("assessment_id") or assessment.get("assessmentid")
+    exam_id = assessment.get("exam_id") or assessment.get("examid")
+    candidate_id = assessment.get("candidate_id") or assessment.get("candidateid")
+    examiner_id = assessment.get("examiner_id") or assessment.get("examinerid")
+
+    assessment_data["assessmentid"] = assessment_id
+    assessment_data["assessment_id"] = assessment_id
+    assessment_data["examid"] = exam_id
+    assessment_data["exam_id"] = exam_id
+    assessment_data["candidateid"] = candidate_id
+    assessment_data["candidate_id"] = candidate_id
+    assessment_data["examinerid"] = examiner_id
+    assessment_data["examiner_id"] = examiner_id
+    assessment_data["allowedwebsites"] = assessment.get("allowedwebsites", assessment.get("allowed_websites", [])) or []
+    assessment_data["allowedapplications"] = assessment.get("allowedapplications", assessment.get("allowed_applications", [])) or []
+
+    return assessment_data
+
+
+def _merge_exam_assessment(exam: dict, assessment: dict) -> dict:
+    exam_data = _exam_payload(exam)
+    assessment_data = _assessment_payload(assessment)
+
+    merged = {
+        **exam_data,
+        **assessment_data,
+        "examid": exam_data.get("examid"),
+        "exam_id": exam_data.get("exam_id"),
+        "assessmentid": assessment_data.get("assessmentid"),
+        "assessment_id": assessment_data.get("assessment_id"),
+        "candidateid": assessment_data.get("candidateid"),
+        "candidate_id": assessment_data.get("candidate_id"),
+        "examinerid": assessment_data.get("examinerid") or exam_data.get("examinerid"),
+        "examiner_id": assessment_data.get("examiner_id") or exam_data.get("examiner_id"),
+        "name": exam_data.get("name"),
+        "description": exam_data.get("description", ""),
+        "date": exam_data.get("date"),
+        "starttime": exam_data.get("starttime"),
+        "endtime": exam_data.get("endtime"),
+        "durationminutes": exam_data.get("durationminutes", 0),
+        "allowedwebsites": assessment_data.get("allowedwebsites") or exam_data.get("allowedwebsites") or [],
+        "allowedapplications": assessment_data.get("allowedapplications") or exam_data.get("allowedapplications") or [],
+        "examstatus": exam_data.get("examstatus", ""),
+        "exam_status": exam_data.get("exam_status", ""),
+        "assessmentstatus": assessment_data.get("assessmentstatus", ""),
+        "assessment_status": assessment_data.get("assessment_status", ""),
+        "finalstatus": assessment_data.get("finalstatus", ""),
+        "final_status": assessment_data.get("final_status", ""),
+        "status": assessment_data.get("assessmentstatus", ""),
+    }
+
+    return merged
+
+
 async def _ensure_exam_access(db, exam_id: str, current_user: dict):
     exam = await db.exams.find_one(_get_exam_query(exam_id))
     if not exam:
@@ -1765,22 +2047,103 @@ async def _ensure_exam_access(db, exam_id: str, current_user: dict):
     return exam
 
 
+@router.post("")
+async def create_exam(
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin"))
+):
+    db = get_db()
+    examiner_id = current_user.get("user_id") or current_user.get("userid")
+
+    name = (body.get("name") or "").strip()
+    description = (body.get("description") or "").strip()
+    date = (body.get("date") or "").strip()
+    start_time = (body.get("start_time") or body.get("starttime") or "").strip()
+    end_time = (body.get("end_time") or body.get("endtime") or "").strip()
+    instructions = (body.get("instructions") or "").strip()
+
+    duration_minutes = body.get("duration_minutes", body.get("durationminutes"))
+    violation_threshold = body.get("violation_threshold", body.get("violationthreshold", 10))
+    allowed_websites = _clean_list(body.get("allowed_websites", body.get("allowedwebsites", [])))
+    allowed_applications = _clean_list(body.get("allowed_applications", body.get("allowedapplications", [])))
+    status = _normalize_status(body.get("status"), "DRAFT")
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Exam name is required")
+
+    if not date or not start_time or not end_time:
+        raise HTTPException(
+            status_code=400,
+            detail="Exam date, start_time, and end_time are required"
+        )
+
+    if duration_minutes is None:
+        raise HTTPException(status_code=400, detail="duration_minutes is required")
+
+    now = datetime.utcnow()
+    exam_id = f"EXM-{uuid.uuid4().hex[:8].upper()}"
+
+    exam_doc = {
+        "exam_id": exam_id,
+        "examid": exam_id,
+        "name": name,
+        "description": description,
+        "examiner_id": examiner_id,
+        "examinerid": examiner_id,
+        "date": date,
+        "start_time": start_time,
+        "starttime": start_time,
+        "end_time": end_time,
+        "endtime": end_time,
+        "duration_minutes": int(duration_minutes),
+        "durationminutes": int(duration_minutes),
+        "violation_threshold": int(violation_threshold),
+        "violationthreshold": int(violation_threshold),
+        "allowed_websites": allowed_websites,
+        "allowedwebsites": allowed_websites,
+        "allowed_applications": allowed_applications,
+        "allowedapplications": allowed_applications,
+        "instructions": instructions,
+        "status": status,
+        "examstatus": status,
+        "created_at": now,
+        "createdat": now,
+        "updated_at": now,
+        "updatedat": now,
+    }
+
+    await db.exams.insert_one(exam_doc)
+
+    await db.audit_logs.insert_one({
+        "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+        "user_id": examiner_id,
+        "userid": examiner_id,
+        "exam_id": exam_id,
+        "examid": exam_id,
+        "action": "CreateExam",
+        "reason": f"Created exam {name}",
+        "timestamp": now,
+    })
+
+    return _exam_payload(exam_doc)
+
+
 @router.get("")
 async def get_my_exams(current_user=Depends(require_role("Examiner", "Admin"))):
     db = get_db()
 
     if current_user["role"] == "Admin":
-      exams = await db.exams.find({}).sort("created_at", -1).to_list(None)
+        exams = await db.exams.find({}).sort("created_at", -1).to_list(None)
     else:
-      current_user_id = current_user.get("user_id") or current_user.get("userid")
-      exams = await db.exams.find({
-          "$or": [
-              {"examiner_id": current_user_id},
-              {"examinerid": current_user_id},
-          ]
-      }).sort("created_at", -1).to_list(None)
+        current_user_id = current_user.get("user_id") or current_user.get("userid")
+        exams = await db.exams.find({
+            "$or": [
+                {"examiner_id": current_user_id},
+                {"examinerid": current_user_id},
+            ]
+        }).sort("created_at", -1).to_list(None)
 
-    return [_serialize(exam) for exam in exams]
+    return [_exam_payload(exam) for exam in exams]
 
 
 @router.get("/candidate/upcoming")
@@ -1806,12 +2169,7 @@ async def get_candidate_upcoming(current_user=Depends(require_role("Candidate"))
         if not exam:
             continue
 
-        merged = {
-            **_serialize(exam),
-            **_serialize(assessment),
-            "examstatus": exam.get("status", exam.get("examstatus", "")),
-        }
-        result.append(merged)
+        result.append(_merge_exam_assessment(exam, assessment))
 
     return result
 
@@ -1842,7 +2200,7 @@ async def get_exam(
         if not assignment:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    return _serialize(exam)
+    return _exam_payload(exam)
 
 
 @router.patch("/{exam_id}/start")
@@ -1860,7 +2218,8 @@ async def start_exam(
         _get_exam_query(exam_id),
         {
             "$set": {
-                "status": "Running",
+                "status": "RUNNING",
+                "examstatus": "RUNNING",
                 "started_at": now,
                 "startedat": now,
                 "updated_at": now,
@@ -1880,7 +2239,7 @@ async def start_exam(
         "timestamp": now,
     })
 
-    return {"message": "Exam started", "exam_id": exam_id}
+    return {"message": "Exam started", "exam_id": exam_id, "examstatus": "RUNNING"}
 
 
 @router.patch("/{exam_id}/end")
@@ -1898,7 +2257,8 @@ async def end_exam(
         _get_exam_query(exam_id),
         {
             "$set": {
-                "status": "Completed",
+                "status": "COMPLETED",
+                "examstatus": "COMPLETED",
                 "ended_at": now,
                 "endedat": now,
                 "updated_at": now,
@@ -1929,6 +2289,7 @@ async def end_exam(
         {
             "$set": {
                 "status": "TERMINATED",
+                "assessmentstatus": "TERMINATED",
                 "final_status": "TERMINATED",
                 "finalstatus": "TERMINATED",
                 "exit_time": now,
@@ -1950,7 +2311,7 @@ async def end_exam(
         "timestamp": now,
     })
 
-    return {"message": "Exam ended", "exam_id": exam_id}
+    return {"message": "Exam ended", "exam_id": exam_id, "examstatus": "COMPLETED"}
 
 
 @router.get("/{exam_id}/assessments")
@@ -1975,10 +2336,13 @@ async def get_exam_assessments(
 
         result.append({
             "assessment_id": assessment.get("assessment_id") or assessment.get("assessmentid"),
+            "assessmentid": assessment.get("assessment_id") or assessment.get("assessmentid"),
             "candidate_id": candidate_id,
+            "candidateid": candidate_id,
             "candidate_name": user.get("name") if user else candidate_id,
             "candidate_email": user.get("email") if user else "",
-            "status": assessment.get("status", "ASSIGNED"),
+            "status": _normalize_status(assessment.get("status"), "ASSIGNED"),
+            "assessmentstatus": _normalize_status(assessment.get("status"), "ASSIGNED"),
             "violation_count": assessment.get("violation_count", assessment.get("violationcount", 0)),
             "risk_score": assessment.get("risk_score", assessment.get("riskscore", 0)),
             "credibility_score": assessment.get("credibility_score", assessment.get("credibilityscore", 100)),
@@ -2025,6 +2389,7 @@ async def assign_candidate(
         "examiner_id": current_user_id,
         "examinerid": current_user_id,
         "status": "ASSIGNED",
+        "assessmentstatus": "ASSIGNED",
         "violation_count": 0,
         "violationcount": 0,
         "warning_count": 0,
@@ -2074,7 +2439,7 @@ async def assign_candidate(
 
 ===== FILE START =====
 NAME : notification_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\notification_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\notification_routes.py
 =====================
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -2150,7 +2515,7 @@ async def unread_count(
 
 ===== FILE START =====
 NAME : request_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\request_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\request_routes.py
 =====================
 
 from datetime import datetime
@@ -2159,8 +2524,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from config.database import get_db
-from middleware.auth import require_role
+from config.database import getdb
+from middleware.auth import requirerole
 
 router = APIRouter(prefix="/api/requests", tags=["Requests"])
 
@@ -2178,39 +2543,76 @@ class ReviewBody(BaseModel):
 
 
 def _serialize(document: dict) -> dict:
-    return {k: str(v) if k == "_id" else v for k, v in document.items() if k != "_id"}
+    return {k: str(v) if k == "_id" else v for k, v in (document or {}).items() if k != "_id"}
 
 
-async def _ensure_exam_access(db, examid: str, current_user: dict):
-    exam = await db.exams.find_one({"examid": examid})
+def _normalize_status(value, default="") -> str:
+    return str(value or default).strip().upper().replace(" ", "").replace("-", "_")
+
+
+def _exam_query(exam_id: str) -> dict:
+    return {"$or": [{"examid": exam_id}, {"exam_id": exam_id}]}
+
+
+def _assessment_query(assessment_id: str) -> dict:
+    return {"$or": [{"assessmentid": assessment_id}, {"assessment_id": assessment_id}]}
+
+
+def _user_query(user_id: str) -> dict:
+    return {"$or": [{"userid": user_id}, {"user_id": user_id}]}
+
+
+def _get_audit_collection(db):
+    audit_collection = getattr(db, "audit_logs", None)
+    if audit_collection is None:
+        audit_collection = getattr(db, "auditlogs", None)
+    return audit_collection
+
+
+async def _ensure_exam_access(db, exam_id: str, current_user: dict):
+    exam = await db.exams.find_one(_exam_query(exam_id))
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
 
-    if current_user["role"] == "Examiner" and exam.get("examinerid") != current_user["userid"]:
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
+    examiner_id = exam.get("examinerid") or exam.get("examiner_id")
+
+    if current_user["role"] == "Examiner" and examiner_id != current_user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     return exam
 
 
-@router.post("/")
+@router.post("")
 async def submit(
     req: CreateRequestBody,
-    current_user=Depends(require_role("Candidate")),
+    current_user=Depends(requirerole("Candidate")),
 ):
-    db = get_db()
+    db = getdb()
+
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
 
     assessment = await db.assessments.find_one(
         {
-            "assessmentid": req.assessmentid,
-            "examid": req.examid,
-            "candidateid": current_user["userid"],
+            "$or": [
+                {
+                    "assessmentid": req.assessmentid,
+                    "examid": req.examid,
+                    "candidateid": current_user_id,
+                },
+                {
+                    "assessment_id": req.assessmentid,
+                    "exam_id": req.examid,
+                    "candidate_id": current_user_id,
+                },
+            ]
         }
     )
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
 
-    request_type = req.type.strip().upper()
-    reason = req.reason.strip()
+    request_type = _normalize_status(req.type)
+    reason = (req.reason or "").strip()
 
     if request_type not in {"REENTRY", "LATEENTRY"}:
         raise HTTPException(status_code=400, detail="Invalid request type")
@@ -2220,56 +2622,85 @@ async def submit(
 
     existing = await db.requests.find_one(
         {
-            "assessmentid": req.assessmentid,
-            "candidateid": current_user["userid"],
-            "type": request_type,
-            "status": "PENDING",
+            "$or": [
+                {
+                    "assessmentid": req.assessmentid,
+                    "candidateid": current_user_id,
+                    "type": request_type,
+                    "status": "PENDING",
+                },
+                {
+                    "assessment_id": req.assessmentid,
+                    "candidate_id": current_user_id,
+                    "type": request_type,
+                    "status": "PENDING",
+                },
+            ]
         }
     )
     if existing:
         raise HTTPException(status_code=409, detail="A pending request already exists")
 
     request_id = f"REQ-{uuid.uuid4().hex[:8].upper()}"
+    audit_id = f"AUD-{uuid.uuid4().hex[:8].upper()}"
     now = datetime.utcnow()
 
     request_doc = {
         "requestid": request_id,
+        "request_id": request_id,
         "assessmentid": req.assessmentid,
+        "assessment_id": req.assessmentid,
         "examid": req.examid,
-        "candidateid": current_user["userid"],
+        "exam_id": req.examid,
+        "candidateid": current_user_id,
+        "candidate_id": current_user_id,
         "type": request_type,
+        "requesttype": request_type,
         "reason": reason,
         "status": "PENDING",
         "reviewedby": None,
+        "reviewed_by": None,
         "reviewedat": None,
+        "reviewed_at": None,
         "reviewreason": None,
+        "review_reason": None,
         "createdat": now,
+        "created_at": now,
     }
 
     await db.requests.insert_one(request_doc)
 
     requested_status = "REENTRYREQUESTED" if request_type == "REENTRY" else "LATEENTRYREQUESTED"
     await db.assessments.update_one(
-        {"assessmentid": req.assessmentid},
+        _assessment_query(req.assessmentid),
         {
             "$set": {
                 "status": requested_status,
+                "assessmentstatus": requested_status,
+                "assessment_status": requested_status,
                 "updatedat": now,
+                "updated_at": now,
             }
         },
     )
 
-    await db.auditlogs.insert_one(
-        {
-            "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-            "userid": current_user["userid"],
-            "examid": req.examid,
-            "assessmentid": req.assessmentid,
-            "action": "CreateRequest",
-            "reason": f"{request_type} request submitted",
-            "timestamp": now,
-        }
-    )
+    audit_collection = _get_audit_collection(db)
+    if audit_collection is not None:
+        await audit_collection.insert_one(
+            {
+                "logid": audit_id,
+                "log_id": audit_id,
+                "userid": current_user_id,
+                "user_id": current_user_id,
+                "examid": req.examid,
+                "exam_id": req.examid,
+                "assessmentid": req.assessmentid,
+                "assessment_id": req.assessmentid,
+                "action": "CreateRequest",
+                "reason": f"{request_type} request submitted",
+                "timestamp": now,
+            }
+        )
 
     return _serialize(request_doc)
 
@@ -2278,11 +2709,11 @@ async def submit(
 async def review(
     requestid: str,
     req: ReviewBody,
-    current_user=Depends(require_role("Examiner", "Admin")),
+    current_user=Depends(requirerole("Examiner", "Admin")),
 ):
-    db = get_db()
+    db = getdb()
 
-    decision = req.decision.strip().upper()
+    decision = _normalize_status(req.decision)
     review_reason = (req.reason or "").strip()
 
     if decision not in {"APPROVED", "REJECTED"}:
@@ -2291,89 +2722,131 @@ async def review(
     if decision == "REJECTED" and not review_reason:
         raise HTTPException(status_code=400, detail="Reason is required when rejecting a request")
 
-    request_doc = await db.requests.find_one({"requestid": requestid})
+    request_doc = await db.requests.find_one(
+        {"$or": [{"requestid": requestid}, {"request_id": requestid}]}
+    )
     if not request_doc:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    if request_doc.get("status") != "PENDING":
+    if _normalize_status(request_doc.get("status")) != "PENDING":
         raise HTTPException(status_code=400, detail="Request has already been reviewed")
 
-    await _ensure_exam_access(db, request_doc["examid"], current_user)
+    exam_id = request_doc.get("examid") or request_doc.get("exam_id")
+    assessment_id = request_doc.get("assessmentid") or request_doc.get("assessment_id")
+    request_type = _normalize_status(request_doc.get("type") or request_doc.get("requesttype"))
 
+    await _ensure_exam_access(db, exam_id, current_user)
+
+    current_user_id = current_user.get("userid") or current_user.get("user_id")
     now = datetime.utcnow()
+    audit_id = f"AUD-{uuid.uuid4().hex[:8].upper()}"
 
     await db.requests.update_one(
-        {"requestid": requestid},
+        {"$or": [{"requestid": requestid}, {"request_id": requestid}]},
         {
             "$set": {
                 "status": decision,
-                "reviewedby": current_user["userid"],
+                "reviewedby": current_user_id,
+                "reviewed_by": current_user_id,
                 "reviewedat": now,
+                "reviewed_at": now,
                 "reviewreason": review_reason if review_reason else None,
+                "review_reason": review_reason if review_reason else None,
             }
         },
     )
 
-    assessment_status = "REENTRY_APPROVED" if decision == "APPROVED" else "REENTRY_REJECTED"
-    if request_doc.get("type") == "LATEENTRY":
-        assessment_status = "LATEENTRY_APPROVED" if decision == "APPROVED" else "LATEENTRY_REJECTED"
+    if request_type == "LATEENTRY":
+        assessment_status = "LATEENTRYAPPROVED" if decision == "APPROVED" else "LATEENTRYREJECTED"
+    else:
+        assessment_status = "REENTRYAPPROVED" if decision == "APPROVED" else "REENTRYREJECTED"
 
     await db.assessments.update_one(
-        {"assessmentid": request_doc["assessmentid"]},
-        {"$set": {"status": assessment_status, "updatedat": now}},
+        _assessment_query(assessment_id),
+        {
+            "$set": {
+                "status": assessment_status,
+                "assessmentstatus": assessment_status,
+                "assessment_status": assessment_status,
+                "updatedat": now,
+                "updated_at": now,
+            }
+        },
     )
 
-    await db.auditlogs.insert_one(
-        {
-            "logid": f"AUD-{uuid.uuid4().hex[:8].upper()}",
-            "userid": current_user["userid"],
-            "examid": request_doc["examid"],
-            "assessmentid": request_doc["assessmentid"],
-            "action": "ReviewRequest",
-            "reason": review_reason or f"{request_doc.get('type', 'REQUEST')} {decision}",
-            "timestamp": now,
-        }
-    )
+    audit_collection = _get_audit_collection(db)
+    if audit_collection is not None:
+        await audit_collection.insert_one(
+            {
+                "logid": audit_id,
+                "log_id": audit_id,
+                "userid": current_user_id,
+                "user_id": current_user_id,
+                "examid": exam_id,
+                "exam_id": exam_id,
+                "assessmentid": assessment_id,
+                "assessment_id": assessment_id,
+                "action": "ReviewRequest",
+                "reason": review_reason or f"{request_type} {decision}",
+                "timestamp": now,
+            }
+        )
 
     return {
         "message": f"Request {decision.lower()}",
         "requestid": requestid,
         "status": decision,
         "reviewreason": review_reason if review_reason else None,
+        "assessmentstatus": assessment_status,
     }
 
 
 @router.get("/exam/{examid}/pending")
 async def pending(
     examid: str,
-    current_user=Depends(require_role("Examiner", "Admin")),
+    current_user=Depends(requirerole("Examiner", "Admin")),
 ):
-    db = get_db()
+    db = getdb()
     await _ensure_exam_access(db, examid, current_user)
 
-    requests = (
-        await db.requests.find({"examid": examid, "status": "PENDING"})
-        .sort("createdat", -1)
-        .to_list(None)
-    )
+    requests = await db.requests.find(
+        {
+            "$or": [
+                {"examid": examid, "status": "PENDING"},
+                {"exam_id": examid, "status": "PENDING"},
+            ]
+        }
+    ).sort("createdat", -1).to_list(None)
 
     result = []
     for request in requests:
-        user = await db.users.find_one({"userid": request.get("candidateid")})
+        candidate_id = request.get("candidateid") or request.get("candidate_id")
+        user = await db.users.find_one(_user_query(candidate_id))
+
         result.append(
             {
-                "requestid": request.get("requestid"),
-                "assessmentid": request.get("assessmentid"),
-                "examid": request.get("examid"),
-                "candidateid": request.get("candidateid"),
-                "candidatename": user["name"] if user else request.get("candidateid"),
+                "requestid": request.get("requestid") or request.get("request_id"),
+                "request_id": request.get("requestid") or request.get("request_id"),
+                "assessmentid": request.get("assessmentid") or request.get("assessment_id"),
+                "assessment_id": request.get("assessmentid") or request.get("assessment_id"),
+                "examid": request.get("examid") or request.get("exam_id"),
+                "exam_id": request.get("examid") or request.get("exam_id"),
+                "candidateid": candidate_id,
+                "candidate_id": candidate_id,
+                "candidatename": user["name"] if user else candidate_id,
+                "candidate_name": user["name"] if user else candidate_id,
                 "candidateemail": user["email"] if user else "",
-                "type": request.get("type"),
+                "candidate_email": user["email"] if user else "",
+                "type": request.get("type") or request.get("requesttype"),
+                "requesttype": request.get("type") or request.get("requesttype"),
                 "reason": request.get("reason"),
-                "status": request.get("status"),
-                "createdat": request.get("createdat"),
-                "reviewedat": request.get("reviewedat"),
-                "reviewreason": request.get("reviewreason"),
+                "status": _normalize_status(request.get("status")),
+                "createdat": request.get("createdat") or request.get("created_at"),
+                "created_at": request.get("createdat") or request.get("created_at"),
+                "reviewedat": request.get("reviewedat") or request.get("reviewed_at"),
+                "reviewed_at": request.get("reviewedat") or request.get("reviewed_at"),
+                "reviewreason": request.get("reviewreason") or request.get("review_reason"),
+                "review_reason": request.get("reviewreason") or request.get("review_reason"),
             }
         )
 
@@ -2383,7 +2856,7 @@ async def pending(
 
 ===== FILE START =====
 NAME : user_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\user_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\user_routes.py
 =====================
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -2471,7 +2944,7 @@ async def send_password_email_route(
 
 ===== FILE START =====
 NAME : violation_routes.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\violation_routes.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\violation_routes.py
 =====================
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -2590,7 +3063,7 @@ async def review_violation(
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\routes\__init__.py
 =====================
 
 
@@ -2599,7 +3072,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\routes\__init__.py
 
 ===== FILE START =====
 NAME : assessment_service.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\assessment_service.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\services\assessment_service.py
 =====================
 
 from datetime import datetime
@@ -2688,7 +3161,7 @@ async def finalize_assessment(assessment_id: str, final_status: str, reviewed_by
 
 ===== FILE START =====
 NAME : evidence_service.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\evidence_service.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\services\evidence_service.py
 =====================
 
 from config.minio_client import get_minio
@@ -2742,7 +3215,7 @@ def get_presigned_url(path: str, expires_seconds: int = 3600) -> str:
 
 ===== FILE START =====
 NAME : notification_service.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\notification_service.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\services\notification_service.py
 =====================
 
 from datetime import datetime
@@ -2779,7 +3252,7 @@ async def create_notification(user_id: str, title: str, message: str, ntype: str
 
 ===== FILE START =====
 NAME : violation_service.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\violation_service.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\services\violation_service.py
 =====================
 
 from datetime import datetime
@@ -2896,7 +3369,7 @@ async def get_warning_count(assessment_id: str, detail: str) -> int:
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\services\__init__.py
 =====================
 
 
@@ -2905,7 +3378,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\__init__.py
 
 ===== FILE START =====
 NAME : monitoring_socket.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\sockets\monitoring_socket.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\sockets\monitoring_socket.py
 =====================
 
 from datetime import datetime
@@ -3197,7 +3670,7 @@ async def emit_assessment_update(examid, payload=None):
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\sockets\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\sockets\__init__.py
 =====================
 
 
@@ -3206,7 +3679,7 @@ PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\sockets\__init__.py
 
 ===== FILE START =====
 NAME : constants.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\utils\constants.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\utils\constants.py
 =====================
 
 class AssessmentStatus:
@@ -3344,7 +3817,7 @@ VIOLATION_SCORES: dict[str, int] = {
 
 ===== FILE START =====
 NAME : id_generator.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\utils\id_generator.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\utils\id_generator.py
 =====================
 
 from config.database import get_db
@@ -3396,7 +3869,7 @@ async def generateassessmentid() -> str:
 
 ===== FILE START =====
 NAME : __init__.py
-PATH : D:\3rdEyeZ360V2\3rdEyeZ360\backend\utils\__init__.py
+PATH : D:\3RD EYE\3rdEyeZ360\3rdEyeZ360\backend\utils\__init__.py
 =====================
 
 

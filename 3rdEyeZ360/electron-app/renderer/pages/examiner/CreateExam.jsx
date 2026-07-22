@@ -17,6 +17,23 @@ const defaultForm = {
   allowed_applications: []
 }
 
+// Local yyyy-mm-dd (avoids UTC off-by-one in IST)
+const todayStr = () => {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// Local HH:mm (for <input type="time"> min attribute + live check)
+const nowTimeStr = () => {
+  const d = new Date()
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
+
 function Field({ label, error, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
@@ -51,15 +68,33 @@ export default function CreateExam({ onBack, onCreated }) {
 
   const headers = { Authorization: `Bearer ${accessToken}` }
 
-  const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
+  const set = (key, val) => setForm(f => ({ ...f, [ key ]: val }))
 
   const validate = () => {
     const e = {}
 
     if (!form.name.trim()) e.name = 'Exam name is required'
-    if (!form.date) e.date = 'Date is required'
+
+    // Date validation
+    if (!form.date) {
+      e.date = 'Date is required'
+    } else if (form.date < todayStr()) {
+      e.date = 'Date cannot be in the past'
+    }
+
+    // Time validation
     if (!form.start_time) e.start_time = 'Start time is required'
     if (!form.end_time) e.end_time = 'End time is required'
+
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
+      e.end_time = 'End time must be after start time'
+    }
+
+    // If exam is scheduled for today, start time cannot be in the past
+    if (form.date === todayStr() && form.start_time && form.start_time < nowTimeStr()) {
+      e.start_time = 'Start time cannot be in the past'
+    }
+
     if (form.duration_minutes < 1) e.duration_minutes = 'Duration must be at least 1 minute'
     if (form.violation_threshold < 1) e.violation_threshold = 'Violation threshold must be at least 1'
     if (form.allowed_websites.length === 0) e.websites = 'Add at least one allowed website'
@@ -221,7 +256,21 @@ export default function CreateExam({ onBack, onCreated }) {
                 <input
                   type="date"
                   value={form.date}
-                  onChange={e => set('date', e.target.value)}
+                  min={todayStr()}
+                  onChange={e => {
+                    const val = e.target.value
+                    set('date', val)
+
+                    // Re-evaluate date + start_time errors live
+                    setErrors(prev => ({
+                      ...prev,
+                      date: val && val < todayStr() ? 'Date cannot be in the past' : undefined,
+                      start_time:
+                        val === todayStr() && form.start_time && form.start_time < nowTimeStr()
+                          ? 'Start time cannot be in the past'
+                          : undefined
+                    }))
+                  }}
                   style={inputStyle}
                 />
               </Field>
@@ -230,7 +279,24 @@ export default function CreateExam({ onBack, onCreated }) {
                 <input
                   type="time"
                   value={form.start_time}
-                  onChange={e => set('start_time', e.target.value)}
+                  min={form.date === todayStr() ? nowTimeStr() : undefined}
+                  onChange={e => {
+                    const val = e.target.value
+                    set('start_time', val)
+
+                    setErrors(prev => ({
+                      ...prev,
+                      start_time:
+                        form.date === todayStr() && val && val < nowTimeStr()
+                          ? 'Start time cannot be in the past'
+                          : undefined,
+                      // also refresh end_time check
+                      end_time:
+                        form.end_time && val && form.end_time <= val
+                          ? 'End time must be after start time'
+                          : undefined
+                    }))
+                  }}
                   style={inputStyle}
                 />
               </Field>
@@ -239,7 +305,19 @@ export default function CreateExam({ onBack, onCreated }) {
                 <input
                   type="time"
                   value={form.end_time}
-                  onChange={e => set('end_time', e.target.value)}
+                  min={form.start_time || undefined}
+                  onChange={e => {
+                    const val = e.target.value
+                    set('end_time', val)
+
+                    setErrors(prev => ({
+                      ...prev,
+                      end_time:
+                        form.start_time && val && val <= form.start_time
+                          ? 'End time must be after start time'
+                          : undefined
+                    }))
+                  }}
                   style={inputStyle}
                 />
               </Field>
@@ -468,7 +546,7 @@ export default function CreateExam({ onBack, onCreated }) {
               className="btn btn-primary"
               style={{ padding: '11px 28px', fontSize: 14 }}
             >
-              {loading ? 'Creating...' : '✅ Publish Exam'}
+              {loading ? 'Creating...' : 'Publish Exam'}
             </button>
           </div>
         </div>

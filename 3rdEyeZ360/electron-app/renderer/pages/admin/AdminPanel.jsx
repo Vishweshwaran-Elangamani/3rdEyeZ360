@@ -5,6 +5,42 @@ import useAuthStore from '../../store/authStore'
 const API = 'http://localhost:3000'
 const TABS = ['Dashboard', 'Candidates', 'Examiners', 'Audit Logs']
 
+// ---------- Helpers ----------
+function extractErrorMessage(err, fallback = 'Something went wrong') {
+  const detail = err?.response?.data?.detail
+
+  if (!detail) return err?.message || fallback
+
+  if (typeof detail === 'string') return detail
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map(d => {
+        const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : ''
+        const msg = d.msg || 'Invalid value'
+        return field ? `${field}: ${msg}` : msg
+      })
+      .join(', ')
+  }
+
+  if (typeof detail === 'object') {
+    return detail.msg || JSON.stringify(detail)
+  }
+
+  return String(detail)
+}
+
+function safeText(val) {
+  if (val == null) return ''
+  if (typeof val === 'string' || typeof val === 'number') return val
+  try {
+    return JSON.stringify(val)
+  } catch {
+    return String(val)
+  }
+}
+
+// ---------- Logout Button ----------
 function LogoutButton() {
   const [loading, setLoading] = useState(false)
 
@@ -23,11 +59,11 @@ function LogoutButton() {
         }
       }
     } finally {
-  localStorage.removeItem('app-screen')
-  localStorage.removeItem('auth-storage')
-  localStorage.removeItem('exam-storage')
-  useAuthStore.getState().clearAuth()
-}
+      localStorage.removeItem('app-screen')
+      localStorage.removeItem('auth-storage')
+      localStorage.removeItem('exam-storage')
+      useAuthStore.getState().clearAuth()
+    }
   }
 
   return (
@@ -42,6 +78,7 @@ function LogoutButton() {
   )
 }
 
+// ---------- Admin Panel ----------
 export default function AdminPanel() {
   const { user, accessToken } = useAuthStore()
 
@@ -69,10 +106,9 @@ export default function AdminPanel() {
 
   const loadStats = useCallback(async () => {
     if (!accessToken) return
-
     try {
       const res = await axios.get(`${API}/api/admin/stats`, { headers })
-      setStats(res.data)
+      setStats(res.data || {})
     } catch (e) {
       console.error('Failed to load stats', e?.response?.data || e.message)
       setStats({
@@ -86,7 +122,6 @@ export default function AdminPanel() {
 
   const loadUsers = useCallback(async (role) => {
     if (!accessToken) return
-
     try {
       const res = await axios.get(`${API}/api/users?role=${role}`, { headers })
       setUsers(res.data || [])
@@ -99,7 +134,6 @@ export default function AdminPanel() {
 
   const loadAuditLogs = useCallback(async () => {
     if (!accessToken) return
-
     try {
       const res = await axios.get(`${API}/api/admin/audit-logs`, { headers })
       setAuditLogs(res.data || [])
@@ -116,17 +150,14 @@ export default function AdminPanel() {
       await loadStats()
       return
     }
-
     if (tab === 'Candidates') {
       await loadUsers('Candidate')
       return
     }
-
     if (tab === 'Examiners') {
       await loadUsers('Examiner')
       return
     }
-
     if (tab === 'Audit Logs') {
       await loadAuditLogs()
       await loadStats()
@@ -145,11 +176,9 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (!accessToken) return
-
     const interval = setInterval(() => {
       refreshCurrentTab()
     }, 4000)
-
     return () => clearInterval(interval)
   }, [accessToken, refreshCurrentTab])
 
@@ -169,6 +198,8 @@ export default function AdminPanel() {
       await loadStats()
     } catch (e) {
       console.error('Failed to change user status', e?.response?.data || e.message)
+      setRowMessage(extractErrorMessage(e, 'Failed to change user status'))
+      setTimeout(() => setRowMessage(''), 3000)
     }
   }
 
@@ -183,7 +214,7 @@ export default function AdminPanel() {
       setRowMessage(res.data?.message || 'Password setup email sent successfully.')
     } catch (e) {
       console.error('Failed to resend password email', e?.response?.data || e.message)
-      setRowMessage(e?.response?.data?.detail || 'Failed to send password setup email.')
+      setRowMessage(extractErrorMessage(e, 'Failed to send password setup email.'))
     } finally {
       setSendingEmailFor('')
       setTimeout(() => setRowMessage(''), 3000)
@@ -219,6 +250,14 @@ export default function AdminPanel() {
       return
     }
 
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(newUser.email.trim())) {
+      setCreateError('Please enter a valid email address')
+      setCreating(false)
+      return
+    }
+
     try {
       const fullName = `${newUser.first_name.trim()} ${newUser.last_name.trim()}`.trim()
 
@@ -250,7 +289,7 @@ export default function AdminPanel() {
       }, 1200)
     } catch (e) {
       console.error('Create user failed', e?.response?.data || e.message)
-      setCreateError(e?.response?.data?.detail || 'Failed to create user')
+      setCreateError(extractErrorMessage(e, 'Failed to create user'))
     } finally {
       setCreating(false)
     }
@@ -280,6 +319,7 @@ export default function AdminPanel() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f1117', color: '#e8eaf0' }}>
+      {/* Top bar */}
       <div
         style={{
           height: 52,
@@ -302,6 +342,7 @@ export default function AdminPanel() {
         </div>
       </div>
 
+      {/* Tabs */}
       <div
         style={{
           height: 44,
@@ -334,6 +375,7 @@ export default function AdminPanel() {
         ))}
       </div>
 
+      {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
         {tab === 'Dashboard' && (
           <div>
@@ -404,7 +446,7 @@ export default function AdminPanel() {
                   marginBottom: 14,
                 }}
               >
-                {rowMessage}
+                {safeText(rowMessage)}
               </div>
             )}
 
@@ -455,7 +497,7 @@ export default function AdminPanel() {
                         marginBottom: 14,
                       }}
                     >
-                      {createError}
+                      {safeText(createError)}
                     </div>
                   )}
 
@@ -470,7 +512,7 @@ export default function AdminPanel() {
                         marginBottom: 14,
                       }}
                     >
-                      {createSuccess}
+                      {safeText(createSuccess)}
                     </div>
                   )}
 
@@ -664,9 +706,15 @@ export default function AdminPanel() {
                       <td style={{ padding: '12px 16px', fontSize: 12, color: '#8b90a0' }}>
                         {log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}
                       </td>
-                      <td style={{ padding: '12px 16px', fontSize: 13 }}>{log.user_id || log.userid || '—'}</td>
-                      <td style={{ padding: '12px 16px', fontSize: 13, color: '#4f8ef7' }}>{log.action}</td>
-                      <td style={{ padding: '12px 16px', fontSize: 12, color: '#8b90a0' }}>{log.reason || '—'}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 13 }}>
+                        {safeText(log.user_id || log.userid || '—')}
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 13, color: '#4f8ef7' }}>
+                        {safeText(log.action)}
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 12, color: '#8b90a0' }}>
+                        {safeText(log.reason || '—')}
+                      </td>
                     </tr>
                   ))}
 

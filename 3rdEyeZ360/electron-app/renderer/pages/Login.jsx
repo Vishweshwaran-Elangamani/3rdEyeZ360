@@ -44,7 +44,19 @@ export default function Login({ onLogin }) {
 
       onLogin?.(res.data.user);
     } catch (e) {
-      setError(e?.response?.data?.detail || "Invalid email or password");
+      console.error("Login Error:", e.response?.data);
+
+      const detail = e?.response?.data?.detail || "";
+
+      if (
+        detail.includes("invalid_grant") ||
+        detail.includes("Invalid user credentials") ||
+        e?.response?.status === 401
+      ) {
+        setError("Invalid email or password");
+      } else {
+        setError("Unable to sign in. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -53,6 +65,18 @@ export default function Login({ onLogin }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     handleLogin();
+  };
+
+  const inputStyle = {
+    width: "100%",
+    padding: "12px 14px",
+    borderRadius: "10px",
+    border: "1px solid #2e3347",
+    background: "#23283b",
+    color: "#ffffff",
+    fontSize: "14px",
+    outline: "none",
+    boxSizing: "border-box",
   };
 
   return (
@@ -70,32 +94,47 @@ export default function Login({ onLogin }) {
         style={{
           background: "#1a1d27",
           border: "1px solid #2e3347",
-          borderRadius: 16,
-          padding: 40,
-          width: 380,
-          boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+          borderRadius: "18px",
+          padding: "40px",
+          width: "380px",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
         }}
       >
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ textAlign: "center", marginBottom: "30px" }}>
           <div
             style={{
-              width: 56,
-              height: 56,
+              width: "60px",
+              height: "60px",
               borderRadius: "50%",
-              background: "linear-gradient(135deg, #4f8ef7, #7c5ce7)",
+              background: "linear-gradient(135deg,#4f8ef7,#7c5ce7)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 28,
-              margin: "0 auto 12px",
+              fontSize: "28px",
+              margin: "0 auto 14px",
             }}
           >
             👁
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#e8eaf0", margin: 0 }}>
+
+          <h1
+            style={{
+              color: "#ffffff",
+              fontSize: "22px",
+              fontWeight: "700",
+              margin: 0,
+            }}
+          >
             3rdEyeZ360
           </h1>
-          <p style={{ color: "#8b90a0", fontSize: 13, marginTop: 4 }}>
+
+          <p
+            style={{
+              color: "#9ba3b6",
+              fontSize: "14px",
+              marginTop: "6px",
+            }}
+          >
             Secure Assessment Platform
           </p>
         </div>
@@ -103,67 +142,85 @@ export default function Login({ onLogin }) {
         {error && (
           <div
             style={{
-              background: "#2a1010",
-              border: "1px solid #f75f5f",
-              borderRadius: 8,
-              padding: "10px 14px",
-              color: "#f75f5f",
-              fontSize: 13,
-              marginBottom: 16,
+              background: "rgba(255,92,92,0.12)",
+              border: "1px solid #ff5c5c",
+              borderRadius: "10px",
+              padding: "12px 14px",
+              color: "#ff8f8f",
+              fontSize: "14px",
+              fontWeight: "500",
+              textAlign: "center",
+              marginBottom: "18px",
             }}
           >
-            {error}
+            ⚠ {error}
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
             <label
               style={{
-                fontSize: 12,
-                color: "#8b90a0",
-                marginBottom: 6,
                 display: "block",
+                marginBottom: "6px",
+                fontSize: "13px",
+                color: "#9ba3b6",
               }}
             >
               Email
             </label>
+
             <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               type="email"
               placeholder="you@example.com"
               autoComplete="username"
+              value={email}
               disabled={loading}
+              onChange={(e) => setEmail(e.target.value)}
+              style={inputStyle}
             />
           </div>
 
           <div>
             <label
               style={{
-                fontSize: 12,
-                color: "#8b90a0",
-                marginBottom: 6,
                 display: "block",
+                marginBottom: "6px",
+                fontSize: "13px",
+                color: "#9ba3b6",
               }}
             >
               Password
             </label>
+
             <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               type="password"
               placeholder="••••••••"
               autoComplete="current-password"
+              value={password}
               disabled={loading}
+              onChange={(e) => setPassword(e.target.value)}
+              style={inputStyle}
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="btn btn-primary"
-            style={{ width: "100%", marginTop: 8, padding: "11px 0", fontSize: 15 }}
+            style={{
+              marginTop: "8px",
+              width: "100%",
+              padding: "12px",
+              border: "none",
+              borderRadius: "10px",
+              background: loading
+                ? "#406fc0"
+                : "linear-gradient(90deg,#4f8ef7,#5c8df0)",
+              color: "#ffffff",
+              fontSize: "15px",
+              fontWeight: "600",
+              cursor: loading ? "not-allowed" : "pointer",
+            }}
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>

@@ -36,9 +36,12 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
       KC_DB: dev-file
-    command: start-dev
+    command:
+      - start-dev
+      - --import-realm
     volumes:
       - keycloak_data:/opt/keycloak/data
+      - "D:/3RD EYE/3rdEyeZ360/read/Asserts/keycloak:/opt/keycloak/data/import"
 
 volumes:
   mongo_data:

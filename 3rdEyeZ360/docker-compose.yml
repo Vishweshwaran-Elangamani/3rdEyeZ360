@@ -1,7 +1,7 @@
 version: "3.9"
-
+ 
 services:
-
+ 
   mongodb:
     image: mongo:7.0
     container_name: samp_mongodb
@@ -11,7 +11,7 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-
+ 
   minio:
     image: minio/minio:latest
     container_name: samp_minio
@@ -25,7 +25,7 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
-
+ 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.1
     container_name: samp_keycloak
@@ -36,11 +36,15 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
       KC_DB: dev-file
-    command: start-dev
+    command:
+      - start-dev
+      - --import-realm
     volumes:
       - keycloak_data:/opt/keycloak/data
-
+      - "D:/3rd_Eyez360_V2/3rdEyeZ360/read/Asserts/keycloak:/opt/keycloak/data/import"
+ 
 volumes:
   mongo_data:
   minio_data:
   keycloak_data:
+ 

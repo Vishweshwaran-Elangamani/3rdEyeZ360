@@ -10,7 +10,7 @@ const defaultForm = {
   date: '',
   start_time: '',
   end_time: '',
-  duration_minutes: 120,
+  duration_minutes: 0,
   violation_threshold: 10,
   instructions: '',
   allowed_websites: [],
@@ -32,6 +32,19 @@ const nowTimeStr = () => {
   const h = String(d.getHours()).padStart(2, '0')
   const m = String(d.getMinutes()).padStart(2, '0')
   return `${h}:${m}`
+}
+
+// Auto-calculate duration in minutes from start & end time
+const calculateDuration = (start, end) => {
+  if (!start || !end) return 0
+
+  const [startH, startM] = start.split(':').map(Number)
+  const [endH, endM] = end.split(':').map(Number)
+
+  const startMinutes = startH * 60 + startM
+  const endMinutes = endH * 60 + endM
+
+  return endMinutes > startMinutes ? endMinutes - startMinutes : 0
 }
 
 function Field({ label, error, children }) {
@@ -144,6 +157,7 @@ export default function CreateExam({ onBack, onCreated }) {
         `${API}/api/exams`,
         {
           ...form,
+          duration_minutes: calculateDuration(form.start_time, form.end_time),
           examiner_id: user.user_id,
           status
         },
@@ -282,7 +296,12 @@ export default function CreateExam({ onBack, onCreated }) {
                   min={form.date === todayStr() ? nowTimeStr() : undefined}
                   onChange={e => {
                     const val = e.target.value
-                    set('start_time', val)
+
+                    setForm(prev => ({
+                      ...prev,
+                      start_time: val,
+                      duration_minutes: calculateDuration(val, prev.end_time)
+                    }))
 
                     setErrors(prev => ({
                       ...prev,
@@ -308,7 +327,12 @@ export default function CreateExam({ onBack, onCreated }) {
                   min={form.start_time || undefined}
                   onChange={e => {
                     const val = e.target.value
-                    set('end_time', val)
+
+                    setForm(prev => ({
+                      ...prev,
+                      end_time: val,
+                      duration_minutes: calculateDuration(prev.start_time, val)
+                    }))
 
                     setErrors(prev => ({
                       ...prev,
@@ -324,15 +348,22 @@ export default function CreateExam({ onBack, onCreated }) {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <Field label="Duration (minutes) *" error={errors.duration_minutes}>
+              <Field label="Duration (minutes)" error={errors.duration_minutes}>
                 <input
                   type="number"
-                  min={1}
-                  max={480}
                   value={form.duration_minutes}
-                  onChange={e => set('duration_minutes', parseInt(e.target.value, 10) || 0)}
-                  style={inputStyle}
+                  readOnly
+                  tabIndex={-1}
+                  style={{
+                    ...inputStyle,
+                    background: '#181b27',
+                    cursor: 'not-allowed',
+                    opacity: 0.85
+                  }}
                 />
+                <div style={{ fontSize: 11, color: '#8b90a0', marginTop: 4 }}>
+                  Auto-calculated from Start Time and End Time
+                </div>
               </Field>
 
               <Field label="Violation Threshold" error={errors.violation_threshold}>

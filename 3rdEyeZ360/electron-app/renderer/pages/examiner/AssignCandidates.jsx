@@ -29,7 +29,8 @@ const THEMES = {
     accent: "#5b8cff",
     accent2: "#a065ff",
     accent3: "#ff6ec7",
-    accentGradient: "linear-gradient(135deg, #5b8cff 0%, #a065ff 50%, #ff6ec7 100%)",
+    accentGradient:
+      "linear-gradient(135deg, #5b8cff 0%, #a065ff 50%, #ff6ec7 100%)",
     accentGradientSoft:
       "linear-gradient(135deg, rgba(91,140,255,0.15) 0%, rgba(160,101,255,0.15) 50%, rgba(255,110,199,0.15) 100%)",
     accentSoft: "rgba(91,140,255,0.12)",
@@ -39,7 +40,8 @@ const THEMES = {
     danger: "#ef6a6a",
     dangerGradient: "linear-gradient(135deg, #ff7a7a 0%, #d94a4a 100%)",
     dangerBg: "rgba(239,106,106,0.12)",
-    glowAccent: "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
+    glowAccent:
+      "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
     inputBg: "rgba(255,255,255,0.04)",
   },
   light: {
@@ -63,7 +65,8 @@ const THEMES = {
     accent: "#4b60e8",
     accent2: "#7c3aed",
     accent3: "#e94aa8",
-    accentGradient: "linear-gradient(135deg, #4b60e8 0%, #7c3aed 50%, #e94aa8 100%)",
+    accentGradient:
+      "linear-gradient(135deg, #4b60e8 0%, #7c3aed 50%, #e94aa8 100%)",
     accentGradientSoft:
       "linear-gradient(135deg, rgba(75,96,232,0.12) 0%, rgba(124,58,237,0.12) 50%, rgba(233,74,168,0.12) 100%)",
     accentSoft: "rgba(75,96,232,0.10)",
@@ -73,7 +76,8 @@ const THEMES = {
     danger: "#dc2626",
     dangerGradient: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
     dangerBg: "rgba(220,38,38,0.12)",
-    glowAccent: "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
+    glowAccent:
+      "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
     inputBg: "#ffffff",
   },
 };
@@ -89,7 +93,10 @@ function useTheme() {
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === THEME_STORAGE_KEY && (e.newValue === "light" || e.newValue === "dark")) {
+      if (
+        e.key === THEME_STORAGE_KEY &&
+        (e.newValue === "light" || e.newValue === "dark")
+      ) {
         setTheme(e.newValue);
       }
     };
@@ -138,7 +145,20 @@ function ThemeToggle({ theme, onToggle }) {
         { top: 18, left: 15, size: 1.5, o: isDark ? 0.6 : 0 },
         { top: 9, left: 20, size: 1.5, o: isDark ? 0.7 : 0 },
       ].map((s, i) => (
-        <span key={i} style={{ position: "absolute", top: s.top, left: s.left, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: s.o, transition: "opacity 0.6s ease" }} />
+        <span
+          key={i}
+          style={{
+            position: "absolute",
+            top: s.top,
+            left: s.left,
+            width: s.size,
+            height: s.size,
+            borderRadius: "50%",
+            background: "#ffffff",
+            opacity: s.o,
+            transition: "opacity 0.6s ease",
+          }}
+        />
       ))}
       <span
         style={{
@@ -154,16 +174,47 @@ function ThemeToggle({ theme, onToggle }) {
           boxShadow: isDark
             ? "0 2px 10px rgba(0,0,0,0.5), inset -2px -2px 5px rgba(0,0,0,0.2)"
             : "0 2px 12px rgba(255,150,0,0.45), inset -2px -2px 5px rgba(180,90,0,0.2)",
-          transition: "left 0.5s cubic-bezier(0.68, -0.4, 0.27, 1.4), background 0.5s ease, box-shadow 0.5s ease",
+          transition:
+            "left 0.5s cubic-bezier(0.68, -0.4, 0.27, 1.4), background 0.5s ease, box-shadow 0.5s ease",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#3d4460" : "#7a4a00"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 1 : 0, transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={isDark ? "#3d4460" : "#7a4a00"}
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            opacity: isDark ? 1 : 0,
+            transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)",
+            transition: "opacity 0.4s ease, transform 0.5s ease",
+            position: "absolute",
+          }}
+        >
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7a4a00" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 0 : 1, transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#7a4a00"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            opacity: isDark ? 0 : 1,
+            transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)",
+            transition: "opacity 0.4s ease, transform 0.5s ease",
+            position: "absolute",
+          }}
+        >
           <circle cx="12" cy="12" r="4" />
           <line x1="12" y1="2" x2="12" y2="4" />
           <line x1="12" y1="20" x2="12" y2="22" />
@@ -205,7 +256,20 @@ function BackButton({ theme, onClick }) {
         transition: "all 0.25s ease",
       }}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: hover ? "translateX(-2px)" : "translateX(0)", transition: "transform 0.25s ease" }}>
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{
+          transform: hover ? "translateX(-2px)" : "translateX(0)",
+          transition: "transform 0.25s ease",
+        }}
+      >
         <line x1="19" y1="12" x2="5" y2="12" />
         <polyline points="12 19 5 12 12 5" />
       </svg>
@@ -226,7 +290,9 @@ function LogoutButton({ theme }) {
       const { refreshToken } = useAuthStore.getState();
       if (refreshToken) {
         try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
+          await axios.post(`${API}/api/auth/logout`, {
+            refreshtoken: refreshToken,
+          });
         } catch (e) {
           console.log("Logout API failed, clearing local session anyway", e);
         }
@@ -263,9 +329,31 @@ function LogoutButton({ theme }) {
       }}
     >
       {loading ? (
-        <span style={{ width: 14, height: 14, border: `2px solid ${t.textMuted}44`, borderTopColor: t.textPrimary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+        <span
+          style={{
+            width: 14,
+            height: 14,
+            border: `2px solid ${t.textMuted}44`,
+            borderTopColor: t.textPrimary,
+            borderRadius: "50%",
+            animation: "spin 0.7s linear infinite",
+          }}
+        />
       ) : (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: hover ? "translateX(2px)" : "translateX(0)", transition: "transform 0.3s ease" }}>
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            transform: hover ? "translateX(2px)" : "translateX(0)",
+            transition: "transform 0.3s ease",
+          }}
+        >
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
           <polyline points="16 17 21 12 16 7" />
           <line x1="21" y1="12" x2="9" y2="12" />
@@ -280,80 +368,276 @@ export default function AssignCandidates({ exam, onBack }) {
   const t = THEMES[theme];
 
   const { accessToken } = useAuthStore();
+
   const [allCandidates, setAllCandidates] = useState([]);
   const [assigned, setAssigned] = useState([]);
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingCandidateId, setSavingCandidateId] = useState(null);
   const [error, setError] = useState("");
 
-  const headers = useMemo(() => ({ Authorization: `Bearer ${accessToken}` }), [accessToken]);
+  const [candidateToRemove, setCandidateToRemove] = useState(null);
+  const [modalMessage, setModalMessage] = useState("");
+  const [modalType, setModalType] = useState("error");
 
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line
-  }, []);
+  const examId = exam?.exam_id || exam?.examid || "";
 
-  const loadData = async () => {
+  const headers = useMemo(
+    () => ({
+      Authorization: `Bearer ${accessToken}`,
+    }),
+    [accessToken],
+  );
+
+  const closeResultModal = () => {
+    setModalMessage("");
+    setModalType("error");
+  };
+
+  const showResultModal = (message, type = "error") => {
+    setModalType(type);
+    setModalMessage(message);
+  };
+
+  const loadData = useCallback(async () => {
+    if (!examId) {
+      setError("Exam ID is unavailable.");
+      return;
+    }
+
     setLoading(true);
     setError("");
+
     try {
       const [allRes, assignedRes] = await Promise.all([
         axios.get(`${API}/api/users?role=Candidate`, { headers }),
-        axios.get(`${API}/api/exams/${exam.exam_id}/assessments`, { headers }),
+
+        axios.get(`${API}/api/exams/${examId}/assessments`, { headers }),
       ]);
 
-      const normalizedCandidates = (allRes.data || []).map((c) => ({
-        ...c,
-        user_id: c.user_id || c.userid || "",
-        name: c.name || "",
-        email: c.email || "",
-      }));
+      const normalizedCandidates = (
+        Array.isArray(allRes.data) ? allRes.data : []
+      )
+        .map((candidate) => ({
+          ...candidate,
 
-      const assignedIds = (assignedRes.data || []).map((a) => a.candidate_id);
+          user_id: candidate.user_id || candidate.userid || candidate.id || "",
+
+          name:
+            candidate.name || candidate.fullname || candidate.full_name || "",
+
+          email: candidate.email || candidate.email_address || "",
+        }))
+        .filter((candidate) => candidate.user_id);
+
+      const assignedIds = (
+        Array.isArray(assignedRes.data) ? assignedRes.data : []
+      )
+        .map(
+          (assessment) =>
+            assessment.candidate_id || assessment.candidateid || "",
+        )
+        .filter(Boolean);
 
       setAllCandidates(normalizedCandidates);
-      setAssigned(assignedIds);
-    } catch (e) {
-      console.error("Failed to load candidates/assignments", e);
-      setError(e?.response?.data?.detail || "Failed to load candidates.");
+      setAssigned(Array.from(new Set(assignedIds)));
+    } catch (requestError) {
+      console.error("Failed to load candidates/assignments", requestError);
+
+      const requestMessage =
+        requestError?.response?.data?.detail ||
+        requestError?.message ||
+        "Failed to load candidates.";
+
+      setError(requestMessage);
       setAllCandidates([]);
       setAssigned([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [examId, headers]);
 
-  const toggle = async (candidateId) => {
-    if (!candidateId) return;
-    setSaving(true);
-    const isAssigned = assigned.includes(candidateId);
-    try {
-      if (isAssigned) {
-        await axios.delete(`${API}/api/exams/${exam.exam_id}/assign/${candidateId}`, { headers });
-        setAssigned((prev) => prev.filter((id) => id !== candidateId));
-      } else {
-        await axios.post(
-          `${API}/api/exams/${exam.exam_id}/assign`,
-          { candidate_id: candidateId },
-          { headers }
-        );
-        setAssigned((prev) => [...prev, candidateId]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!candidateToRemove && !modalMessage) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape") {
+        return;
       }
-    } catch (e) {
-      console.error("Assignment update failed", e);
-      alert(e?.response?.data?.detail || "Failed to update assignment.");
+
+      if (savingCandidateId) {
+        return;
+      }
+
+      if (candidateToRemove) {
+        setCandidateToRemove(null);
+      }
+
+      if (modalMessage) {
+        closeResultModal();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [candidateToRemove, modalMessage, savingCandidateId]);
+
+  const assignCandidate = async (candidateId) => {
+    if (!candidateId || !examId || savingCandidateId) {
+      return;
+    }
+
+    setSavingCandidateId(candidateId);
+    setError("");
+
+    try {
+      await axios.post(
+        `${API}/api/exams/${examId}/assign`,
+        {
+          candidate_id: candidateId,
+        },
+        {
+          headers,
+        },
+      );
+
+      setAssigned((previous) => {
+        if (previous.includes(candidateId)) {
+          return previous;
+        }
+
+        return [...previous, candidateId];
+      });
+
+      showResultModal("Candidate assigned successfully.", "success");
+    } catch (requestError) {
+      console.error("Candidate assignment failed", requestError);
+
+      showResultModal(
+        requestError?.response?.data?.detail ||
+          requestError?.message ||
+          "Failed to assign candidate.",
+        "error",
+      );
     } finally {
-      setSaving(false);
+      setSavingCandidateId(null);
     }
   };
 
-  const filtered = allCandidates.filter(
-    (c) =>
-      c.name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.email?.toLowerCase().includes(search.toLowerCase())
-  );
+  const requestCandidateRemoval = (candidate) => {
+    if (!candidate?.user_id || savingCandidateId) {
+      return;
+    }
+
+    setCandidateToRemove(candidate);
+  };
+
+  const confirmRemoveCandidate = async () => {
+    const candidateId = candidateToRemove?.user_id;
+
+    if (!candidateId || !examId || savingCandidateId) {
+      return;
+    }
+
+    setSavingCandidateId(candidateId);
+    setError("");
+
+    try {
+      await axios.delete(
+        `${API}/api/exams/${examId}/assign/${encodeURIComponent(candidateId)}`,
+        {
+          headers,
+        },
+      );
+
+      setAssigned((previous) =>
+        previous.filter(
+          (assignedId) => String(assignedId) !== String(candidateId),
+        ),
+      );
+
+      setCandidateToRemove(null);
+
+      showResultModal("Candidate removed successfully.", "success");
+    } catch (requestError) {
+      console.error("Candidate removal failed:", {
+        status: requestError?.response?.status,
+        statusText: requestError?.response?.statusText,
+        data: requestError?.response?.data,
+        message: requestError?.message,
+      });
+
+      const responseData = requestError?.response?.data;
+
+      let errorMessage = "Failed to remove candidate.";
+
+      if (typeof responseData?.detail === "string") {
+        errorMessage = responseData.detail;
+      } else if (Array.isArray(responseData?.detail)) {
+        errorMessage = responseData.detail
+          .map((item) => item?.msg || String(item))
+          .join(", ");
+      } else if (typeof responseData?.message === "string") {
+        errorMessage = responseData.message;
+      } else if (requestError?.message) {
+        errorMessage = requestError.message;
+      }
+
+      setCandidateToRemove(null);
+
+      showResultModal(errorMessage, "error");
+    } finally {
+      setSavingCandidateId(null);
+    }
+  };
+
+  const handleCandidateAction = (candidate) => {
+    const candidateId = candidate?.user_id;
+
+    if (!candidateId) {
+      showResultModal("Candidate ID is unavailable.", "error");
+
+      return;
+    }
+
+    const isAssigned = assigned.some(
+      (assignedId) => String(assignedId) === String(candidateId),
+    );
+
+    if (isAssigned) {
+      requestCandidateRemoval(candidate);
+      return;
+    }
+
+    assignCandidate(candidateId);
+  };
+
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const filtered = allCandidates.filter((candidate) => {
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    const candidateName = String(candidate.name || "").toLowerCase();
+
+    const candidateEmail = String(candidate.email || "").toLowerCase();
+
+    return (
+      candidateName.includes(normalizedSearch) ||
+      candidateEmail.includes(normalizedSearch)
+    );
+  });
 
   return (
     <div
@@ -364,34 +648,158 @@ export default function AssignCandidates({ exam, onBack }) {
         background: t.canvas,
         backgroundImage: t.canvasTint,
         color: t.textPrimary,
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        fontFamily:
+          "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         transition: "background 0.7s ease, color 0.6s ease",
         position: "relative",
       }}
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes cardEnter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideInRow { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
-        @keyframes floatBlob {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(24px, -18px) scale(1.05); }
-          66% { transform: translate(-18px, 20px) scale(0.96); }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
         }
-        ::-webkit-scrollbar { width: 9px; height: 9px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${t.borderStrong}; border-radius: 999px; }
-        ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
-        .brand-gradient { background: ${t.accentGradient}; background-size: 200% 200%; animation: gradientShift 8s ease infinite; }
-        button, a, input { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease; }
+
+        @keyframes cardEnter {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes slideInRow {
+          from {
+            opacity: 0;
+            transform: translateX(-8px);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        @keyframes modalEnter {
+          from {
+            opacity: 0;
+            transform: translateY(12px) scale(0.97);
+          }
+
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes overlayEnter {
+          from {
+            opacity: 0;
+          }
+
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes gradientShift {
+          0%, 100% {
+            background-position: 0% 50%;
+          }
+
+          50% {
+            background-position: 100% 50%;
+          }
+        }
+
+        @keyframes floatBlob {
+          0%, 100% {
+            transform: translate(0, 0) scale(1);
+          }
+
+          33% {
+            transform: translate(24px, -18px) scale(1.05);
+          }
+
+          66% {
+            transform: translate(-18px, 20px) scale(0.96);
+          }
+        }
+
+        ::-webkit-scrollbar {
+          width: 9px;
+          height: 9px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: ${t.borderStrong};
+          border-radius: 999px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${t.accent};
+        }
+
+        .brand-gradient {
+          background: ${t.accentGradient};
+          background-size: 200% 200%;
+          animation: gradientShift 8s ease infinite;
+        }
+
+        button,
+        a,
+        input {
+          transition:
+            background-color 0.2s ease,
+            border-color 0.2s ease,
+            color 0.2s ease,
+            box-shadow 0.2s ease,
+            transform 0.2s ease,
+            opacity 0.2s ease;
+        }
       `}</style>
 
-      <div style={{ position: "absolute", top: "-10%", left: "-8%", width: 460, height: 460, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent}22 0%, transparent 65%)`, filter: "blur(50px)", animation: "floatBlob 24s ease-in-out infinite", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", bottom: "-14%", right: "-10%", width: 540, height: 540, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent3}18 0%, transparent 65%)`, filter: "blur(60px)", animation: "floatBlob 30s ease-in-out infinite", pointerEvents: "none" }} />
+      <div
+        style={{
+          position: "absolute",
+          top: "-10%",
+          left: "-8%",
+          width: 460,
+          height: 460,
+          borderRadius: "50%",
+          background: `radial-gradient(circle, ${t.accent}22 0%, transparent 65%)`,
+          filter: "blur(50px)",
+          animation: "floatBlob 24s ease-in-out infinite",
+          pointerEvents: "none",
+        }}
+      />
 
-      {/* Header */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: "-14%",
+          right: "-10%",
+          width: 540,
+          height: 540,
+          borderRadius: "50%",
+          background: `radial-gradient(circle, ${t.accent3}18 0%, transparent 65%)`,
+          filter: "blur(60px)",
+          animation: "floatBlob 30s ease-in-out infinite",
+          pointerEvents: "none",
+        }}
+      />
+
       <header
         style={{
           minHeight: 64,
@@ -411,17 +819,57 @@ export default function AssignCandidates({ exam, onBack }) {
         }}
       >
         <BackButton theme={theme} onClick={onBack} />
-        <div style={{ width: 1, height: 24, background: t.border }} />
-        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, gap: 4 }}>
-          <span style={{ fontWeight: 700, fontSize: 15, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.2, lineHeight: 1 }}>
+
+        <div
+          style={{
+            width: 1,
+            height: 24,
+            background: t.border,
+          }}
+        />
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            lineHeight: 1.2,
+            gap: 4,
+          }}
+        >
+          <span
+            style={{
+              fontWeight: 700,
+              fontSize: 15,
+              color: t.textPrimary,
+              fontFamily: "'Space Grotesk', sans-serif",
+              letterSpacing: -0.2,
+              lineHeight: 1,
+            }}
+          >
             Assign Candidates
           </span>
-          <span style={{ fontSize: 10.5, color: t.textMuted, letterSpacing: 0.6, fontWeight: 600, lineHeight: 1 }}>
-            {exam?.name}
+
+          <span
+            style={{
+              fontSize: 10.5,
+              color: t.textMuted,
+              letterSpacing: 0.6,
+              fontWeight: 600,
+              lineHeight: 1,
+            }}
+          >
+            {exam?.name || "Exam"}
           </span>
         </div>
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <div
             style={{
               display: "inline-flex",
@@ -436,7 +884,14 @@ export default function AssignCandidates({ exam, onBack }) {
               color: t.accent,
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+            >
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
               <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -444,15 +899,35 @@ export default function AssignCandidates({ exam, onBack }) {
             </svg>
             {assigned.length} assigned
           </div>
+
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
+
           <LogoutButton theme={theme} />
         </div>
       </header>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "28px 24px 40px", position: "relative", zIndex: 1 }}>
-        <div style={{ maxWidth: 720, margin: "0 auto", animation: "cardEnter 0.5s ease" }}>
-          {/* Search */}
-          <div style={{ position: "relative", marginBottom: 20 }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "28px 24px 40px",
+          position: "relative",
+          zIndex: 1,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 720,
+            margin: "0 auto",
+            animation: "cardEnter 0.5s ease",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              marginBottom: 20,
+            }}
+          >
             <svg
               width="16"
               height="16"
@@ -462,14 +937,23 @@ export default function AssignCandidates({ exam, onBack }) {
               strokeWidth="2.2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", transition: "stroke 0.25s ease", pointerEvents: "none" }}
+              style={{
+                position: "absolute",
+                left: 14,
+                top: "50%",
+                transform: "translateY(-50%)",
+                transition: "stroke 0.25s ease",
+                pointerEvents: "none",
+              }}
             >
               <circle cx="11" cy="11" r="8" />
+
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
+
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
               placeholder="Search candidates by name or email..."
@@ -485,14 +969,32 @@ export default function AssignCandidates({ exam, onBack }) {
                 outline: "none",
                 fontFamily: "'Inter', sans-serif",
                 boxShadow: searchFocused ? `0 0 0 3px ${t.accentSoft}` : "none",
-                transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.5s ease",
               }}
             />
           </div>
 
           {loading ? (
-            <div style={{ textAlign: "center", color: t.textMuted, padding: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-              <span style={{ width: 26, height: 26, border: `3px solid ${t.border}`, borderTopColor: t.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            <div
+              style={{
+                textAlign: "center",
+                color: t.textMuted,
+                padding: 40,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 14,
+              }}
+            >
+              <span
+                style={{
+                  width: 26,
+                  height: 26,
+                  border: `3px solid ${t.border}`,
+                  borderTopColor: t.accent,
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
               Loading candidates...
             </div>
           ) : error ? (
@@ -510,11 +1012,6 @@ export default function AssignCandidates({ exam, onBack }) {
                 lineHeight: 1.5,
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
               <span>{error}</span>
             </div>
           ) : filtered.length === 0 ? (
@@ -528,43 +1025,69 @@ export default function AssignCandidates({ exam, onBack }) {
                 borderRadius: 18,
               }}
             >
-              <div style={{ width: 52, height: 52, borderRadius: "50%", background: t.accentGradientSoft, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", border: `1px solid ${t.border}` }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={t.accent} strokeWidth="1.8">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
+              <div
+                style={{
+                  color: t.textPrimary,
+                  fontWeight: 700,
+                  marginBottom: 4,
+                  fontSize: 15,
+                }}
+              >
+                No candidates found
               </div>
-              <div style={{ color: t.textPrimary, fontWeight: 700, marginBottom: 4, fontSize: 15, fontFamily: "'Space Grotesk', sans-serif" }}>No candidates found</div>
+
               <div>Try a different search term.</div>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {filtered.map((c, i) => {
-                const isAssigned = assigned.includes(c.user_id);
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              {filtered.map((candidate, index) => {
+                const candidateId = candidate.user_id;
+
+                const isAssigned = assigned.some(
+                  (assignedId) => String(assignedId) === String(candidateId),
+                );
+
+                const isSaving =
+                  String(savingCandidateId) === String(candidateId);
+
                 return (
                   <div
-                    key={c.user_id}
+                    key={candidateId}
                     style={{
                       background: t.cardSurface,
                       backdropFilter: "blur(20px)",
                       WebkitBackdropFilter: "blur(20px)",
-                      border: `1px solid ${isAssigned ? t.success + "66" : t.border}`,
+                      border: `1px solid ${
+                        isAssigned ? `${t.success}66` : t.border
+                      }`,
                       borderRadius: 14,
                       padding: "14px 18px",
                       display: "flex",
                       alignItems: "center",
                       gap: 14,
-                      boxShadow: t.name === "light" ? "0 4px 14px rgba(20,28,60,0.06)" : "none",
-                      animation: `slideInRow 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) ${i * 0.03}s both`,
+                      boxShadow:
+                        t.name === "light"
+                          ? "0 4px 14px rgba(20,28,60,0.06)"
+                          : "none",
+                      animation: `slideInRow 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                        index * 0.03
+                      }s both`,
                     }}
                   >
-                    {/* Avatar */}
                     <div
                       style={{
                         width: 40,
                         height: 40,
                         borderRadius: "50%",
-                        background: isAssigned ? t.successGradient : t.accentGradient,
+                        background: isAssigned
+                          ? t.successGradient
+                          : t.accentGradient,
                         backgroundSize: "200% 200%",
                         animation: "gradientShift 6s ease infinite",
                         display: "flex",
@@ -574,48 +1097,86 @@ export default function AssignCandidates({ exam, onBack }) {
                         color: "#ffffff",
                         fontSize: 14,
                         fontWeight: 700,
-                        boxShadow: isAssigned ? `0 4px 12px ${t.success}44` : t.glowAccent,
                       }}
                     >
                       {isAssigned ? (
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="#ffffff"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       ) : (
-                        (c.name || "?").charAt(0).toUpperCase()
+                        (candidate.name || "?").charAt(0).toUpperCase()
                       )}
                     </div>
 
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: t.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {c.name || "Unnamed candidate"}
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: t.textPrimary,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {candidate.name || "Unnamed candidate"}
                       </div>
-                      <div style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: "'JetBrains Mono', monospace" }}>
-                        {c.email || "No email"}
+
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: t.textMuted,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          fontFamily: "'JetBrains Mono', monospace",
+                        }}
+                      >
+                        {candidate.email || "No email"}
                       </div>
                     </div>
 
                     <button
-                      onClick={() => toggle(c.user_id)}
-                      disabled={saving}
+                      type="button"
+                      onClick={() => handleCandidateAction(candidate)}
+                      disabled={Boolean(savingCandidateId)}
                       style={{
                         padding: "9px 18px",
                         fontSize: 13,
                         fontWeight: 700,
                         minWidth: 96,
                         borderRadius: 10,
-                        cursor: saving ? "wait" : "pointer",
+                        cursor: savingCandidateId ? "wait" : "pointer",
                         fontFamily: "'Inter', sans-serif",
                         letterSpacing: 0.2,
                         border: isAssigned ? `1px solid ${t.danger}55` : "none",
                         background: isAssigned ? t.dangerBg : t.accentGradient,
                         color: isAssigned ? t.danger : "#ffffff",
                         boxShadow: isAssigned ? "none" : t.glowAccent,
-                        opacity: saving ? 0.6 : 1,
-                        transition: "all 0.2s ease",
+                        opacity: savingCandidateId && !isSaving ? 0.45 : 1,
                       }}
                     >
-                      {isAssigned ? "Remove" : "Assign"}
+                      {isSaving
+                        ? isAssigned
+                          ? "Removing..."
+                          : "Assigning..."
+                        : isAssigned
+                          ? "Remove"
+                          : "Assign"}
                     </button>
                   </div>
                 );
@@ -624,6 +1185,264 @@ export default function AssignCandidates({ exam, onBack }) {
           )}
         </div>
       </div>
+
+      {candidateToRemove ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remove-candidate-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingCandidateId) {
+              setCandidateToRemove(null);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            background: "rgba(2, 5, 12, 0.78)",
+            backdropFilter: "blur(5px)",
+            WebkitBackdropFilter: "blur(5px)",
+            animation: "overlayEnter 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 430,
+              background: t.surfaceElevated,
+              border: `1px solid ${t.borderStrong}`,
+              borderRadius: 16,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
+              overflow: "hidden",
+              animation: "modalEnter 0.22s ease",
+            }}
+          >
+            <div
+              style={{
+                padding: "22px 22px 12px",
+              }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 16,
+                  background: t.dangerBg,
+                  border: `1px solid ${t.danger}44`,
+                  color: t.danger,
+                  fontSize: 22,
+                  fontWeight: 800,
+                }}
+              >
+                !
+              </div>
+
+              <h3
+                id="remove-candidate-title"
+                style={{
+                  margin: 0,
+                  color: t.textPrimary,
+                  fontSize: 18,
+                  fontWeight: 700,
+                }}
+              >
+                Remove assigned candidate?
+              </h3>
+
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  color: t.textSecondary,
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                }}
+              >
+                <strong
+                  style={{
+                    color: t.textPrimary,
+                  }}
+                >
+                  {candidateToRemove.name ||
+                    candidateToRemove.email ||
+                    "This candidate"}
+                </strong>{" "}
+                will be removed from{" "}
+                <strong
+                  style={{
+                    color: t.textPrimary,
+                  }}
+                >
+                  {exam?.name || "this exam"}
+                </strong>
+                .
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+                padding: "14px 22px 22px",
+              }}
+            >
+              <button
+                type="button"
+                disabled={Boolean(savingCandidateId)}
+                onClick={() => setCandidateToRemove(null)}
+                style={{
+                  padding: "9px 16px",
+                  borderRadius: 9,
+                  border: `1px solid ${t.borderStrong}`,
+                  background: t.surfaceGlass,
+                  color: t.textSecondary,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: savingCandidateId ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={Boolean(savingCandidateId)}
+                onClick={confirmRemoveCandidate}
+                style={{
+                  minWidth: 118,
+                  border: `1px solid ${t.danger}88`,
+                  borderRadius: 9,
+                  padding: "9px 16px",
+                  background: t.dangerGradient,
+                  color: "#ffffff",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: savingCandidateId ? "not-allowed" : "pointer",
+                  opacity: savingCandidateId ? 0.65 : 1,
+                }}
+              >
+                {savingCandidateId ? "Removing..." : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {modalMessage ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeResultModal();
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1001,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            background: "rgba(2, 5, 12, 0.78)",
+            backdropFilter: "blur(5px)",
+            WebkitBackdropFilter: "blur(5px)",
+            animation: "overlayEnter 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 400,
+              padding: 22,
+              background: t.surfaceElevated,
+              border: `1px solid ${
+                modalType === "success" ? `${t.success}88` : `${t.danger}88`
+              }`,
+              borderRadius: 16,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
+              animation: "modalEnter 0.22s ease",
+            }}
+          >
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 14,
+                background: modalType === "success" ? t.successBg : t.dangerBg,
+                color: modalType === "success" ? t.success : t.danger,
+                fontSize: 20,
+                fontWeight: 800,
+              }}
+            >
+              {modalType === "success" ? "✓" : "!"}
+            </div>
+
+            <div
+              style={{
+                fontSize: 17,
+                fontWeight: 700,
+                color: t.textPrimary,
+              }}
+            >
+              {modalType === "success" ? "Success" : "Unable to continue"}
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                color: t.textSecondary,
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              {modalMessage}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginTop: 20,
+              }}
+            >
+              <button
+                type="button"
+                onClick={closeResultModal}
+                style={{
+                  padding: "9px 20px",
+                  border: "none",
+                  borderRadius: 9,
+                  background:
+                    modalType === "success"
+                      ? t.successGradient
+                      : t.accentGradient,
+                  color: "#ffffff",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

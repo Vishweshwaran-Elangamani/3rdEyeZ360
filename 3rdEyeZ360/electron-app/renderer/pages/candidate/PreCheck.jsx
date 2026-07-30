@@ -143,20 +143,7 @@ function ThemeToggle({ theme, onToggle }) {
         { top: 20, left: 16, size: 1.5, o: isDark ? 0.6 : 0 },
         { top: 10, left: 22, size: 1.5, o: isDark ? 0.7 : 0 },
       ].map((s, i) => (
-        <span
-          key={i}
-          style={{
-            position: "absolute",
-            top: s.top,
-            left: s.left,
-            width: s.size,
-            height: s.size,
-            borderRadius: "50%",
-            background: "#ffffff",
-            opacity: s.o,
-            transition: "opacity 0.6s ease",
-          }}
-        />
+        <span key={i} style={{ position: "absolute", top: s.top, left: s.left, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: s.o, transition: "opacity 0.6s ease" }} />
       ))}
       <span
         style={{
@@ -172,47 +159,16 @@ function ThemeToggle({ theme, onToggle }) {
           boxShadow: isDark
             ? "0 2px 10px rgba(0,0,0,0.5), inset -2px -2px 5px rgba(0,0,0,0.2)"
             : "0 2px 12px rgba(255,150,0,0.45), inset -2px -2px 5px rgba(180,90,0,0.2)",
-          transition:
-            "left 0.5s cubic-bezier(0.68, -0.4, 0.27, 1.4), background 0.5s ease, box-shadow 0.5s ease",
+          transition: "left 0.5s cubic-bezier(0.68, -0.4, 0.27, 1.4), background 0.5s ease, box-shadow 0.5s ease",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <svg
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke={isDark ? "#3d4460" : "#7a4a00"}
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{
-            opacity: isDark ? 1 : 0,
-            transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)",
-            transition: "opacity 0.4s ease, transform 0.5s ease",
-            position: "absolute",
-          }}
-        >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#3d4460" : "#7a4a00"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 1 : 0, transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#7a4a00"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{
-            opacity: isDark ? 0 : 1,
-            transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)",
-            transition: "opacity 0.4s ease, transform 0.5s ease",
-            position: "absolute",
-          }}
-        >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a4a00" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 0 : 1, transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
           <circle cx="12" cy="12" r="4" />
           <line x1="12" y1="2" x2="12" y2="4" />
           <line x1="12" y1="20" x2="12" y2="22" />
@@ -228,12 +184,14 @@ function ThemeToggle({ theme, onToggle }) {
   );
 }
 
-function BackButton({ theme, onClick }) {
+function BackButton({ theme, onClick, disabled }) {
   const t = THEMES[theme];
   const [hover, setHover] = useState(false);
   return (
     <button
+      type="button"
       onClick={onClick}
+      disabled={disabled}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -242,14 +200,15 @@ function BackButton({ theme, onClick }) {
         gap: 8,
         padding: "8px 14px 8px 10px",
         borderRadius: 12,
-        background: hover ? t.surfaceGlassHover : t.surfaceGlass,
-        border: `1px solid ${hover ? t.borderStrong : t.border}`,
+        background: hover && !disabled ? t.surfaceGlassHover : t.surfaceGlass,
+        border: `1px solid ${hover && !disabled ? t.borderStrong : t.border}`,
         color: t.textSecondary,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         fontFamily: "'Inter', sans-serif",
         fontSize: 13,
         fontWeight: 600,
         letterSpacing: 0.2,
+        opacity: disabled ? 0.5 : 1,
         transition: "all 0.25s ease",
       }}
     >
@@ -263,14 +222,14 @@ function BackButton({ theme, onClick }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         style={{
-          transform: hover ? "translateX(-2px)" : "translateX(0)",
+          transform: hover && !disabled ? "translateX(-2px)" : "translateX(0)",
           transition: "transform 0.25s ease",
         }}
       >
         <line x1="19" y1="12" x2="5" y2="12" />
         <polyline points="12 19 5 12 12 5" />
       </svg>
-      Dashboard
+      Back
     </button>
   );
 }
@@ -313,31 +272,9 @@ function LogoutButton({ onLogout, theme }) {
       }}
     >
       {loading ? (
-        <span
-          style={{
-            width: 14,
-            height: 14,
-            border: `2px solid ${t.textMuted}44`,
-            borderTopColor: t.textPrimary,
-            borderRadius: "50%",
-            animation: "spin 0.7s linear infinite",
-          }}
-        />
+        <span style={{ width: 14, height: 14, border: `2px solid ${t.textMuted}44`, borderTopColor: t.textPrimary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
       ) : (
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{
-            transform: hover ? "translateX(2px)" : "translateX(0)",
-            transition: "transform 0.3s ease",
-          }}
-        >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: hover ? "translateX(2px)" : "translateX(0)", transition: "transform 0.3s ease" }}>
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
           <polyline points="16 17 21 12 16 7" />
           <line x1="21" y1="12" x2="9" y2="12" />
@@ -596,7 +533,29 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
       streamRef.current.getTracks().forEach((tr) => tr.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      try {
+        videoRef.current.srcObject = null;
+      } catch (e) {}
+    }
   }, []);
+
+  // Back handler: releases the camera/mic first, then goes to the previous page.
+  // Uses parent-provided onBack when available, otherwise falls back to history.
+  const handleBack = useCallback(() => {
+    try {
+      stopMedia();
+    } catch (e) {
+      console.log("stopMedia failed during back", e);
+    }
+    if (typeof onBack === "function") {
+      onBack();
+    } else if (typeof window !== "undefined" && window.history && window.history.length > 1) {
+      window.history.back();
+    } else {
+      console.log("Back pressed but no onBack handler and no history to go back to.");
+    }
+  }, [onBack, stopMedia]);
 
   const startChecks = useCallback(async () => {
     if (running) return;
@@ -785,50 +744,33 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <BackButton theme={theme} onClick={onBack} />
+          <BackButton theme={theme} onClick={handleBack} />
           <div style={{ width: 1, height: 24, background: t.border }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
-              className="brand-gradient"
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, gap: 6 }}>
+            <span
               style={{
-                width: 34,
-                height: 34,
-                borderRadius: 10,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: t.glowAccent,
+                fontWeight: 700,
+                fontSize: 15,
+                color: t.textPrimary,
+                fontFamily: "'Space Grotesk', sans-serif",
+                letterSpacing: -0.2,
+                lineHeight: 1,
               }}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
-              <span
-                style={{
-                  fontWeight: 700,
-                  fontSize: 15,
-                  color: t.textPrimary,
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  letterSpacing: -0.2,
-                }}
-              >
-                System Precheck
-              </span>
-              <span
-                style={{
-                  fontSize: 10.5,
-                  color: t.textMuted,
-                  letterSpacing: 1.2,
-                  textTransform: "uppercase",
-                  fontWeight: 600,
-                }}
-              >
-                Step 1 of 2 · Verify Setup
-              </span>
-            </div>
+              System Precheck
+            </span>
+            <span
+              style={{
+                fontSize: 10.5,
+                color: t.textMuted,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+                fontWeight: 600,
+                lineHeight: 1,
+              }}
+            >
+              Step 1 of 2 · Verify Setup
+            </span>
           </div>
         </div>
 
@@ -918,7 +860,7 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     marginBottom: 8,
                   }}
                 >
-                  Let&apos;s verify your setup
+                  Let's verify your setup
                 </h1>
                 <p
                   style={{

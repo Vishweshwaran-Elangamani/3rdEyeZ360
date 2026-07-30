@@ -426,26 +426,9 @@ export default function Login({ onLogin }) {
         onLogin?.(res.data.user);
       }, 900);
     } catch (e) {
-<<<<<<< HEAD
-      console.error("Login Error:", e.response?.data);
-
-      const detail = e?.response?.data?.detail || "";
-
-      if (
-        detail.includes("invalid_grant") ||
-        detail.includes("Invalid user credentials") ||
-        e?.response?.status === 401
-      ) {
-        setError("Invalid email or password");
-      } else {
-        setError("Unable to sign in. Please try again.");
-      }
-    } finally {
-=======
       const friendly = getFriendlyErrorMessage(e);
       setError(friendly);
       setLockState(LOCK_STATE.ERROR);
->>>>>>> main
       setLoading(false);
       return;
     }
@@ -458,18 +441,6 @@ export default function Login({ onLogin }) {
     handleLogin();
   };
 
-<<<<<<< HEAD
-  const inputStyle = {
-    width: "100%",
-    padding: "12px 14px",
-    borderRadius: "10px",
-    border: "1px solid #2e3347",
-    background: "#23283b",
-    color: "#ffffff",
-    fontSize: "14px",
-    outline: "none",
-    boxSizing: "border-box",
-=======
   const inputBaseStyle = {
     width: "100%",
     padding: "12px 14px 12px 42px",
@@ -505,7 +476,6 @@ export default function Login({ onLogin }) {
     display: "block",
     fontWeight: 500,
     letterSpacing: 0.4,
->>>>>>> main
   };
 
   return (
@@ -614,28 +584,6 @@ export default function Login({ onLogin }) {
       <div
         className="login-branding"
         style={{
-<<<<<<< HEAD
-          background: "#1a1d27",
-          border: "1px solid #2e3347",
-          borderRadius: "18px",
-          padding: "40px",
-          width: "380px",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
-        }}
-      >
-        <div style={{ textAlign: "center", marginBottom: "30px" }}>
-          <div
-            style={{
-              width: "60px",
-              height: "60px",
-              borderRadius: "50%",
-              background: "linear-gradient(135deg,#4f8ef7,#7c5ce7)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "28px",
-              margin: "0 auto 14px",
-=======
           flex: "0 0 60%",
           position: "relative",
           background: "radial-gradient(ellipse at 20% 30%, #1a1f3a 0%, #14172a 40%, #0a0c18 100%)",
@@ -1062,7 +1010,6 @@ export default function Login({ onLogin }) {
               gap: 8,
               color: "#6b7085",
               fontSize: 12,
->>>>>>> main
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1070,121 +1017,8 @@ export default function Login({ onLogin }) {
             </svg>
             Protected by enterprise-grade encryption
           </div>
-<<<<<<< HEAD
-
-          <h1
-            style={{
-              color: "#ffffff",
-              fontSize: "22px",
-              fontWeight: "700",
-              margin: 0,
-            }}
-          >
-            3rdEyeZ360
-          </h1>
-
-          <p
-            style={{
-              color: "#9ba3b6",
-              fontSize: "14px",
-              marginTop: "6px",
-            }}
-          >
-            Secure Assessment Platform
-          </p>
-        </div>
-
-        {error && (
-          <div
-            style={{
-              background: "rgba(255,92,92,0.12)",
-              border: "1px solid #ff5c5c",
-              borderRadius: "10px",
-              padding: "12px 14px",
-              color: "#ff8f8f",
-              fontSize: "14px",
-              fontWeight: "500",
-              textAlign: "center",
-              marginBottom: "18px",
-            }}
-          >
-            ⚠ {error}
-          </div>
-        )}
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "6px",
-                fontSize: "13px",
-                color: "#9ba3b6",
-              }}
-            >
-              Email
-            </label>
-
-            <input
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="username"
-              value={email}
-              disabled={loading}
-              onChange={(e) => setEmail(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "6px",
-                fontSize: "13px",
-                color: "#9ba3b6",
-              }}
-            >
-              Password
-            </label>
-
-            <input
-              type="password"
-              placeholder="••••••••"
-              autoComplete="current-password"
-              value={password}
-              disabled={loading}
-              onChange={(e) => setPassword(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              marginTop: "8px",
-              width: "100%",
-              padding: "12px",
-              border: "none",
-              borderRadius: "10px",
-              background: loading
-                ? "#406fc0"
-                : "linear-gradient(90deg,#4f8ef7,#5c8df0)",
-              color: "#ffffff",
-              fontSize: "15px",
-              fontWeight: "600",
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
-          >
-            {loading ? "Signing in..." : "Sign In"}
-          </button>
-        </div>
-      </form>
-=======
         </form>
       </div>
->>>>>>> main
     </div>
   );
 }

@@ -5,9 +5,474 @@ import useSocket from "../../hooks/useSocket";
 
 const API = "http://localhost:3000";
 const POLL_INTERVAL = 3000;
+const THEME_STORAGE_KEY = "3rdeyez360.theme";
 
 const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "LOCKED", "COMPLETED"]);
 const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
+
+/* ============= Theme system ============= */
+
+const THEMES = {
+  dark: {
+    name: "dark",
+    canvas: "#07080d",
+    canvasTint:
+      "radial-gradient(ellipse at top left, #10152a 0%, #07080d 50%), radial-gradient(ellipse at bottom right, #1a0f2e 0%, #07080d 60%)",
+    surface: "rgba(22, 26, 40, 0.72)",
+    surfaceElevated: "rgba(30, 34, 50, 0.85)",
+    surfaceSolid: "#141826",
+    sidebarBg: "#0f1220",
+    browserBg: "#050609",
+    surfaceGlass: "rgba(255, 255, 255, 0.03)",
+    surfaceGlassHover: "rgba(255, 255, 255, 0.055)",
+    cardSurface: "rgba(28, 32, 48, 0.75)",
+    tabBar: "#0f1220",
+    border: "rgba(255, 255, 255, 0.06)",
+    borderStrong: "rgba(255, 255, 255, 0.12)",
+    borderAccent: "rgba(91, 140, 255, 0.4)",
+    textPrimary: "#f1f3fb",
+    textSecondary: "#a8afc7",
+    textMuted: "#6b7286",
+    textFaint: "#464b60",
+    accent: "#5b8cff",
+    accent2: "#a065ff",
+    accent3: "#ff6ec7",
+    accentGradient: "linear-gradient(135deg, #5b8cff 0%, #a065ff 50%, #ff6ec7 100%)",
+    accentGradientSoft:
+      "linear-gradient(135deg, rgba(91,140,255,0.15) 0%, rgba(160,101,255,0.15) 50%, rgba(255,110,199,0.15) 100%)",
+    accentSoft: "rgba(91,140,255,0.12)",
+    success: "#3ecf8e",
+    successGradient: "linear-gradient(135deg, #3ecf8e 0%, #22a37a 100%)",
+    successBg: "rgba(62,207,142,0.12)",
+    warning: "#e8b04b",
+    warningGradient: "linear-gradient(135deg, #ffc94b 0%, #e8850b 100%)",
+    warningBg: "rgba(232,176,75,0.12)",
+    danger: "#ef6a6a",
+    dangerGradient: "linear-gradient(135deg, #ff7a7a 0%, #d94a4a 100%)",
+    dangerBg: "rgba(239,106,106,0.12)",
+    info: "#6da5ff",
+    infoBg: "rgba(109,165,255,0.12)",
+    glowAccent: "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
+    overlay: "rgba(3, 5, 10, 0.88)",
+    // Timer palette — soft, non-glaring
+    timerPillBg: "rgba(20, 24, 38, 0.55)",
+    timerPillBorder: "rgba(255, 255, 255, 0.08)",
+    timerConsumed: "rgba(255, 255, 255, 0.09)",
+    timerGreen: "#52c98d",
+    timerYellow: "#d4b356",
+    timerRed: "#e07777",
+  },
+  light: {
+    name: "light",
+    canvas: "#eef1fb",
+    canvasTint:
+      "radial-gradient(ellipse at top left, #dbe4ff 0%, #eef1fb 45%), radial-gradient(ellipse at bottom right, #ffd9ec 0%, #eef1fb 55%)",
+    surface: "rgba(255, 255, 255, 0.85)",
+    surfaceElevated: "rgba(255, 255, 255, 0.94)",
+    surfaceSolid: "#ffffff",
+    sidebarBg: "#ffffff",
+    browserBg: "#f6f8fd",
+    surfaceGlass: "rgba(255, 255, 255, 0.6)",
+    surfaceGlassHover: "rgba(255, 255, 255, 0.85)",
+    cardSurface: "#ffffff",
+    tabBar: "#f6f8fd",
+    border: "rgba(20, 28, 60, 0.08)",
+    borderStrong: "rgba(20, 28, 60, 0.15)",
+    borderAccent: "rgba(75, 96, 232, 0.4)",
+    textPrimary: "#0b1024",
+    textSecondary: "#3a4160",
+    textMuted: "#6a7290",
+    textFaint: "#a4abc0",
+    accent: "#4b60e8",
+    accent2: "#7c3aed",
+    accent3: "#e94aa8",
+    accentGradient: "linear-gradient(135deg, #4b60e8 0%, #7c3aed 50%, #e94aa8 100%)",
+    accentGradientSoft:
+      "linear-gradient(135deg, rgba(75,96,232,0.12) 0%, rgba(124,58,237,0.12) 50%, rgba(233,74,168,0.12) 100%)",
+    accentSoft: "rgba(75,96,232,0.10)",
+    success: "#0ea564",
+    successGradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+    successBg: "rgba(14,165,100,0.14)",
+    warning: "#d97706",
+    warningGradient: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+    warningBg: "rgba(217,119,6,0.14)",
+    danger: "#dc2626",
+    dangerGradient: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+    dangerBg: "rgba(220,38,38,0.12)",
+    info: "#2563eb",
+    infoBg: "rgba(37,99,235,0.12)",
+    glowAccent: "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
+    overlay: "rgba(15, 20, 36, 0.85)",
+    // Timer palette — soft, print-friendly
+    timerPillBg: "rgba(255, 255, 255, 0.75)",
+    timerPillBorder: "rgba(20, 28, 60, 0.10)",
+    timerConsumed: "rgba(20, 28, 60, 0.10)",
+    timerGreen: "#3ea67a",
+    timerYellow: "#b8933f",
+    timerRed: "#c85757",
+  },
+};
+
+function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      if (stored === "light" || stored === "dark") return stored;
+    } catch (e) {}
+    return "dark";
+  });
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === THEME_STORAGE_KEY && (e.newValue === "light" || e.newValue === "dark")) {
+        setTheme(e.newValue);
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch (e) {}
+      return next;
+    });
+  }, []);
+
+  return { theme, toggleTheme };
+}
+
+/* ============= Timer Pill (curved vertical rectangle with tick marks) ============= */
+
+/**
+ * Precompute N tick positions clockwise around the inside perimeter of a
+ * rounded rectangle. Each tick returns { x, y, nx, ny } where (nx, ny) is a
+ * unit vector pointing INWARD (perpendicular to the edge).
+ */
+function computeTicks(W, H, R, N) {
+  const straightTop = W - 2 * R;
+  const straightSide = H - 2 * R;
+  const arcLen = (Math.PI * R) / 2;
+  const perimeter = 2 * straightTop + 2 * straightSide + 4 * arcLen;
+
+  const ticks = [];
+
+  for (let i = 0; i < N; i++) {
+    let d = (i / N) * perimeter;
+    let x = 0,
+      y = 0,
+      nx = 0,
+      ny = 0;
+
+    // Segments, clockwise, starting at (R, 0) — top-left corner point
+    if (d < straightTop) {
+      x = R + d;
+      y = 0;
+      nx = 0;
+      ny = 1;
+    } else if ((d -= straightTop) < arcLen) {
+      const a = -Math.PI / 2 + (d / arcLen) * (Math.PI / 2);
+      x = W - R + R * Math.cos(a);
+      y = R + R * Math.sin(a);
+      nx = -Math.cos(a);
+      ny = -Math.sin(a);
+    } else if ((d -= arcLen) < straightSide) {
+      x = W;
+      y = R + d;
+      nx = -1;
+      ny = 0;
+    } else if ((d -= straightSide) < arcLen) {
+      const a = 0 + (d / arcLen) * (Math.PI / 2);
+      x = W - R + R * Math.cos(a);
+      y = H - R + R * Math.sin(a);
+      nx = -Math.cos(a);
+      ny = -Math.sin(a);
+    } else if ((d -= arcLen) < straightTop) {
+      x = W - R - d;
+      y = H;
+      nx = 0;
+      ny = -1;
+    } else if ((d -= straightTop) < arcLen) {
+      const a = Math.PI / 2 + (d / arcLen) * (Math.PI / 2);
+      x = R + R * Math.cos(a);
+      y = H - R + R * Math.sin(a);
+      nx = -Math.cos(a);
+      ny = -Math.sin(a);
+    } else if ((d -= arcLen) < straightSide) {
+      x = 0;
+      y = H - R - d;
+      nx = 1;
+      ny = 0;
+    } else {
+      d -= straightSide;
+      const a = Math.PI + (d / arcLen) * (Math.PI / 2);
+      x = R + R * Math.cos(a);
+      y = R + R * Math.sin(a);
+      nx = -Math.cos(a);
+      ny = -Math.sin(a);
+    }
+
+    ticks.push({ x, y, nx, ny });
+  }
+  return ticks;
+}
+
+function TimerPill({ remainingMs, totalMs, theme }) {
+  const t = THEMES[theme];
+
+  // Pill geometry — bigger, since it now lives in the sidebar as a focal element
+  const W = 130;
+  const H = 160;
+  const R = 34;
+  const N = 60; // number of tick marks around the pill
+  const inset = 6; // gap between edge and tick start
+  const tickLen = 9;
+
+  const ticks = useMemo(() => computeTicks(W, H, R, N), []);
+
+  const total = Math.max(1, totalMs || 0);
+  const remaining = Math.max(0, remainingMs || 0);
+  const pctRemaining = Math.min(1, remaining / total);
+  const pctElapsed = 1 - pctRemaining;
+
+  // Number of ticks still "alive"
+  const remainingTicks =
+    totalMs > 0 ? Math.max(0, Math.min(N, Math.ceil(pctRemaining * N))) : N;
+  const consumed = N - remainingTicks;
+
+  // Color band for the currently-remaining ticks (soft, non-glaring)
+  //   0..60% elapsed  → soft green
+  //  60..90% elapsed  → soft warm yellow
+  //  90..100% elapsed → soft red
+  let liveColor;
+  if (pctElapsed < 0.6) liveColor = t.timerGreen;
+  else if (pctElapsed < 0.9) liveColor = t.timerYellow;
+  else liveColor = t.timerRed;
+
+  // Break the remaining time into H:MM (main) and SS (secondary)
+  const totalSecs = Math.max(0, Math.floor(remaining / 1000));
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+
+  const mainText = totalMs > 0 ? `${h}:${String(m).padStart(2, "0")}` : "—:—";
+  const secText = totalMs > 0 ? String(s).padStart(2, "0") : "—";
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: W,
+        height: H,
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      aria-label="Remaining time"
+      title={`${h} hours ${m} minutes ${s} seconds remaining`}
+    >
+      <svg
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ position: "absolute", inset: 0, overflow: "visible" }}
+      >
+        {/* Pill background */}
+        <rect
+          x={0.5}
+          y={0.5}
+          width={W - 1}
+          height={H - 1}
+          rx={R}
+          ry={R}
+          fill={t.timerPillBg}
+          stroke={t.timerPillBorder}
+          strokeWidth={1}
+          style={{ transition: "fill 0.6s ease, stroke 0.6s ease" }}
+        />
+
+        {/* Tick marks around the inside perimeter */}
+        {ticks.map((tk, i) => {
+          const isRemaining = i >= consumed;
+          const stroke = isRemaining ? liveColor : t.timerConsumed;
+          const opacity = isRemaining ? 0.95 : 1;
+          const sx = tk.x + tk.nx * inset;
+          const sy = tk.y + tk.ny * inset;
+          const ex = tk.x + tk.nx * (inset + tickLen);
+          const ey = tk.y + tk.ny * (inset + tickLen);
+          return (
+            <line
+              key={i}
+              x1={sx}
+              y1={sy}
+              x2={ex}
+              y2={ey}
+              stroke={stroke}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              opacity={opacity}
+              style={{ transition: "stroke 0.6s ease, opacity 0.6s ease" }}
+            />
+          );
+        })}
+      </svg>
+
+      {/* Text stack — main H:MM on top (elongated), seconds below (small) */}
+      <div
+        style={{
+          position: "relative",
+          zIndex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 2,
+        }}
+      >
+        <div
+          style={{
+            transform: "scaleY(1.55)",
+            transformOrigin: "center",
+            lineHeight: 1,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 42,
+              fontWeight: 300,
+              color: t.textPrimary,
+              letterSpacing: -2,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {mainText}
+          </span>
+        </div>
+        <span
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 12,
+            fontWeight: 500,
+            color: t.textMuted,
+            letterSpacing: 1,
+            marginTop: 10,
+          }}
+        >
+          {secText}s
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ============= Header controls ============= */
+
+function ThemeToggle({ theme, onToggle }) {
+  const isDark = theme === "dark";
+  const t = THEMES[theme];
+  return (
+    <button
+      onClick={onToggle}
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      style={{
+        position: "relative",
+        width: 58,
+        height: 30,
+        borderRadius: 999,
+        border: `1px solid ${t.borderStrong}`,
+        background: isDark
+          ? "linear-gradient(135deg, #0f1428 0%, #1a0f2e 100%)"
+          : "linear-gradient(135deg, #ffe9a8 0%, #ffcfd8 100%)",
+        cursor: "pointer",
+        padding: 0,
+        overflow: "hidden",
+        flexShrink: 0,
+        transition: "background 0.6s ease, border-color 0.5s ease",
+      }}
+    >
+      {[
+        { top: 6, left: 10, size: 2, o: isDark ? 0.9 : 0 },
+        { top: 18, left: 15, size: 1.5, o: isDark ? 0.6 : 0 },
+        { top: 9, left: 20, size: 1.5, o: isDark ? 0.7 : 0 },
+      ].map((s, i) => (
+        <span key={i} style={{ position: "absolute", top: s.top, left: s.left, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: s.o, transition: "opacity 0.6s ease" }} />
+      ))}
+      <span
+        style={{
+          position: "absolute",
+          top: 3,
+          left: isDark ? 31 : 3,
+          width: 22,
+          height: 22,
+          borderRadius: "50%",
+          background: isDark
+            ? "linear-gradient(135deg, #e2e6f2 0%, #b0b8d0 100%)"
+            : "linear-gradient(135deg, #ffd75c 0%, #ff9640 100%)",
+          boxShadow: isDark
+            ? "0 2px 10px rgba(0,0,0,0.5), inset -2px -2px 5px rgba(0,0,0,0.2)"
+            : "0 2px 12px rgba(255,150,0,0.45), inset -2px -2px 5px rgba(180,90,0,0.2)",
+          transition: "left 0.5s cubic-bezier(0.68, -0.4, 0.27, 1.4), background 0.5s ease, box-shadow 0.5s ease",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#3d4460" : "#7a4a00"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 1 : 0, transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7a4a00" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 0 : 1, transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+          <circle cx="12" cy="12" r="4" />
+          <line x1="12" y1="2" x2="12" y2="4" />
+          <line x1="12" y1="20" x2="12" y2="22" />
+          <line x1="4.93" y1="4.93" x2="6.34" y2="6.34" />
+          <line x1="17.66" y1="17.66" x2="19.07" y2="19.07" />
+          <line x1="2" y1="12" x2="4" y2="12" />
+          <line x1="20" y1="12" x2="22" y2="12" />
+          <line x1="4.93" y1="19.07" x2="6.34" y2="17.66" />
+          <line x1="17.66" y1="6.34" x2="19.07" y2="4.93" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
+function IconButton({ theme, onClick, danger, title, ariaLabel, disabled, children }) {
+  const t = THEMES[theme];
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      aria-label={ariaLabel}
+      title={title}
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        background: hover ? (danger ? t.dangerBg : t.surfaceGlassHover) : t.surfaceGlass,
+        border: `1px solid ${hover ? (danger ? t.danger + "55" : t.borderStrong) : t.border}`,
+        cursor: disabled ? "not-allowed" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: hover ? (danger ? t.danger : t.textPrimary) : t.textSecondary,
+        transition: "all 0.25s ease",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ============= Data helpers ============= */
 
 function pick(...values) {
   for (const value of values) {
@@ -15,15 +480,12 @@ function pick(...values) {
   }
   return null;
 }
-
 function toUpper(value) {
   return String(value ?? "").trim().toUpperCase();
 }
-
 function canonicalStatus(value) {
   return toUpper(value).replace(/\s+/g, "").replace(/_/g, "");
 }
-
 function normalizeSites(...sources) {
   const unique = new Set();
   for (const source of sources) {
@@ -35,7 +497,6 @@ function normalizeSites(...sources) {
   }
   return Array.from(unique);
 }
-
 function normalizeExam(raw) {
   if (!raw) return null;
   const status = toUpper(pick(raw.examstatus, raw.exam_status, raw.status, ""));
@@ -46,9 +507,9 @@ function normalizeExam(raw) {
     candidateid: pick(raw.candidateid, raw.candidate_id),
     name: pick(raw.name, raw.examname, raw.exam_name, "Exam"),
     description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
-    date: pick(raw.date, raw.examdate, raw.exam_date, "--"),
-    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
-    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "—"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "—"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "—"),
     durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0) || 0),
     instructions: pick(raw.instructions, ""),
     allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
@@ -59,7 +520,6 @@ function normalizeExam(raw) {
     examstatus: status,
   };
 }
-
 function normalizeAssessment(raw) {
   if (!raw) return null;
   const status = toUpper(pick(raw.status, raw.assessmentstatus, raw.assessment_status, ""));
@@ -73,9 +533,9 @@ function normalizeAssessment(raw) {
     examinerid: pick(raw.examinerid, raw.examiner_id),
     name: pick(raw.name, raw.examname, raw.exam_name, "Upcoming Exam"),
     description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
-    date: pick(raw.date, raw.examdate, raw.exam_date, "--"),
-    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "--:--"),
-    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "--:--"),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "—"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "—"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "—"),
     durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0) || 0),
     instructions: pick(raw.instructions, ""),
     allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
@@ -88,19 +548,15 @@ function normalizeAssessment(raw) {
     examstatus,
   };
 }
-
 function getExamStatus(source) {
   return canonicalStatus(pick(source?.examstatus, source?.exam_status, source?.status, ""));
 }
-
 function getAssessmentStatus(source) {
   return canonicalStatus(pick(source?.assessmentstatus, source?.assessment_status, source?.status, ""));
 }
-
 function getFinalStatus(source) {
   return canonicalStatus(pick(source?.finalstatus, source?.final_status, ""));
 }
-
 function safeHost(url) {
   try {
     const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
@@ -110,26 +566,67 @@ function safeHost(url) {
   }
 }
 
-function pill(bg, color) {
-  return {
-    background: bg,
-    color,
-    borderRadius: 10,
-    padding: "8px 14px",
-    fontSize: 13,
-    fontWeight: 600,
-  };
+/* ============= Status chip ============= */
+
+function StatusChip({ status, theme, label }) {
+  const t = THEMES[theme];
+  const s = canonicalStatus(status);
+  let color = t.textMuted;
+  let gradient = `linear-gradient(135deg, ${t.textMuted}, ${t.textFaint})`;
+  if (["ACTIVE", "APPROVED", "REENTRYAPPROVED", "LATEENTRYAPPROVED", "READY", "ASSIGNED"].includes(s)) {
+    color = t.success;
+    gradient = t.successGradient;
+  } else if (["PAUSED", "PENDING", "REENTRYREQUESTED", "LATEENTRYREQUESTED"].includes(s)) {
+    color = t.warning;
+    gradient = t.warningGradient;
+  } else if (["TERMINATED", "LOCKED", "REJECTED", "REENTRYREJECTED", "LATEENTRYREJECTED"].includes(s)) {
+    color = t.danger;
+    gradient = t.dangerGradient;
+  } else if (s === "RUNNING") {
+    color = t.info;
+    gradient = `linear-gradient(135deg, ${t.info}, ${t.accent2})`;
+  } else if (s === "COMPLETED") {
+    color = t.success;
+    gradient = t.successGradient;
+  }
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "5px 12px 5px 8px",
+        borderRadius: 999,
+        background: `${color}18`,
+        border: `1px solid ${color}55`,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: 0.4,
+        color,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: "50%",
+          background: gradient,
+          display: "inline-block",
+          boxShadow: `0 0 8px ${color}66`,
+        }}
+      />
+      {label ? `${label}: ` : ""}{status || "—"}
+    </div>
+  );
 }
 
-function formatRemaining(ms) {
-  const totalSecs = Math.max(0, Math.floor(ms / 1000));
-  const hrs = Math.floor(totalSecs / 3600);
-  const remMins = Math.floor((totalSecs % 3600) / 60);
-  const secs = totalSecs % 60;
-  return `${String(hrs).padStart(2, "0")}:${String(remMins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-}
+/* ============= Main ============= */
 
 export default function ActiveExam({ exam, assessment, onComplete, onLogout, onReturnToDashboard }) {
+  const { theme, toggleTheme } = useTheme();
+  const t = THEMES[theme];
+
   const shellRef = useRef(null);
   const browserAreaRef = useRef(null);
   const completedRef = useRef(false);
@@ -169,14 +666,12 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     liveExam?.examid,
     normalizedExam?.examid
   );
-
   const assessmentId = pick(
     liveAssessment?.assessmentid,
     normalizedAssessment?.assessmentid,
     liveExam?.assessmentid,
     normalizedExam?.assessmentid
   );
-
   const candidateId = pick(
     liveAssessment?.candidateid,
     normalizedAssessment?.candidateid,
@@ -211,8 +706,8 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   );
 
   const activeUrl = allowedSites[activeTab] || allowedSites[0] || null;
-  const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "-";
-  const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "-";
+  const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "—";
+  const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "—";
   const isPaused = pauseLocked || canonicalStatus(assessmentStatus) === "PAUSED";
 
   const safeElectron = useCallback(async (runner, fallbackMessage, options = {}) => {
@@ -232,57 +727,36 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   }, []);
 
   const resizeBrowserToArea = useCallback(async () => {
-  if (!shellRef.current || !browserAreaRef.current || !window.electronAPI || completedRef.current) {
-    return false;
-  }
+    if (!shellRef.current || !browserAreaRef.current || !window.electronAPI || completedRef.current) {
+      return false;
+    }
+    const shellRect = shellRef.current.getBoundingClientRect();
+    const browserRect = browserAreaRef.current.getBoundingClientRect();
 
-  const shellRect = shellRef.current.getBoundingClientRect();
-  const browserRect = browserAreaRef.current.getBoundingClientRect();
+    const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
+    const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
+    const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
+    const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
 
-  const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
-  const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
-  const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
-  const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
+    try {
+      const result = await window.electronAPI.resizeBrowser({ top, left, right, bottom });
+      return !result || result.success !== false;
+    } catch (error) {
+      console.log("Failed to resize BrowserView", error);
+      return false;
+    }
+  }, []);
 
-  try {
-    const result = await window.electronAPI.resizeBrowser({ top, left, right, bottom });
-    return !result || result.success !== false;
-  } catch (error) {
-    console.log("Failed to resize BrowserView", error);
-    return false;
-  }
-}, []);
   const showBrowserForActiveState = useCallback(async () => {
-  if (!window.electronAPI || completedRef.current) return false;
-
-  const shown = await safeElectron(
-    () => window.electronAPI.showBrowser(),
-    "Failed to show secured browser.",
-    { silent: true }
-  );
-  if (!shown) return false;
-
-  const resized = await safeElectron(
-    () => resizeBrowserToArea(),
-    "Failed to resize BrowserView",
-    { silent: false }
-  );
-  if (!resized) return false;
-
-  await safeElectron(
-    () => window.electronAPI.restoreBrowser(),
-    "Failed to restore secured browser.",
-    { silent: true }
-  );
-
-  await safeElectron(
-    () => window.electronAPI.focusBrowser(),
-    "Failed to focus secured browser.",
-    { silent: true }
-  );
-
-  return true;
-}, [resizeBrowserToArea, safeElectron]);
+    if (!window.electronAPI || completedRef.current) return false;
+    const shown = await safeElectron(() => window.electronAPI.showBrowser(), "Failed to show secured browser.", { silent: true });
+    if (!shown) return false;
+    const resized = await safeElectron(() => resizeBrowserToArea(), "Failed to resize BrowserView", { silent: false });
+    if (!resized) return false;
+    await safeElectron(() => window.electronAPI.restoreBrowser(), "Failed to restore secured browser.", { silent: true });
+    await safeElectron(() => window.electronAPI.focusBrowser(), "Failed to focus secured browser.", { silent: true });
+    return true;
+  }, [resizeBrowserToArea, safeElectron]);
 
   const hideBrowserForPause = useCallback(async () => {
     if (!window.electronAPI || completedRef.current || !browserOpenedRef.current) return false;
@@ -291,7 +765,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
 
   useEffect(() => {
     let cancelled = false;
-
     const ensureBrowserOpen = async () => {
       if (!window.electronAPI || completedRef.current) return;
       if (!allowedSites.length) return;
@@ -301,7 +774,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         () => window.electronAPI.openBrowser({ allowedWebsites: allowedSites }),
         "Failed to open secured browser."
       );
-
       if (!cancelled && ok) {
         browserOpenedRef.current = true;
         setBrowserError("");
@@ -312,16 +784,12 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         }
       }
     };
-
     ensureBrowserOpen();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [allowedSites, isPaused, hideBrowserForPause, showBrowserForActiveState, safeElectron]);
 
   useEffect(() => {
     if (!browserOpenedRef.current || completedRef.current || !window.electronAPI) return;
-
     const sync = async () => {
       if (isPaused) {
         await hideBrowserForPause();
@@ -329,32 +797,25 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         await showBrowserForActiveState();
       }
     };
-
     sync();
   }, [isPaused, hideBrowserForPause, showBrowserForActiveState]);
 
   useEffect(() => {
     if (!activeUrl || !browserOpenedRef.current || completedRef.current || isPaused) return;
     if (lastNavigatedUrlRef.current === activeUrl) return;
-
     let cancelled = false;
-
     const navigate = async () => {
       const ok = await safeElectron(
         () => window.electronAPI.navigateBrowser(activeUrl),
         "Failed to navigate secured browser."
       );
-
       if (!cancelled && ok) {
         lastNavigatedUrlRef.current = activeUrl;
         await showBrowserForActiveState();
       }
     };
-
     navigate();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [activeUrl, isPaused, safeElectron, showBrowserForActiveState]);
 
   useEffect(() => {
@@ -363,7 +824,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       if (isPaused) return;
       await showBrowserForActiveState();
     };
-
     const id = setTimeout(onResize, 300);
     window.addEventListener("resize", onResize);
     return () => {
@@ -373,26 +833,10 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   }, [isPaused, showBrowserForActiveState]);
 
   const cleanupExamShell = useCallback(async () => {
-    try {
-      await window.electronAPI?.stopCapture?.();
-    } catch (error) {
-      console.log("stopCapture failed", error);
-    }
-    try {
-      await window.electronAPI?.closeBrowser?.();
-    } catch (error) {
-      console.log("closeBrowser failed", error);
-    }
-    try {
-      await window.electronAPI?.disableLockdown?.();
-    } catch (error) {
-      console.log("disableLockdown failed", error);
-    }
-    try {
-      await window.electronAPI?.setClosable?.(true);
-    } catch (error) {
-      console.log("setClosable failed", error);
-    }
+    try { await window.electronAPI?.stopCapture?.(); } catch (error) { console.log("stopCapture failed", error); }
+    try { await window.electronAPI?.closeBrowser?.(); } catch (error) { console.log("closeBrowser failed", error); }
+    try { await window.electronAPI?.disableLockdown?.(); } catch (error) { console.log("disableLockdown failed", error); }
+    try { await window.electronAPI?.setClosable?.(true); } catch (error) { console.log("setClosable failed", error); }
 
     browserOpenedRef.current = false;
     lastNavigatedUrlRef.current = null;
@@ -409,7 +853,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     if (completedRef.current || returningRef.current || returning) return;
     returningRef.current = true;
     setReturning(true);
-
     try {
       await cleanupExamShell();
       await onReturnToDashboard?.();
@@ -448,27 +891,17 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         await finishExam();
         return;
       }
-
       if (action === "PAUSE") {
         setPauseLocked(true);
-        setLiveAssessment((prev) => ({
-          ...(prev || {}),
-          status: "PAUSED",
-          assessmentstatus: "PAUSED",
-        }));
+        setLiveAssessment((prev) => ({ ...(prev || {}), status: "PAUSED", assessmentstatus: "PAUSED" }));
         setStatusMsg("Your assessment has been paused by the examiner.");
         setBrowserError("");
         await hideBrowserForPause();
         return;
       }
-
       if (action === "RESUME") {
         setPauseLocked(false);
-        setLiveAssessment((prev) => ({
-          ...(prev || {}),
-          status: "ACTIVE",
-          assessmentstatus: "ACTIVE",
-        }));
+        setLiveAssessment((prev) => ({ ...(prev || {}), status: "ACTIVE", assessmentstatus: "ACTIVE" }));
         setStatusMsg("Your assessment has been resumed.");
         setBrowserError("");
         await showBrowserForActiveState();
@@ -477,40 +910,19 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
 
     socket.on("control_command", onControlCommand);
     return () => socket.off("control_command", onControlCommand);
-  }, [
-    socket,
-    examId,
-    assessmentId,
-    candidateId,
-    finishExam,
-    hideBrowserForPause,
-    showBrowserForActiveState,
-  ]);
+  }, [socket, examId, assessmentId, candidateId, finishExam, hideBrowserForPause, showBrowserForActiveState]);
 
   const checkLiveStatus = useCallback(async () => {
-    if (completedRef.current) {
-      setChecking(false);
-      return;
-    }
-
-    if (!examId || !assessmentId || !accessToken) {
-      setChecking(false);
-      return;
-    }
+    if (completedRef.current) { setChecking(false); return; }
+    if (!examId || !assessmentId || !accessToken) { setChecking(false); return; }
 
     try {
       const [examRes, assessmentRes] = await Promise.all([
-        axios.get(`${API}/api/exams/${examId}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }),
-        axios.get(`${API}/api/assessments/${assessmentId}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }),
+        axios.get(`${API}/api/exams/${examId}`, { headers: { Authorization: `Bearer ${accessToken}` } }),
+        axios.get(`${API}/api/assessments/${assessmentId}`, { headers: { Authorization: `Bearer ${accessToken}` } }),
       ]);
-
       const latestExam = normalizeExam(examRes?.data);
       const latestAssessment = normalizeAssessment(assessmentRes?.data);
-
       if (latestExam) setLiveExam(latestExam);
       if (latestAssessment) setLiveAssessment(latestAssessment);
 
@@ -527,14 +939,12 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         await finishExam();
         return;
       }
-
       if (assessmentStatusValue === "PAUSED") {
         setPauseLocked(true);
         setBrowserError("");
         await hideBrowserForPause();
         return;
       }
-
       if (assessmentStatusValue === "ACTIVE") {
         setPauseLocked(false);
         await showBrowserForActiveState();
@@ -558,12 +968,12 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const durationMinutes = Number(merged.durationminutes || normalizedExam?.durationminutes || 0);
 
   const startMs =
-    startDate && startClock && startDate !== "--" && startClock !== "--:--"
+    startDate && startClock && startDate !== "—" && startClock !== "—"
       ? new Date(`${startDate}T${startClock}:00`).getTime()
       : null;
-
   const endMs = startMs && durationMinutes > 0 ? startMs + durationMinutes * 60 * 1000 : null;
   const remainingMs = endMs ? Math.max(0, endMs - now) : 0;
+  const totalMs = durationMinutes > 0 ? durationMinutes * 60 * 1000 : 0;
 
   useEffect(() => {
     return () => {
@@ -573,7 +983,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     };
   }, []);
 
-  const endLabel = merged.endtime || normalizedExam?.endtime || "--:--";
   const examName = merged.name || normalizedExam?.name || "Exam";
 
   return (
@@ -584,97 +993,187 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        background: "#0f1117",
-        color: "#e8eaf0",
+        background: t.canvas,
+        backgroundImage: t.canvasTint,
+        color: t.textPrimary,
         overflow: "hidden",
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        transition: "background 0.7s ease, color 0.6s ease",
+        position: "relative",
       }}
     >
-      <div
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulseDot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.4); } }
+        @keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes ringPulse {
+          0%   { transform: scale(0.9); opacity: 0.7; }
+          100% { transform: scale(1.7); opacity: 0; }
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: ${t.borderStrong}; border-radius: 999px; }
+        ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
+
+        .brand-gradient {
+          background: ${t.accentGradient};
+          background-size: 200% 200%;
+          animation: gradientShift 8s ease infinite;
+        }
+
+        button { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease; }
+      `}</style>
+
+      {/* ============= HEADER ============= */}
+      <header
         style={{
-          height: 58,
+          height: 64,
+          padding: "0 20px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0 18px",
-          background: "#1a1d27",
-          borderBottom: "1px solid #2c3143",
           flexShrink: 0,
+          borderBottom: `1px solid ${t.border}`,
+          background: t.surface,
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          position: "relative",
+          zIndex: 10,
+          transition: "background 0.55s ease, border-color 0.5s ease",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>3rdEyeZ360</div>
-          <div style={{ width: 1, height: 20, background: "#394055" }} />
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{examName}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+          
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15, minWidth: 0 }}>
+            <span
+              style={{
+                fontWeight: 700,
+                fontSize: 14,
+                color: t.textPrimary,
+                fontFamily: "'Space Grotesk', sans-serif",
+                letterSpacing: -0.2,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                maxWidth: 320,
+              }}
+            >
+              {examName}
+            </span>
+            <span style={{ fontSize: 10, color: t.textMuted, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 600 }}>
+              Live Proctored Session
+            </span>
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={pill("#2b2230", "#ff6b6b")}>{formatRemaining(remainingMs)}</div>
-          <div style={pill("#252c40", "#b8d1ff")}>Ends at {endLabel}</div>
-          <div style={pill("#252937", "#f2c46d")}>Assessment {assessmentStatus}</div>
-          <div style={pill("#15281f", "#4ade80")}>Exam {examStatus}</div>
+          <StatusChip status={assessmentStatus} theme={theme} />
+          <StatusChip status={examStatus} theme={theme} />
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
           {onLogout ? (
-            <button onClick={onLogout} className="btn btn-ghost" style={{ padding: "7px 14px", fontSize: 13 }}>
-              Logout
-            </button>
+            <IconButton theme={theme} onClick={onLogout} danger title="Sign out" ariaLabel="Sign out">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </IconButton>
           ) : null}
         </div>
-      </div>
+      </header>
 
+      {/* ============= TAB BAR (allowed sites) ============= */}
       {allowedSites.length > 1 ? (
         <div
           style={{
-            height: 44,
+            height: 40,
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            padding: "0 16px",
-            background: "#161925",
-            borderBottom: "1px solid #2c3143",
+            gap: 6,
+            padding: "0 20px",
+            background: t.tabBar,
+            borderBottom: `1px solid ${t.border}`,
             flexShrink: 0,
             overflowX: "auto",
+            zIndex: 5,
           }}
         >
-          <span style={{ fontSize: 11, color: "#8b90a0", marginRight: 6 }}>Allowed sites</span>
-          {allowedSites.map((site, index) => (
-            <button
-              key={`${site}-${index}`}
-              onClick={() => setActiveTab(index)}
-              disabled={isPaused}
-              style={{
-                background: index === activeTab ? "#10243a" : "#22263a",
-                border: index === activeTab ? "1px solid #4f8ef7" : "1px solid #2e3347",
-                color: index === activeTab ? "#8fc2ff" : "#c8cad0",
-                borderRadius: 8,
-                padding: "5px 12px",
-                fontSize: 12,
-                cursor: isPaused ? "not-allowed" : "pointer",
-                whiteSpace: "nowrap",
-                opacity: isPaused ? 0.6 : 1,
-              }}
-              title={site}
-            >
-              {safeHost(site)}
-            </button>
-          ))}
+          <span
+            style={{
+              fontSize: 10,
+              color: t.textMuted,
+              letterSpacing: 0.8,
+              textTransform: "uppercase",
+              fontWeight: 700,
+              marginRight: 8,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Tabs
+          </span>
+          {allowedSites.map((site, index) => {
+            const active = index === activeTab;
+            return (
+              <button
+                key={`${site}-${index}`}
+                onClick={() => setActiveTab(index)}
+                disabled={isPaused}
+                title={site}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: active ? t.accentSoft : t.surfaceGlass,
+                  border: `1px solid ${active ? t.borderAccent : t.border}`,
+                  color: active ? t.accent : t.textSecondary,
+                  borderRadius: 8,
+                  padding: "5px 12px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: isPaused ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
+                  opacity: isPaused ? 0.5 : 1,
+                  fontFamily: "'Inter', sans-serif",
+                }}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+                {safeHost(site)}
+              </button>
+            );
+          })}
         </div>
       ) : null}
 
+      {/* ============= MAIN BODY ============= */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Browser view host */}
         <div
           ref={browserAreaRef}
           style={{
             flex: 1,
-            background: "#0a0c14",
+            background: t.browserBg,
             position: "relative",
-            borderRight: "1px solid #2c3143",
+            borderRight: `1px solid ${t.border}`,
+            transition: "background 0.5s ease, border-color 0.5s ease",
           }}
         >
+          {/* Pause overlay */}
           {isPaused ? (
             <div
               style={{
                 position: "absolute",
                 inset: 0,
-                background: "rgba(0, 0, 0, 0.94)",
+                background: t.overlay,
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
@@ -682,17 +1181,68 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
                 zIndex: 100,
                 textAlign: "center",
                 padding: 24,
+                animation: "fadeIn 0.35s ease",
               }}
             >
-              <div style={{ fontSize: 48, marginBottom: 16 }}>⏸️</div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Assessment Paused</h2>
-              <p style={{ color: "#8b90a0", fontSize: 14, maxWidth: 360, lineHeight: 1.7 }}>
-                Your examiner has paused the assessment. Website access has been locked. Please stay available and wait
-                for resume.
+              <div style={{ position: "relative", width: 90, height: 90, marginBottom: 22 }}>
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    border: `2px solid ${t.warning}`,
+                    opacity: 0.55,
+                    animation: "ringPulse 2s ease-out infinite",
+                  }}
+                />
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    border: `2px solid ${t.warning}`,
+                    opacity: 0.35,
+                    animation: "ringPulse 2s ease-out 0.7s infinite",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 10,
+                    borderRadius: "50%",
+                    background: t.warningGradient,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: `0 8px 24px ${t.warning}55`,
+                  }}
+                >
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="#ffffff">
+                    <rect x="6" y="4" width="4" height="16" rx="1" />
+                    <rect x="14" y="4" width="4" height="16" rx="1" />
+                  </svg>
+                </div>
+              </div>
+
+              <h2
+                style={{
+                  fontSize: 22,
+                  fontWeight: 700,
+                  marginBottom: 8,
+                  color: "#ffffff",
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  letterSpacing: -0.4,
+                }}
+              >
+                Assessment Paused
+              </h2>
+              <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 14, maxWidth: 380, lineHeight: 1.7, margin: 0 }}>
+                Your examiner has paused the assessment. Website access is locked while paused. Please stay available and wait for the exam to resume.
               </p>
             </div>
           ) : null}
 
+          {/* Browser error banner */}
           {browserError && !isPaused ? (
             <div
               style={{
@@ -701,147 +1251,345 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
                 left: 16,
                 right: 16,
                 zIndex: 101,
-                background: "#2a1010",
-                border: "1px solid #f75f5f",
-                borderRadius: 10,
+                background: t.dangerBg,
+                border: `1px solid ${t.danger}55`,
+                borderRadius: 12,
                 padding: "12px 14px",
-                color: "#f3c2c2",
+                color: t.danger,
                 fontSize: 13,
                 lineHeight: 1.6,
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+                backdropFilter: "blur(12px)",
+                WebkitBackdropFilter: "blur(12px)",
               }}
             >
-              {browserError}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>{browserError}</span>
             </div>
           ) : null}
 
+          {/* No allowed websites empty state */}
           {!allowedSites.length ? (
             <div
               style={{
                 position: "absolute",
                 inset: 0,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "#8b90a0",
+                color: t.textMuted,
                 fontSize: 14,
                 zIndex: 50,
                 padding: 24,
                 textAlign: "center",
               }}
             >
-              No allowed website configured for this assessment.
+              <div
+                style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: "50%",
+                  background: t.accentGradientSoft,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 14,
+                  border: `1px solid ${t.border}`,
+                }}
+              >
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={t.accent} strokeWidth="1.8">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+              </div>
+              <div style={{ fontWeight: 700, marginBottom: 4, color: t.textPrimary, fontSize: 15, fontFamily: "'Space Grotesk', sans-serif" }}>
+                No allowed website configured
+              </div>
+              <div>Please contact your examiner if this state persists.</div>
             </div>
           ) : null}
         </div>
 
+        {/* ============= SIDEBAR ============= */}
         <div
           style={{
             width: 340,
-            background: "#1a1d27",
+            background: t.sidebarBg,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
             flexShrink: 0,
+            borderLeft: `1px solid ${t.border}`,
+            transition: "background 0.55s ease, border-color 0.5s ease",
           }}
         >
-          <div style={{ padding: "16px 18px", borderBottom: "1px solid #2e3347", flexShrink: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>Exam Status</div>
+          {/* ============= TIMER BLOCK (centered above Session) ============= */}
+          <div
+            style={{
+              padding: "22px 20px 18px",
+              borderBottom: `1px solid ${t.border}`,
+              flexShrink: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              background: t.surfaceGlass,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                color: t.textMuted,
+                letterSpacing: 1.6,
+                textTransform: "uppercase",
+                fontWeight: 700,
+              }}
+            >
+              Time Remaining
+            </span>
+            <TimerPill remainingMs={remainingMs} totalMs={totalMs} theme={theme} />
+            <span
+              style={{
+                fontSize: 10,
+                color: t.textFaint,
+                letterSpacing: 0.6,
+                fontWeight: 500,
+              }}
+            >
+              hours &nbsp;·&nbsp; minutes
+            </span>
+          </div>
+
+          {/* Session card */}
+          <div style={{ padding: "18px 20px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+            <div
+              style={{
+                fontSize: 10.5,
+                color: t.textMuted,
+                fontWeight: 700,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+                marginBottom: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
+              Session
+            </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Assessment</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#f2c46d" }}>{assessmentStatus}</div>
-              </div>
-              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Exam</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#4ade80" }}>{examStatus}</div>
-              </div>
-              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Start</div>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{merged.starttime || "--:--"}</div>
-              </div>
-              <div style={{ background: "#22263a", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, color: "#8b90a0", marginBottom: 2 }}>Duration</div>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{durationMinutes} min</div>
-              </div>
+              {[
+                { label: "Assessment", value: assessmentStatus, color: canonicalStatus(assessmentStatus) === "PAUSED" ? t.warning : t.success },
+                { label: "Exam", value: examStatus, color: canonicalStatus(examStatus) === "RUNNING" ? t.success : t.textPrimary },
+                { label: "Start", value: merged.starttime || "—", color: t.textPrimary, mono: true },
+                { label: "Duration", value: `${durationMinutes} min`, color: t.textPrimary, mono: true },
+              ].map((row, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: t.surfaceGlass,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      color: t.textMuted,
+                      marginBottom: 4,
+                      fontWeight: 700,
+                      letterSpacing: 0.6,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {row.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: row.color,
+                      fontFamily: row.mono ? "'JetBrains Mono', monospace" : "'Space Grotesk', sans-serif",
+                    }}
+                  >
+                    {row.value}
+                  </div>
+                </div>
+              ))}
             </div>
 
             {checking ? (
-              <div style={{ fontSize: 11, color: "#8b90a0", marginTop: 10 }}>Syncing live state...</div>
+              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    border: `2px solid ${t.border}`,
+                    borderTopColor: t.accent,
+                    borderRadius: "50%",
+                    animation: "spin 0.9s linear infinite",
+                  }}
+                />
+                Syncing live state
+              </div>
             ) : null}
 
             {statusMsg ? (
               <div
                 style={{
                   marginTop: 12,
-                  background: "#22263a",
-                  borderRadius: 8,
+                  background: t.accentSoft,
+                  border: `1px solid ${t.borderAccent}`,
+                  borderRadius: 10,
                   padding: "10px 12px",
                   fontSize: 12,
-                  color: "#c8cad0",
-                  lineHeight: 1.6,
+                  color: t.textPrimary,
+                  lineHeight: 1.55,
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "flex-start",
                 }}
               >
-                {statusMsg}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.accent} strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                <span>{statusMsg}</span>
               </div>
             ) : null}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Allowed websites</div>
+          {/* Allowed sites + instructions */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+            <div
+              style={{
+                fontSize: 10.5,
+                color: t.textMuted,
+                fontWeight: 700,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+                marginBottom: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
+              Allowed websites
+            </div>
 
             {allowedSites.length === 0 ? (
-              <p style={{ fontSize: 12, color: "#8b90a0" }}>No allowed websites found.</p>
+              <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>No allowed websites found.</p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {allowedSites.map((site, index) => (
-                  <button
-                    key={`${site}-${index}`}
-                    onClick={() => setActiveTab(index)}
-                    disabled={isPaused}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      background: index === activeTab ? "#10243a" : "#22263a",
-                      border: index === activeTab ? "1px solid #4f8ef7" : "1px solid #2e3347",
-                      borderRadius: 8,
-                      padding: "10px 12px",
-                      color: index === activeTab ? "#8fc2ff" : "#c8cad0",
-                      cursor: isPaused ? "not-allowed" : "pointer",
-                      opacity: isPaused ? 0.6 : 1,
-                    }}
-                    title={site}
-                  >
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{safeHost(site)}</div>
-                    <div
+                {allowedSites.map((site, index) => {
+                  const active = index === activeTab;
+                  return (
+                    <button
+                      key={`${site}-${index}`}
+                      onClick={() => setActiveTab(index)}
+                      disabled={isPaused}
+                      title={site}
                       style={{
-                        fontSize: 10,
-                        color: "#8b90a0",
-                        marginTop: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        width: "100%",
+                        textAlign: "left",
+                        background: active ? t.accentSoft : t.surfaceGlass,
+                        border: `1px solid ${active ? t.borderAccent : t.border}`,
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        color: active ? t.accent : t.textPrimary,
+                        cursor: isPaused ? "not-allowed" : "pointer",
+                        opacity: isPaused ? 0.55 : 1,
+                        fontFamily: "'Inter', sans-serif",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
                       }}
                     >
-                      {site}
-                    </div>
-                  </button>
-                ))}
+                      <div
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          background: active ? t.accentGradient : t.surfaceGlassHover,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: active ? "#ffffff" : t.textMuted,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="2" y1="12" x2="22" y2="12" />
+                          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                        </svg>
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700 }}>{safeHost(site)}</div>
+                        <div
+                          style={{
+                            fontSize: 10.5,
+                            color: t.textMuted,
+                            marginTop: 2,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            fontFamily: "'JetBrains Mono', monospace",
+                          }}
+                        >
+                          {site}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
             {merged.instructions ? (
               <>
-                <div style={{ fontWeight: 700, fontSize: 13, marginTop: 18, marginBottom: 10 }}>Instructions</div>
                 <div
                   style={{
-                    background: "#22263a",
-                    borderRadius: 8,
+                    fontSize: 10.5,
+                    color: t.textMuted,
+                    fontWeight: 700,
+                    letterSpacing: 1.2,
+                    textTransform: "uppercase",
+                    marginTop: 22,
+                    marginBottom: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
+                  Instructions
+                </div>
+                <div
+                  style={{
+                    background: t.surfaceGlass,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 12,
                     padding: "12px 14px",
-                    fontSize: 12,
-                    color: "#c8cad0",
+                    fontSize: 12.5,
+                    color: t.textSecondary,
                     lineHeight: 1.7,
                     whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
                   }}
                 >
                   {merged.instructions}
@@ -850,38 +1598,77 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
             ) : null}
           </div>
 
+          {/* Sidebar footer status strip */}
           <div
             style={{
-              height: 48,
-              borderTop: "1px solid #2e3347",
+              padding: "10px 20px",
+              borderTop: `1px solid ${t.border}`,
               display: "flex",
               alignItems: "center",
-              padding: "0 16px",
-              gap: 16,
-              fontSize: 11,
-              color: "#8b90a0",
+              gap: 8,
               flexShrink: 0,
+              background: t.surfaceGlass,
             }}
           >
-            <span>Secured Browser</span>
-            <span>{isPaused ? "Hidden during pause" : allowedSites.length ? "Domain restricted" : "No domain config"}</span>
-            <span style={{ marginLeft: "auto", color: isPaused ? "#f5a623" : "#f75f5f" }}>
-              {isPaused ? "Waiting for resume" : "Do not close this window"}
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: isPaused ? t.warning : t.success,
+                boxShadow: `0 0 8px ${isPaused ? t.warning : t.success}`,
+                animation: "pulseDot 1.5s ease-in-out infinite",
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: 11, color: t.textSecondary, fontWeight: 600 }}>
+              {isPaused ? "Waiting for resume" : "Secured session live"}
+            </span>
+            <span style={{ marginLeft: "auto", fontSize: 10.5, color: t.textMuted, letterSpacing: 0.4 }}>
+              Do not close this window
             </span>
           </div>
         </div>
       </div>
 
+      {/* Recovery back-to-dashboard button when terminal */}
       {typeof onReturnToDashboard === "function" &&
       (canonicalStatus(assessmentStatus) === "LOCKED" || canonicalStatus(assessmentStatus) === "TERMINATED") ? (
-        <div style={{ position: "fixed", right: 16, bottom: 16, zIndex: 120 }}>
+        <div style={{ position: "fixed", right: 20, bottom: 20, zIndex: 120 }}>
           <button
             onClick={returnToDashboardSafe}
             disabled={returning}
-            className="btn btn-ghost"
-            style={{ padding: "10px 14px", fontSize: 13, background: "#1a1d27" }}
+            style={{
+              padding: "12px 20px",
+              fontSize: 13,
+              fontWeight: 700,
+              background: t.accentGradient,
+              color: "#ffffff",
+              border: "none",
+              borderRadius: 12,
+              cursor: returning ? "wait" : "pointer",
+              fontFamily: "'Inter', sans-serif",
+              letterSpacing: 0.3,
+              boxShadow: t.glowAccent,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
           >
-            {returning ? "Returning..." : "Back to Dashboard"}
+            {returning ? (
+              <>
+                <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#ffffff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                Returning...
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="19" y1="12" x2="5" y2="12" />
+                  <polyline points="12 19 5 12 12 5" />
+                </svg>
+                Back to Dashboard
+              </>
+            )}
           </button>
         </div>
       ) : null}

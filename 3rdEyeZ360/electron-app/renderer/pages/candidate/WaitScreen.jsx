@@ -868,7 +868,7 @@ export default function WaitScreen({
         return;
       }
       if (!examRunning && approvedToEnter) {
-        setActionMsg("Permission approved. The exam has not started yet.");
+        setActionMsg("Permission approved. The assessment has not started yet.");
         return;
       }
       setActionMsg("Stay visible on camera and wait for the exam to go live.");
@@ -966,8 +966,8 @@ export default function WaitScreen({
     if (!examRunning && approvedToEnter)
       return {
         label: "",
-        headline: "You're approved — waiting for the exam to start.",
-        sub: "You'll be moved into the exam workspace automatically when it begins.",
+        headline: "You're approved — waiting for the assessment to start.",
+        sub: "You'll be moved into the assessment workspace automatically when it begins.",
         color: t.success,
         gradient: t.successGradient,
         icon: (
@@ -1068,23 +1068,7 @@ export default function WaitScreen({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div
-            className="brand-gradient"
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 10,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: t.glowAccent,
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </div>
+          
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
             <span style={{ fontWeight: 700, fontSize: 15, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.2 }}>
               Assessment Waiting Window

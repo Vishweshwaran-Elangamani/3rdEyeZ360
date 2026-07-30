@@ -41,13 +41,8 @@ services:
       - --import-realm
     volumes:
       - keycloak_data:/opt/keycloak/data
-<<<<<<< HEAD
-      - "D:/3RD EYE/3rdEyeZ360/read/Asserts/keycloak:/opt/keycloak/data/import"
-
-=======
       - "D:/3rd_Eyez360_V2/3rdEyeZ360/read/Asserts/keycloak:/opt/keycloak/data/import"
  
->>>>>>> main
 volumes:
   mongo_data:
   minio_data:

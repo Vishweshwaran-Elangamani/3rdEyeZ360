@@ -229,9 +229,9 @@ function getCardState(exam, pendingRequest) {
   if (isApprovedStatus(assessmentStatus))
     return {
       mode: "enter",
-      cta: "Enter Exam Hall",
+      cta: "Enter Assessment Page",
       disabled: false,
-      helper: "Permission granted. Continue to precheck and enter the exam.",
+      helper: "Permission granted. Continue to precheck and enter the Assessment.",
     };
   if (pendingRequest || isPendingRequestStatus(assessmentStatus))
     return {
@@ -257,9 +257,9 @@ function getCardState(exam, pendingRequest) {
       };
     return {
       mode: "enter",
-      cta: "Enter Exam Hall",
+      cta: "Enter Assessment Waiting Window",
       disabled: false,
-      helper: "You may enter early, complete precheck, read instructions, and wait inside the hall.",
+      helper: "You may enter early, complete precheck, read instructions, and wait in the Waiting window.",
     };
   }
   return {
@@ -875,25 +875,18 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
       );
     }
     if (cardState.mode === "request") {
-      return (
-        <button
-          onClick={() => onRequest?.(exam)}
-          style={{ ...base, background: t.warningGradient, color: "#ffffff", boxShadow: t.glowWarning }}
-          className="cta-shine"
-        >
-          <span style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", gap: 10 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
-              <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
-              <line x1="6" y1="1" x2="6" y2="4" />
-              <line x1="10" y1="1" x2="10" y2="4" />
-              <line x1="14" y1="1" x2="14" y2="4" />
-            </svg>
-            {cardState.cta}
-          </span>
-        </button>
-      );
-    }
+  return (
+    <button
+      onClick={() => onRequest?.(exam)}
+      style={{ ...base, background: t.warningGradient, color: "#ffffff", boxShadow: t.glowWarning }}
+      className="cta-shine"
+    >
+      <span style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", gap: 10 }}>
+        {cardState.cta}
+      </span>
+    </button>
+  );
+}
     return (
       <button
         disabled
@@ -1892,23 +1885,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div
-            className="brand-gradient"
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: 12,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: t.glowAccent,
-            }}
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </div>
+         
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
             <span
               style={{
@@ -1919,7 +1896,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
                 letterSpacing: -0.3,
               }}
             >
-              3rdEyeZ360
+              
             </span>
             <span
               style={{

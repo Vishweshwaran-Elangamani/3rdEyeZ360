@@ -10,3 +10,5 @@ build/
 venv/
 .venv/
 start.ps1
+docker-compose.yml
+

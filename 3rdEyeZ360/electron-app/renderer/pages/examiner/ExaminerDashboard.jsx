@@ -19,19 +19,20 @@ const THEMES = {
       "radial-gradient(ellipse at top left, #10152a 0%, #07080d 50%), radial-gradient(ellipse at bottom right, #1a0f2e 0%, #07080d 60%)",
     surface: "rgba(22, 26, 40, 0.6)",
     surfaceSolid: "#141826",
-    surfaceElevated: "rgba(30, 34, 50, 0.72)",
-    surfaceGlass: "rgba(255, 255, 255, 0.03)",
-    surfaceGlassHover: "rgba(255, 255, 255, 0.055)",
+    surfaceElevated: "rgba(30, 34, 50, 0.85)",
+    surfaceGlass: "rgba(255, 255, 255, 0.05)",
+    surfaceGlassHover: "rgba(255, 255, 255, 0.08)",
     cardSurface: "rgba(28, 32, 48, 0.72)",
     cardSurfaceHover: "rgba(34, 38, 56, 0.82)",
     panelBg: "#0f1220",
-    border: "rgba(255, 255, 255, 0.06)",
-    borderStrong: "rgba(255, 255, 255, 0.12)",
-    borderAccent: "rgba(91, 140, 255, 0.4)",
-    textPrimary: "#f1f3fb",
-    textSecondary: "#a8afc7",
-    textMuted: "#6b7286",
-    textFaint: "#464b60",
+    border: "rgba(255, 255, 255, 0.09)",
+    borderStrong: "rgba(255, 255, 255, 0.16)",
+    borderAccent: "rgba(91, 140, 255, 0.45)",
+    // brighter, whiter text
+    textPrimary: "#ffffff",
+    textSecondary: "#d5daea",
+    textMuted: "#98a0ba",
+    textFaint: "#6b7286",
     accent: "#5b8cff",
     accent2: "#a065ff",
     accent3: "#ff6ec7",
@@ -39,43 +40,44 @@ const THEMES = {
     accentGradientSoft:
       "linear-gradient(135deg, rgba(91,140,255,0.15) 0%, rgba(160,101,255,0.15) 50%, rgba(255,110,199,0.15) 100%)",
     accentSoft: "rgba(91,140,255,0.12)",
-    success: "#3ecf8e",
+    success: "#57e0a0",
     successGradient: "linear-gradient(135deg, #3ecf8e 0%, #22a37a 100%)",
-    successBg: "rgba(62,207,142,0.1)",
-    warning: "#e8b04b",
+    successBg: "rgba(62,207,142,0.14)",
+    warning: "#f0bd63",
     warningGradient: "linear-gradient(135deg, #ffc94b 0%, #e8850b 100%)",
-    warningBg: "rgba(232,176,75,0.1)",
-    danger: "#ef6a6a",
+    warningBg: "rgba(232,176,75,0.14)",
+    danger: "#ff8686",
     dangerGradient: "linear-gradient(135deg, #ff7a7a 0%, #d94a4a 100%)",
-    dangerBg: "rgba(239,106,106,0.1)",
-    info: "#6da5ff",
-    infoBg: "rgba(109,165,255,0.1)",
-    overlay: "rgba(3,5,10,0.75)",
+    dangerBg: "rgba(239,106,106,0.14)",
+    info: "#7fb0ff",
+    infoBg: "rgba(109,165,255,0.14)",
+    overlay: "rgba(3,5,10,0.78)",
     glowAccent: "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
     glowSuccess: "0 6px 24px rgba(62,207,142,0.28)",
     glowWarning: "0 6px 24px rgba(232,176,75,0.28)",
-    inputBg: "rgba(255,255,255,0.04)",
+    glowDanger: "0 6px 24px rgba(239,106,106,0.28)",
+    inputBg: "rgba(255,255,255,0.06)",
   },
   light: {
     name: "light",
     canvas: "#eef1fb",
     canvasTint:
       "radial-gradient(ellipse at top left, #dbe4ff 0%, #eef1fb 45%), radial-gradient(ellipse at bottom right, #ffd9ec 0%, #eef1fb 55%)",
-    surface: "rgba(255, 255, 255, 0.78)",
+    surface: "rgba(255, 255, 255, 0.82)",
     surfaceSolid: "#ffffff",
-    surfaceElevated: "rgba(255, 255, 255, 0.92)",
-    surfaceGlass: "rgba(255, 255, 255, 0.6)",
-    surfaceGlassHover: "rgba(255, 255, 255, 0.85)",
+    surfaceElevated: "rgba(255, 255, 255, 0.94)",
+    surfaceGlass: "rgba(255, 255, 255, 0.65)",
+    surfaceGlassHover: "rgba(255, 255, 255, 0.9)",
     cardSurface: "#ffffff",
     cardSurfaceHover: "#fbfcff",
     panelBg: "#ffffff",
-    border: "rgba(20, 28, 60, 0.08)",
-    borderStrong: "rgba(20, 28, 60, 0.15)",
-    borderAccent: "rgba(75, 96, 232, 0.4)",
+    border: "rgba(20, 28, 60, 0.10)",
+    borderStrong: "rgba(20, 28, 60, 0.18)",
+    borderAccent: "rgba(75, 96, 232, 0.45)",
     textPrimary: "#0b1024",
-    textSecondary: "#3a4160",
-    textMuted: "#6a7290",
-    textFaint: "#a4abc0",
+    textSecondary: "#2a3150",
+    textMuted: "#5a6280",
+    textFaint: "#98a0ba",
     accent: "#4b60e8",
     accent2: "#7c3aed",
     accent3: "#e94aa8",
@@ -83,21 +85,22 @@ const THEMES = {
     accentGradientSoft:
       "linear-gradient(135deg, rgba(75,96,232,0.12) 0%, rgba(124,58,237,0.12) 50%, rgba(233,74,168,0.12) 100%)",
     accentSoft: "rgba(75,96,232,0.12)",
-    success: "#0ea564",
+    success: "#0b8f57",
     successGradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-    successBg: "rgba(14,165,100,0.14)",
-    warning: "#d97706",
+    successBg: "rgba(14,165,100,0.16)",
+    warning: "#c47908",
     warningGradient: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-    warningBg: "rgba(217,119,6,0.14)",
-    danger: "#dc2626",
+    warningBg: "rgba(217,119,6,0.16)",
+    danger: "#c81e1e",
     dangerGradient: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
-    dangerBg: "rgba(220,38,38,0.12)",
+    dangerBg: "rgba(220,38,38,0.14)",
     info: "#2563eb",
-    infoBg: "rgba(37,99,235,0.12)",
-    overlay: "rgba(20, 28, 60, 0.35)",
+    infoBg: "rgba(37,99,235,0.14)",
+    overlay: "rgba(20, 28, 60, 0.4)",
     glowAccent: "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
     glowSuccess: "0 8px 28px rgba(14,165,100,0.28)",
     glowWarning: "0 8px 28px rgba(217,119,6,0.28)",
+    glowDanger: "0 8px 28px rgba(220,38,38,0.28)",
     inputBg: "#ffffff",
   },
 };
@@ -336,17 +339,7 @@ function IconMorphButton({ theme, refreshing, loading, onClick }) {
         flexShrink: 0,
       }}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ animation: active ? "spinFluid 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite" : "none" }}
-      >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: active ? "spinFluid 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite" : "none" }}>
         <polyline points="23 4 23 10 17 10" />
         <polyline points="1 20 1 14 7 14" />
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -440,7 +433,7 @@ function GhostButton({ children, onClick, disabled, theme, style }) {
         opacity: disabled ? 0.5 : 1,
         display: "inline-flex",
         alignItems: "center",
-        gap: 8,
+        gap: 7,
         ...style,
       }}
     >
@@ -555,10 +548,88 @@ function StatOrb({ label, value, total, color, gradient, theme, icon }) {
 function StatusPill({ status, theme }) {
   const t = THEMES[theme];
   const meta = examStatusMeta(status, t);
+  const running = String(status).toUpperCase() === "RUNNING";
   return (
-    <span style={{ background: meta.gradient, color: "#ffffff", padding: "4px 11px", borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, whiteSpace: "nowrap", boxShadow: `0 4px 12px ${meta.color}44` }}>
+    <span style={{ background: meta.gradient, color: "#ffffff", padding: "4px 12px", borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, whiteSpace: "nowrap", boxShadow: `0 4px 12px ${meta.color}44`, display: "inline-flex", alignItems: "center", gap: 6 }}>
+      {running && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", animation: "pulseDot 1.4s ease-in-out infinite" }} />}
       {meta.label}
     </span>
+  );
+}
+
+/* ============= Confirm modal ============= */
+
+function ConfirmModal({ open, theme, title, message, confirmLabel, cancelLabel, onConfirm, onCancel, danger, working }) {
+  const t = THEMES[theme];
+  if (!open) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: t.overlay, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 20, animation: "fadeIn 0.2s ease" }}>
+      <div style={{ width: "100%", maxWidth: 440, background: t.surfaceElevated, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${t.borderStrong}`, borderRadius: 20, padding: 28, boxShadow: "0 30px 80px rgba(0,0,0,0.45)", animation: "slideUp 0.32s cubic-bezier(0.2, 0.8, 0.2, 1)", textAlign: "center" }}>
+        <div style={{ width: 64, height: 64, borderRadius: "50%", margin: "0 auto 18px", display: "flex", alignItems: "center", justifyContent: "center", background: danger ? t.dangerBg : t.warningBg, border: `1px solid ${(danger ? t.danger : t.warning)}55` }}>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={danger ? t.danger : t.warning} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <h3 style={{ fontSize: 19, fontWeight: 700, color: t.textPrimary, margin: 0, marginBottom: 8, fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
+        <p style={{ fontSize: 13.5, color: t.textSecondary, lineHeight: 1.6, margin: 0, marginBottom: 24 }}>{message}</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button
+            onClick={onCancel}
+            disabled={working}
+            style={{ padding: "11px 22px", fontSize: 13.5, fontWeight: 700, borderRadius: 11, background: t.surfaceGlass, color: t.textPrimary, border: `1px solid ${t.borderStrong}`, cursor: working ? "not-allowed" : "pointer", fontFamily: "'Inter', sans-serif" }}
+          >
+            {cancelLabel || "Cancel"}
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={working}
+            style={{ padding: "11px 24px", fontSize: 13.5, fontWeight: 700, borderRadius: 11, background: danger ? t.dangerGradient : t.warningGradient, color: "#fff", border: "none", cursor: working ? "wait" : "pointer", fontFamily: "'Inter', sans-serif", boxShadow: danger ? t.glowDanger : t.glowWarning, display: "inline-flex", alignItems: "center", gap: 8 }}
+          >
+            {working ? (
+              <>
+                <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                Working...
+              </>
+            ) : (
+              confirmLabel || "Confirm"
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============= Transition overlay (start / end) ============= */
+
+function TransitionOverlay({ open, theme, variant, title, subtitle }) {
+  const t = THEMES[theme];
+  if (!open) return null;
+  const color = variant === "end" ? t.danger : t.success;
+  const gradient = variant === "end" ? t.dangerGradient : t.successGradient;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: t.overlay, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10001, animation: "fadeIn 0.3s ease" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", animation: "slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)" }}>
+        <div style={{ position: "relative", width: 108, height: 108, marginBottom: 24 }}>
+          <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2px solid ${color}`, opacity: 0.5, animation: "ringPulse 2s ease-out infinite" }} />
+          <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2px solid ${color}`, opacity: 0.3, animation: "ringPulse 2s ease-out 0.7s infinite" }} />
+          <div style={{ position: "absolute", inset: 14, borderRadius: "50%", background: gradient, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 8px 30px ${color}66`, animation: "gentleFloat 2.4s ease-in-out infinite" }}>
+            {variant === "end" ? (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="#ffffff"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+            ) : (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="#ffffff"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+            )}
+          </div>
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "#ffffff", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.4, marginBottom: 6 }}>{title}</div>
+        <div style={{ fontSize: 13.5, color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          {subtitle}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -623,10 +694,7 @@ function ExamCard({ exam, theme, index, onMonitor, onAssign }) {
             </span>
           </div>
         </div>
-        <div style={{ padding: "6px 12px", borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: 0.4, color: "#ffffff", background: meta.gradient, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6, boxShadow: `0 4px 12px ${meta.color}44` }}>
-          {running && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#ffffff", animation: "pulseDot 1.4s ease-in-out infinite" }} />}
-          {meta.label}
-        </div>
+        <StatusPill status={exam.status} theme={theme} />
       </div>
 
       <div style={{ display: "flex", gap: 8, position: "relative", zIndex: 1 }}>
@@ -667,7 +735,7 @@ function ExamCard({ exam, theme, index, onMonitor, onAssign }) {
   );
 }
 
-/* ============= Candidate tile (monitor grid) ============= */
+/* ============= Small pieces ============= */
 
 function StatBox({ label, value, color, t }) {
   return (
@@ -694,7 +762,7 @@ function MonitorTabButton({ active, label, count, onClick, theme }) {
         alignItems: "center",
         gap: 8,
         background: active ? t.accentSoft : "transparent",
-        color: active ? t.accent : t.textMuted,
+        color: active ? t.accent : t.textSecondary,
         border: active ? `1px solid ${t.borderAccent}` : `1px solid transparent`,
         fontFamily: "'Inter', sans-serif",
         transition: "all 0.2s ease",
@@ -729,6 +797,8 @@ function GlobalStyles({ theme }) {
         33% { transform: translate(30px, -20px) scale(1.08); }
         66% { transform: translate(-20px, 30px) scale(0.94); }
       }
+      @keyframes ringPulse { 0% { transform: scale(0.9); opacity: 0.6; } 100% { transform: scale(1.7); opacity: 0; } }
+      @keyframes gentleFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
       @keyframes shine {
         0% { transform: translateX(-120%) skewX(-20deg); }
         100% { transform: translateX(220%) skewX(-20deg); }
@@ -756,6 +826,7 @@ function GlobalStyles({ theme }) {
         -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; display: inline-block; line-height: 1;
       }
       .avatar-gradient { background: ${t.accentGradient}; background-size: 200% 200%; animation: gradientShift 6s ease infinite; }
+      input::placeholder { color: ${t.textMuted}; opacity: 0.85; }
       button, a, input, textarea { transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease, opacity 0.25s ease; }
     `}</style>
   );
@@ -789,6 +860,12 @@ export default function ExaminerDashboard() {
   const [clock, setClock] = useState(new Date());
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  // "active" hides completed by default; other keys map to a specific status bucket
+  const [statusFilter, setStatusFilter] = useState("active");
+
+  // NEW: confirm + transition overlay state
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
+  const [transition, setTransition] = useState(null); // { variant, title, subtitle }
 
   const headers = useMemo(() => ({ Authorization: `Bearer ${accessToken}` }), [accessToken]);
 
@@ -970,36 +1047,42 @@ export default function ExaminerDashboard() {
   const startExam = async () => {
     if (!selectedExamId || startingExam || isExamRunning || isExamCompleted) return;
     setStartingExam(true);
+    setTransition({ variant: "start", title: "Starting the exam", subtitle: "Going live for all candidates..." });
     try {
       await axios.patch(`${API}/api/exams/${selectedExamId}/start`, {}, { headers });
       if (socket) socket.emit("start_exam", { exam_id: selectedExamId });
       await Promise.all([loadExamById(selectedExamId), loadCandidates(selectedExamId), loadReentryRequests(selectedExamId)]);
       setRefreshTick((v) => v + 1);
-      setActionMsg("Exam started successfully — status changed to Running");
+      // brief success dwell for a smooth transition
+      await new Promise((r) => setTimeout(r, 900));
+      setActionMsg("Exam is now running");
       setTimeout(() => setActionMsg(""), 5000);
     } catch (e) {
-      setActionMsg(`Failed to start exam: ${e.response?.data?.detail || e.message}`);
+      setActionMsg(`Could not start the exam: ${e.response?.data?.detail || e.message}`);
       setTimeout(() => setActionMsg(""), 5000);
     } finally {
+      setTransition(null);
       setStartingExam(false);
     }
   };
 
-  const endExam = async () => {
+  const performEndExam = async () => {
     if (!selectedExamId || endingExam || isExamCompleted) return;
-    const confirmed = window.confirm("End this exam for all candidates? Active and resumable assessments will be closed.");
-    if (!confirmed) return;
     setEndingExam(true);
+    setConfirmEndOpen(false);
+    setTransition({ variant: "end", title: "Ending the exam", subtitle: "Closing all active sessions..." });
     try {
       await axios.patch(`${API}/api/exams/${selectedExamId}/end`, {}, { headers });
       await Promise.all([loadExamById(selectedExamId), loadCandidates(selectedExamId), loadReentryRequests(selectedExamId)]);
       setRefreshTick((v) => v + 1);
+      await new Promise((r) => setTimeout(r, 900));
       setActionMsg("Exam ended successfully");
       setTimeout(() => setActionMsg(""), 5000);
     } catch (e) {
-      setActionMsg(`Failed to end exam: ${e.response?.data?.detail || e.message}`);
+      setActionMsg(`Could not end the exam: ${e.response?.data?.detail || e.message}`);
       setTimeout(() => setActionMsg(""), 5000);
     } finally {
+      setTransition(null);
       setEndingExam(false);
     }
   };
@@ -1022,7 +1105,7 @@ export default function ExaminerDashboard() {
           status: action === "terminate" ? "TERMINATED" : undefined,
         });
       }
-      setActionMsg(`${action} applied`);
+      setActionMsg(`${action.charAt(0).toUpperCase() + action.slice(1)} applied`);
       setTimeout(() => setActionMsg(""), 3000);
       await loadCandidates(selectedExamId);
       if (selectedCandidate?.candidateid) await loadViolations(selectedCandidate.candidateid, selectedExamId);
@@ -1133,9 +1216,46 @@ export default function ExaminerDashboard() {
     const total = exams.length;
     const running = exams.filter((e) => String(e.status).toUpperCase() === "RUNNING").length;
     const published = exams.filter((e) => String(e.status).toUpperCase() === "PUBLISHED").length;
-    const completed = exams.filter((e) => String(e.status).toUpperCase() === "COMPLETED").length;
+    const draft = exams.filter((e) => String(e.status).toUpperCase() === "DRAFT").length;
+    const completed = exams.filter((e) => {
+      const s = String(e.status).toUpperCase();
+      return s === "COMPLETED" || s === "TERMINATED";
+    }).length;
+    const activeCountExams = total - completed;
+
+    // Status filter chips. "active" = everything except completed/terminated (default).
+    const statusChips = [
+      { key: "active", label: "Active", count: activeCountExams, color: t.accent },
+      { key: "running", label: "Running", count: running, color: t.success },
+      { key: "published", label: "Published", count: published, color: t.info },
+      { key: "draft", label: "Draft", count: draft, color: t.textMuted },
+      { key: "completed", label: "Completed", count: completed, color: t.textSecondary },
+      { key: "all", label: "All", count: total, color: t.accent2 },
+    ];
+
+    const matchesStatusFilter = (e) => {
+      const s = String(e.status).toUpperCase();
+      const isCompleted = s === "COMPLETED" || s === "TERMINATED";
+      switch (statusFilter) {
+        case "all":
+          return true;
+        case "active":
+          return !isCompleted;
+        case "running":
+          return s === "RUNNING";
+        case "published":
+          return s === "PUBLISHED";
+        case "draft":
+          return s === "DRAFT";
+        case "completed":
+          return isCompleted;
+        default:
+          return true;
+      }
+    };
 
     const filteredExams = exams.filter((e) => {
+      if (!matchesStatusFilter(e)) return false;
       const q = search.trim().toLowerCase();
       if (!q) return true;
       return [e.name, e.status, e.date, e.starttime, e.endtime].filter(Boolean).map((v) => String(v).toLowerCase()).join(" ").includes(q);
@@ -1162,7 +1282,6 @@ export default function ExaminerDashboard() {
         <div style={{ position: "absolute", top: "-10%", left: "-10%", width: 500, height: 500, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent}22 0%, transparent 65%)`, filter: "blur(40px)", animation: "floatBlob 22s ease-in-out infinite", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: "-15%", right: "-10%", width: 620, height: 620, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent3}18 0%, transparent 65%)`, filter: "blur(50px)", animation: "floatBlob 28s ease-in-out infinite", pointerEvents: "none" }} />
 
-        {/* Header */}
         <header
           style={{
             height: 68,
@@ -1212,21 +1331,8 @@ export default function ExaminerDashboard() {
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "32px 32px 40px", position: "relative", zIndex: 1 }}>
           <div style={{ maxWidth: 1440, margin: "0 auto" }}>
-            {/* Hero row */}
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)", gap: 24, marginBottom: 32, animation: "cardEnter 0.5s ease" }}>
-              <div
-                style={{
-                  background: t.cardSurface,
-                  backdropFilter: "blur(24px)",
-                  WebkitBackdropFilter: "blur(24px)",
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 24,
-                  padding: "32px 34px",
-                  position: "relative",
-                  overflow: "hidden",
-                  boxShadow: t.name === "light" ? "0 8px 30px rgba(20,28,60,0.08)" : "none",
-                }}
-              >
+              <div style={{ background: t.cardSurface, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${t.border}`, borderRadius: 24, padding: "32px 34px", position: "relative", overflow: "hidden", boxShadow: t.name === "light" ? "0 8px 30px rgba(20,28,60,0.08)" : "none" }}>
                 <div style={{ position: "absolute", top: -80, right: -80, width: 260, height: 260, borderRadius: "50%", background: t.accentGradient, opacity: t.name === "light" ? 0.18 : 0.14, filter: "blur(60px)", animation: "floatBlob 18s ease-in-out infinite" }} />
                 <div style={{ position: "relative", zIndex: 1 }}>
                   <div style={{ fontSize: 11, color: t.textMuted, letterSpacing: 1.4, textTransform: "uppercase", fontWeight: 700, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1253,24 +1359,7 @@ export default function ExaminerDashboard() {
                 </div>
               </div>
 
-              <div
-                style={{
-                  background: t.cardSurface,
-                  backdropFilter: "blur(24px)",
-                  WebkitBackdropFilter: "blur(24px)",
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 24,
-                  padding: 28,
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  textAlign: "center",
-                  position: "relative",
-                  overflow: "hidden",
-                  boxShadow: t.name === "light" ? "0 8px 30px rgba(20,28,60,0.08)" : "none",
-                }}
-              >
+              <div style={{ background: t.cardSurface, backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", border: `1px solid ${t.border}`, borderRadius: 24, padding: 28, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center", position: "relative", overflow: "hidden", boxShadow: t.name === "light" ? "0 8px 30px rgba(20,28,60,0.08)" : "none" }}>
                 <div style={{ position: "absolute", inset: 0, background: t.accentGradientSoft, opacity: 0.7 }} />
                 <div style={{ position: "relative", zIndex: 1 }}>
                   <div style={{ fontSize: 10.5, color: t.textMuted, letterSpacing: 1.5, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>Local Time</div>
@@ -1282,7 +1371,6 @@ export default function ExaminerDashboard() {
               </div>
             </div>
 
-            {/* Stat orbs */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 24, animation: "cardEnter 0.55s ease" }}>
               <StatOrb theme={theme} label="Total Exams" value={total} total={Math.max(total, 1)} color={t.accent} gradient={t.accentGradient}
                 icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 10h6M9 14h4" /></svg>} />
@@ -1294,7 +1382,6 @@ export default function ExaminerDashboard() {
                 icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 6 9 17l-5-5" /></svg>} />
             </div>
 
-            {/* Heading + search */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
               <div>
                 <h3 style={{ fontSize: 20, fontWeight: 700, color: t.textPrimary, margin: 0, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.4, display: "flex", alignItems: "center", gap: 10 }}>
@@ -1307,8 +1394,9 @@ export default function ExaminerDashboard() {
               </div>
             </div>
 
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ position: "relative", maxWidth: 420 }}>
+            <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              {/* Search */}
+              <div style={{ position: "relative", flex: "1 1 300px", maxWidth: 420 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={searchFocused ? t.accent : t.textMuted} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", transition: "stroke 0.25s ease", pointerEvents: "none" }}>
                   <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
@@ -1318,21 +1406,56 @@ export default function ExaminerDashboard() {
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => setSearchFocused(false)}
                   placeholder="Search exams by name, status or date..."
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "11px 14px 11px 40px",
-                    fontSize: 13.5,
-                    color: t.textPrimary,
-                    background: t.inputBg,
-                    border: `1px solid ${searchFocused ? t.accent : t.border}`,
-                    borderRadius: 12,
-                    outline: "none",
-                    fontFamily: "'Inter', sans-serif",
-                    boxShadow: searchFocused ? `0 0 0 3px ${t.accentSoft}` : "none",
-                    transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.5s ease",
-                  }}
+                  style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px 11px 40px", fontSize: 13.5, color: t.textPrimary, background: t.inputBg, border: `1px solid ${searchFocused ? t.accent : t.border}`, borderRadius: 12, outline: "none", fontFamily: "'Inter', sans-serif", boxShadow: searchFocused ? `0 0 0 3px ${t.accentSoft}` : "none", transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.5s ease" }}
                 />
+              </div>
+
+              {/* Status filter chips */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {statusChips.map((c) => {
+                  const active = statusFilter === c.key;
+                  return (
+                    <button
+                      key={c.key}
+                      onClick={() => setStatusFilter(c.key)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 7,
+                        padding: "8px 13px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: 0.3,
+                        borderRadius: 999,
+                        border: `1px solid ${active ? "transparent" : t.border}`,
+                        background: active ? `linear-gradient(135deg, ${c.color} 0%, ${c.color}cc 100%)` : t.surfaceGlass,
+                        color: active ? "#ffffff" : t.textSecondary,
+                        cursor: "pointer",
+                        fontFamily: "'Inter', sans-serif",
+                        boxShadow: active ? `0 4px 12px ${c.color}55` : "none",
+                        transition: "all 0.25s ease",
+                      }}
+                      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.surfaceGlassHover; }}
+                      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = t.surfaceGlass; }}
+                    >
+                      {c.label}
+                      <span
+                        style={{
+                          fontSize: 10.5,
+                          padding: "1px 7px",
+                          borderRadius: 999,
+                          background: active ? "rgba(255,255,255,0.28)" : t.surfaceGlassHover,
+                          color: active ? "#ffffff" : t.textMuted,
+                          fontWeight: 800,
+                          minWidth: 18,
+                          textAlign: "center",
+                        }}
+                      >
+                        {c.count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1347,26 +1470,38 @@ export default function ExaminerDashboard() {
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={t.accent} strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                 </div>
                 <div style={{ color: t.textPrimary, fontWeight: 700, marginBottom: 4, fontSize: 16, fontFamily: "'Space Grotesk', sans-serif" }}>
-                  {search ? "No matching exams" : "No exams yet"}
+                  {search
+                    ? "No matching exams"
+                    : statusFilter === "completed"
+                    ? "No completed exams yet"
+                    : statusFilter !== "active" && statusFilter !== "all"
+                    ? `No ${statusFilter} exams`
+                    : total === 0
+                    ? "No exams yet"
+                    : "Nothing here right now"}
                 </div>
-                <div>{search ? "Try a different search term." : "Create your first exam to get started."}</div>
-                {!search && (
+                <div>
+                  {search
+                    ? "Try a different search term."
+                    : statusFilter !== "active" && statusFilter !== "all" && total > 0
+                    ? "Switch to another filter to see your other exams."
+                    : "Create your first exam to get started."}
+                </div>
+                {!search && total === 0 && (
                   <div style={{ marginTop: 16 }}>
                     <GradientButton theme={theme} onClick={() => setView("create")} style={{ padding: "10px 24px", fontSize: 14 }}>Create your first exam</GradientButton>
+                  </div>
+                )}
+                {!search && total > 0 && statusFilter !== "active" && (
+                  <div style={{ marginTop: 16 }}>
+                    <GhostButton theme={theme} onClick={() => setStatusFilter("active")} style={{ padding: "9px 18px", justifyContent: "center" }}>Back to active exams</GhostButton>
                   </div>
                 )}
               </div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 20, alignItems: "start" }}>
                 {filteredExams.map((exam, i) => (
-                  <ExamCard
-                    key={exam.examid}
-                    exam={exam}
-                    index={i}
-                    theme={theme}
-                    onMonitor={openMonitor}
-                    onAssign={(ex) => { setSelectedExam(ex); setView("assign"); }}
-                  />
+                  <ExamCard key={exam.examid} exam={exam} index={i} theme={theme} onMonitor={openMonitor} onAssign={(ex) => { setSelectedExam(ex); setView("assign"); }} />
                 ))}
               </div>
             )}
@@ -1410,7 +1545,7 @@ export default function ExaminerDashboard() {
           <span style={{ fontWeight: 700, fontSize: 15, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.3 }}>{selectedExam?.name}</span>
           <StatusPill status={selectedExam?.status} theme={theme} />
           <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>{candidates.length} candidate{candidates.length !== 1 ? "s" : ""}</span>
-          {actionMsg && <span style={{ fontSize: 12, color: t.success, marginLeft: 4, fontWeight: 600 }}>{actionMsg}</span>}
+          {actionMsg && <span style={{ fontSize: 12, color: t.success, marginLeft: 4, fontWeight: 700 }}>{actionMsg}</span>}
 
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
@@ -1422,13 +1557,50 @@ export default function ExaminerDashboard() {
               placeholder="Broadcast to all candidates..."
               style={{ width: 220, padding: "8px 12px", fontSize: 12, background: t.inputBg, border: `1px solid ${t.border}`, borderRadius: 10, color: t.textPrimary, outline: "none", fontFamily: "'Inter', sans-serif" }}
             />
-            <GhostButton theme={theme} onClick={sendBroadcast}>Send</GhostButton>
+            <GhostButton theme={theme} onClick={sendBroadcast}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+              Send
+            </GhostButton>
+
+            {/* Start button with play icon */}
             <GradientButton theme={theme} onClick={startExam} disabled={startingExam || isExamRunning || isExamCompleted} gradient={t.successGradient} glow={t.glowSuccess}>
-              {startingExam ? "Starting..." : isExamCompleted ? "Exam Completed" : isExamRunning ? "Exam Running" : "Start Exam"}
+              {startingExam ? (
+                <>
+                  <span style={{ width: 13, height: 13, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                  Starting
+                </>
+              ) : isExamCompleted ? (
+                "Exam Completed"
+              ) : isExamRunning ? (
+                <>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", animation: "pulseDot 1.4s ease-in-out infinite" }} />
+                  Running
+                </>
+              ) : (
+                <>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="#ffffff"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                  Start Exam
+                </>
+              )}
             </GradientButton>
-            <GradientButton theme={theme} onClick={endExam} disabled={endingExam || isExamCompleted} gradient={t.dangerGradient} glow="none">
-              {endingExam ? "Ending..." : isExamCompleted ? "Exam Ended" : "End Exam"}
+
+            {/* End button with stop icon */}
+            <GradientButton theme={theme} onClick={() => setConfirmEndOpen(true)} disabled={endingExam || isExamCompleted} gradient={t.dangerGradient} glow={t.glowDanger}>
+              {endingExam ? (
+                <>
+                  <span style={{ width: 13, height: 13, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                  Ending
+                </>
+              ) : isExamCompleted ? (
+                "Exam Ended"
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffffff"><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
+                  End Exam
+                </>
+              )}
             </GradientButton>
+
             <GhostButton theme={theme} onClick={() => { setSelectedExam(selectedExam); setView("assign"); }}>Assign</GhostButton>
             <GhostButton theme={theme} onClick={() => { loadExamById(selectedExamId); loadCandidates(selectedExamId); loadReentryRequests(selectedExamId); }}>Refresh</GhostButton>
           </div>
@@ -1449,7 +1621,7 @@ export default function ExaminerDashboard() {
         </div>
 
         {monitorTab === "requests" ? (
-          <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
             {reentryRequests.length === 0 ? (
               <div style={{ color: t.textMuted, textAlign: "center", padding: "60px 0", fontSize: 14 }}>No pending requests.</div>
             ) : (
@@ -1474,7 +1646,7 @@ export default function ExaminerDashboard() {
                           <GradientButton theme={theme} onClick={() => handleReentryReview(req, true)} disabled={reviewingRequestId === req.requestid} gradient={t.successGradient} glow={t.glowSuccess} style={{ padding: "8px 16px" }}>
                             {reviewingRequestId === req.requestid ? "Working..." : "Approve"}
                           </GradientButton>
-                          <GradientButton theme={theme} onClick={() => handleReentryReview(req, false)} disabled={reviewingRequestId === req.requestid} gradient={t.dangerGradient} glow="none" style={{ padding: "8px 16px" }}>
+                          <GradientButton theme={theme} onClick={() => handleReentryReview(req, false)} disabled={reviewingRequestId === req.requestid} gradient={t.dangerGradient} glow={t.glowDanger} style={{ padding: "8px 16px" }}>
                             {reviewingRequestId === req.requestid ? "Working..." : "Reject"}
                           </GradientButton>
                         </div>
@@ -1486,9 +1658,9 @@ export default function ExaminerDashboard() {
             )}
           </div>
         ) : (
-          <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
             {/* Candidate grid */}
-            <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, alignContent: "start" }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12, alignContent: "start" }}>
               {candidates.length === 0 ? (
                 <div style={{ gridColumn: "1 / -1", textAlign: "center", color: t.textMuted, padding: "60px 0", fontSize: 13 }}>
                   No candidates assigned yet.{" "}
@@ -1522,7 +1694,7 @@ export default function ExaminerDashboard() {
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: t.textPrimary }}>{c.candidatename}</div>
                       <div style={{ fontSize: 11, color, marginBottom: 8, fontWeight: 600 }}>{c.status}</div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: t.textMuted, fontWeight: 600 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: t.textSecondary, fontWeight: 600 }}>
                         <span title="Violations">V {c.violationcount}</span>
                         <span title="Risk score">R {c.riskscore}</span>
                         <span title="Credibility">C {c.credibilityscore}</span>
@@ -1538,43 +1710,45 @@ export default function ExaminerDashboard() {
               )}
             </div>
 
-            {/* Detail panel */}
-            <div style={{ width: 380, borderLeft: `1px solid ${t.border}`, background: t.panelBg, display: "flex", flexDirection: "column", overflow: "hidden", transition: "background 0.55s ease, border-color 0.5s ease" }}>
+            {/* Detail panel — fixed structure so Violations + Chat are always visible */}
+            <div style={{ width: 380, flexShrink: 0, borderLeft: `1px solid ${t.border}`, background: t.panelBg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", transition: "background 0.55s ease, border-color 0.5s ease" }}>
               {!selectedCandidate ? (
                 <div style={{ padding: 20, color: t.textMuted, fontSize: 13 }}>Select a candidate to view details.</div>
               ) : (
                 <>
-                  <div style={{ padding: 18, borderBottom: `1px solid ${t.border}` }}>
-                    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif" }}>{selectedCandidate.candidatename}</div>
-                    <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12, fontFamily: "'JetBrains Mono', monospace" }}>{selectedCandidate.candidateid}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+                  {/* Header (fixed) */}
+                  <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+                    <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 3, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif" }}>{selectedCandidate.candidatename}</div>
+                    <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 12, fontFamily: "'JetBrains Mono', monospace" }}>{selectedCandidate.candidateid}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
                       <StatBox label="Status" value={selectedCandidate.status} color={statusColor(selectedCandidate.status, t)} t={t} />
                       <StatBox label="Warnings" value={selectedCandidate.warningcount} color={t.warning} t={t} />
                       <StatBox label="Violations" value={selectedCandidate.violationcount} color={t.danger} t={t} />
                       <StatBox label="Credibility" value={`${selectedCandidate.credibilityscore}%`} color={t.accent} t={t} />
                     </div>
-                  </div>
-
-                  <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <GhostButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "pause")}>Pause</GhostButton>
-                    <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "resume")} gradient={t.successGradient} glow={t.glowSuccess} style={{ padding: "8px 14px" }}>Resume</GradientButton>
-                    <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "terminate")} gradient={t.dangerGradient} glow="none" style={{ padding: "8px 14px" }}>Terminate</GradientButton>
-                  </div>
-
-                  <div style={{ padding: 16, borderBottom: `1px solid ${t.border}` }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: t.textPrimary }}>Latest live data</div>
-                    <div style={{ fontSize: 12, color: t.textMuted, display: "grid", gap: 6 }}>
-                      <div>Status: {liveData[selectedCandidate.candidateid]?.status || "—"}</div>
-                      <div>Focus: {liveData[selectedCandidate.candidateid]?.focus ?? "—"}</div>
-                      <div>Noise: {liveData[selectedCandidate.candidateid]?.noise_level ?? "—"}</div>
-                      <div>Face count: {liveData[selectedCandidate.candidateid]?.face_count ?? "—"}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                      <GhostButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "pause")} style={{ padding: "7px 12px" }}>Pause</GhostButton>
+                      <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "resume")} gradient={t.successGradient} glow={t.glowSuccess} style={{ padding: "7px 12px" }}>Resume</GradientButton>
+                      <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "terminate")} gradient={t.dangerGradient} glow={t.glowDanger} style={{ padding: "7px 12px" }}>Terminate</GradientButton>
                     </div>
                   </div>
 
-                  <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: t.textPrimary }}>Violations</div>
+                  {/* Scrollable middle: live data + violations */}
+                  <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8, color: t.textPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>Latest live data</div>
+                    <div style={{ fontSize: 12, color: t.textSecondary, display: "grid", gap: 6, marginBottom: 18, background: t.surfaceGlass, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px" }}>
+                      <div>Status: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.status || "—"}</span></div>
+                      <div>Focus: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.focus ?? "—"}</span></div>
+                      <div>Noise: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.noise_level ?? "—"}</span></div>
+                      <div>Face count: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.face_count ?? "—"}</span></div>
+                    </div>
+
+                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10, color: t.textPrimary, textTransform: "uppercase", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 8 }}>
+                      Violations
+                      <span style={{ fontSize: 11, fontWeight: 700, color: t.danger, background: t.dangerBg, borderRadius: 999, padding: "1px 8px" }}>{violations.length}</span>
+                    </div>
                     {violations.length === 0 ? (
-                      <div style={{ color: t.textMuted, fontSize: 12 }}>No violations recorded.</div>
+                      <div style={{ color: t.textMuted, fontSize: 12, padding: "8px 0" }}>No violations recorded.</div>
                     ) : (
                       <div style={{ display: "grid", gap: 10 }}>
                         {violations.map((v, idx) => (
@@ -1588,7 +1762,8 @@ export default function ExaminerDashboard() {
                     )}
                   </div>
 
-                  <div style={{ borderTop: `1px solid ${t.border}`, minHeight: 220 }}>
+                  {/* Chat (fixed height at bottom) */}
+                  <div style={{ borderTop: `1px solid ${t.border}`, height: 240, flexShrink: 0, overflow: "hidden" }}>
                     <ChatWindow examId={selectedExamId} currentUser={user} selectedUserId={selectedCandidate.candidateid} selectedUserName={selectedCandidate.candidatename} />
                   </div>
                 </>
@@ -1596,6 +1771,29 @@ export default function ExaminerDashboard() {
             </div>
           </div>
         )}
+
+        {/* End-exam confirmation */}
+        <ConfirmModal
+          open={confirmEndOpen}
+          theme={theme}
+          danger
+          title="End this exam?"
+          message="This will close the exam for every candidate. Any active or paused sessions will be ended and cannot be resumed."
+          confirmLabel="Yes, end exam"
+          cancelLabel="No, keep running"
+          working={endingExam}
+          onCancel={() => setConfirmEndOpen(false)}
+          onConfirm={performEndExam}
+        />
+
+        {/* Start / End transition overlay */}
+        <TransitionOverlay
+          open={!!transition}
+          theme={theme}
+          variant={transition?.variant}
+          title={transition?.title}
+          subtitle={transition?.subtitle}
+        />
       </div>
     );
   }

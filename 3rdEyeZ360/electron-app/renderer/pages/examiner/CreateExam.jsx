@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
 
@@ -14,18 +14,19 @@ const THEMES = {
     canvasTint:
       "radial-gradient(ellipse at top left, #10152a 0%, #07080d 50%), radial-gradient(ellipse at bottom right, #1a0f2e 0%, #07080d 60%)",
     surface: "rgba(22, 26, 40, 0.72)",
-    surfaceElevated: "rgba(30, 34, 50, 0.85)",
-    surfaceGlass: "rgba(255, 255, 255, 0.03)",
-    surfaceGlassHover: "rgba(255, 255, 255, 0.055)",
-    cardSurface: "rgba(28, 32, 48, 0.72)",
-    cardSurfaceHover: "rgba(34, 38, 56, 0.82)",
-    border: "rgba(255, 255, 255, 0.06)",
-    borderStrong: "rgba(255, 255, 255, 0.12)",
-    borderAccent: "rgba(91, 140, 255, 0.4)",
-    textPrimary: "#f1f3fb",
-    textSecondary: "#a8afc7",
-    textMuted: "#6b7286",
-    textFaint: "#464b60",
+    surfaceElevated: "rgba(24, 28, 44, 0.96)",
+    surfaceGlass: "rgba(255, 255, 255, 0.05)",
+    surfaceGlassHover: "rgba(255, 255, 255, 0.08)",
+    cardSurface: "rgba(22, 26, 40, 0.42)",
+    cardSurfaceHover: "rgba(28, 32, 48, 0.55)",
+    border: "rgba(255, 255, 255, 0.10)",
+    borderStrong: "rgba(255, 255, 255, 0.16)",
+    borderAccent: "rgba(91, 140, 255, 0.45)",
+    textPrimary: "#ffffff",
+    textSecondary: "#d5daea",
+    textMuted: "#9aa2ba",
+    textFaint: "#6b7286",
+    label: "#c7cee3",
     accent: "#5b8cff",
     accent2: "#a065ff",
     accent3: "#ff6ec7",
@@ -33,35 +34,41 @@ const THEMES = {
     accentGradientSoft:
       "linear-gradient(135deg, rgba(91,140,255,0.15) 0%, rgba(160,101,255,0.15) 50%, rgba(255,110,199,0.15) 100%)",
     accentSoft: "rgba(91,140,255,0.12)",
-    success: "#3ecf8e",
+    success: "#57e0a0",
     successGradient: "linear-gradient(135deg, #3ecf8e 0%, #22a37a 100%)",
-    successBg: "rgba(62,207,142,0.12)",
-    danger: "#ef6a6a",
+    successBg: "rgba(62,207,142,0.14)",
+    danger: "#ff8686",
     dangerGradient: "linear-gradient(135deg, #ff7a7a 0%, #d94a4a 100%)",
-    dangerBg: "rgba(239,106,106,0.12)",
+    dangerBg: "rgba(239,106,106,0.14)",
     glowAccent: "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
     glowSuccess: "0 6px 24px rgba(62,207,142,0.28)",
-    inputBg: "rgba(255,255,255,0.04)",
-    inputReadonly: "rgba(255,255,255,0.02)",
+    inputBg: "rgba(255,255,255,0.07)",
+    inputReadonly: "rgba(255,255,255,0.03)",
+    wheelMask: "#181c2c",
+    iconStroke: "rgba(200, 210, 240, 0.32)",
+    bubbleFill: "rgba(255, 255, 255, 0.06)",
+    bubbleBorder: "rgba(255, 255, 255, 0.20)",
+    bubbleHighlight: "rgba(255, 255, 255, 0.35)",
   },
   light: {
     name: "light",
     canvas: "#eef1fb",
     canvasTint:
       "radial-gradient(ellipse at top left, #dbe4ff 0%, #eef1fb 45%), radial-gradient(ellipse at bottom right, #ffd9ec 0%, #eef1fb 55%)",
-    surface: "rgba(255, 255, 255, 0.85)",
-    surfaceElevated: "rgba(255, 255, 255, 0.94)",
-    surfaceGlass: "rgba(255, 255, 255, 0.6)",
-    surfaceGlassHover: "rgba(255, 255, 255, 0.85)",
-    cardSurface: "#ffffff",
-    cardSurfaceHover: "#fbfcff",
-    border: "rgba(20, 28, 60, 0.08)",
-    borderStrong: "rgba(20, 28, 60, 0.15)",
-    borderAccent: "rgba(75, 96, 232, 0.4)",
+    surface: "rgba(255, 255, 255, 0.88)",
+    surfaceElevated: "rgba(255, 255, 255, 0.98)",
+    surfaceGlass: "rgba(255, 255, 255, 0.7)",
+    surfaceGlassHover: "rgba(255, 255, 255, 0.9)",
+    cardSurface: "rgba(255, 255, 255, 0.68)",
+    cardSurfaceHover: "rgba(255, 255, 255, 0.85)",
+    border: "rgba(20, 28, 60, 0.12)",
+    borderStrong: "rgba(20, 28, 60, 0.20)",
+    borderAccent: "rgba(75, 96, 232, 0.45)",
     textPrimary: "#0b1024",
-    textSecondary: "#3a4160",
-    textMuted: "#6a7290",
-    textFaint: "#a4abc0",
+    textSecondary: "#2a3150",
+    textMuted: "#5a6280",
+    textFaint: "#98a0ba",
+    label: "#42496a",
     accent: "#4b60e8",
     accent2: "#7c3aed",
     accent3: "#e94aa8",
@@ -69,16 +76,21 @@ const THEMES = {
     accentGradientSoft:
       "linear-gradient(135deg, rgba(75,96,232,0.12) 0%, rgba(124,58,237,0.12) 50%, rgba(233,74,168,0.12) 100%)",
     accentSoft: "rgba(75,96,232,0.10)",
-    success: "#0ea564",
+    success: "#0b8f57",
     successGradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-    successBg: "rgba(14,165,100,0.14)",
-    danger: "#dc2626",
+    successBg: "rgba(14,165,100,0.16)",
+    danger: "#c81e1e",
     dangerGradient: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
     dangerBg: "rgba(220,38,38,0.12)",
     glowAccent: "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
     glowSuccess: "0 8px 28px rgba(14,165,100,0.28)",
-    inputBg: "#ffffff",
+    inputBg: "rgba(255,255,255,0.9)",
     inputReadonly: "#f2f4fa",
+    wheelMask: "#ffffff",
+    iconStroke: "rgba(45, 60, 130, 0.32)",
+    bubbleFill: "rgba(75, 96, 232, 0.08)",
+    bubbleBorder: "rgba(75, 96, 232, 0.24)",
+    bubbleHighlight: "rgba(255, 255, 255, 0.9)",
   },
 };
 
@@ -123,8 +135,8 @@ function ThemeToggle({ theme, onToggle }) {
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
       style={{
         position: "relative",
-        width: 58,
-        height: 30,
+        width: 54,
+        height: 28,
         borderRadius: 999,
         border: `1px solid ${t.borderStrong}`,
         background: isDark
@@ -138,9 +150,9 @@ function ThemeToggle({ theme, onToggle }) {
       }}
     >
       {[
-        { top: 6, left: 10, size: 2, o: isDark ? 0.9 : 0 },
-        { top: 18, left: 15, size: 1.5, o: isDark ? 0.6 : 0 },
-        { top: 9, left: 20, size: 1.5, o: isDark ? 0.7 : 0 },
+        { top: 5, left: 9, size: 2, o: isDark ? 0.9 : 0 },
+        { top: 17, left: 14, size: 1.5, o: isDark ? 0.6 : 0 },
+        { top: 8, left: 19, size: 1.5, o: isDark ? 0.7 : 0 },
       ].map((s, i) => (
         <span key={i} style={{ position: "absolute", top: s.top, left: s.left, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: s.o, transition: "opacity 0.6s ease" }} />
       ))}
@@ -148,9 +160,9 @@ function ThemeToggle({ theme, onToggle }) {
         style={{
           position: "absolute",
           top: 3,
-          left: isDark ? 31 : 3,
-          width: 22,
-          height: 22,
+          left: isDark ? 28 : 3,
+          width: 20,
+          height: 20,
           borderRadius: "50%",
           background: isDark
             ? "linear-gradient(135deg, #e2e6f2 0%, #b0b8d0 100%)"
@@ -164,10 +176,10 @@ function ThemeToggle({ theme, onToggle }) {
           justifyContent: "center",
         }}
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#3d4460" : "#7a4a00"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 1 : 0, transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#3d4460" : "#7a4a00"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 1 : 0, transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7a4a00" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 0 : 1, transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7a4a00" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 0 : 1, transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
           <circle cx="12" cy="12" r="4" />
           <line x1="12" y1="2" x2="12" y2="4" />
           <line x1="12" y1="20" x2="12" y2="22" />
@@ -195,9 +207,9 @@ function BackButton({ theme, onClick }) {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 8,
-        padding: "8px 14px 8px 10px",
-        borderRadius: 12,
+        gap: 7,
+        padding: "7px 13px 7px 9px",
+        borderRadius: 11,
         background: hover ? t.surfaceGlassHover : t.surfaceGlass,
         border: `1px solid ${hover ? t.borderStrong : t.border}`,
         color: t.textSecondary,
@@ -209,7 +221,7 @@ function BackButton({ theme, onClick }) {
         transition: "all 0.25s ease",
       }}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: hover ? "translateX(-2px)" : "translateX(0)", transition: "transform 0.25s ease" }}>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: hover ? "translateX(-2px)" : "translateX(0)", transition: "transform 0.25s ease" }}>
         <line x1="19" y1="12" x2="5" y2="12" />
         <polyline points="12 19 5 12 12 5" />
       </svg>
@@ -218,7 +230,704 @@ function BackButton({ theme, onClick }) {
   );
 }
 
-/* ============= Date/time helpers (unchanged logic) ============= */
+/* ============= Wheel Time Picker (iOS-style drum roller) ============= */
+
+// value / onChange use 24-hour "HH:MM". Displays 12-hour + AM/PM wheels.
+const ITEM_H = 40;          // px height of each wheel item
+const VISIBLE = 5;          // visible rows (must be odd)
+const PAD = Math.floor(VISIBLE / 2);
+
+function to12h(value24) {
+  if (!value24 || !/^\d{1,2}:\d{2}$/.test(value24)) return null;
+  const [hh, mm] = value24.split(":").map(Number);
+  const period = hh >= 12 ? "PM" : "AM";
+  let h12 = hh % 12;
+  if (h12 === 0) h12 = 12;
+  return { h12, mm, period };
+}
+
+function to24h(h12, mm, period) {
+  let hh = h12 % 12;
+  if (period === "PM") hh += 12;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function formatDisplay(value24) {
+  const parsed = to12h(value24);
+  if (!parsed) return "";
+  return `${parsed.h12}:${String(parsed.mm).padStart(2, "0")} ${parsed.period}`;
+}
+
+function Wheel({ items, index, onIndexChange, theme, width }) {
+  const t = THEMES[theme];
+  const ref = useRef(null);
+  const scrollTimeout = useRef(null);
+  const isProgrammatic = useRef(false);
+
+  // keep scroll position in sync when index changes externally
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const target = index * ITEM_H;
+    if (Math.abs(el.scrollTop - target) > 1) {
+      isProgrammatic.current = true;
+      el.scrollTo({ top: target, behavior: "auto" });
+      setTimeout(() => { isProgrammatic.current = false; }, 30);
+    }
+  }, [index]);
+
+  const handleScroll = () => {
+    const el = ref.current;
+    if (!el || isProgrammatic.current) return;
+    if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    scrollTimeout.current = setTimeout(() => {
+      const nearest = Math.round(el.scrollTop / ITEM_H);
+      const clamped = Math.max(0, Math.min(items.length - 1, nearest));
+      // snap
+      isProgrammatic.current = true;
+      el.scrollTo({ top: clamped * ITEM_H, behavior: "smooth" });
+      setTimeout(() => { isProgrammatic.current = false; }, 220);
+      if (clamped !== index) onIndexChange(clamped);
+    }, 90);
+  };
+
+  return (
+    <div
+      ref={ref}
+      onScroll={handleScroll}
+      style={{
+        width,
+        height: ITEM_H * VISIBLE,
+        overflowY: "auto",
+        scrollSnapType: "y mandatory",
+        WebkitOverflowScrolling: "touch",
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
+        position: "relative",
+      }}
+      className="wheel-scroll"
+    >
+      {/* top + bottom padding so first/last items can reach the center band */}
+      <div style={{ height: ITEM_H * PAD }} />
+      {items.map((it, i) => {
+        const dist = Math.abs(i - index);
+        const opacity = dist === 0 ? 1 : dist === 1 ? 0.5 : dist === 2 ? 0.25 : 0.12;
+        const scale = dist === 0 ? 1 : dist === 1 ? 0.9 : 0.8;
+        return (
+          <div
+            key={it.key ?? i}
+            onClick={() => onIndexChange(i)}
+            style={{
+              height: ITEM_H,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              scrollSnapAlign: "center",
+              cursor: "pointer",
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: 20,
+              fontWeight: dist === 0 ? 700 : 500,
+              color: dist === 0 ? t.textPrimary : t.textSecondary,
+              opacity,
+              transform: `scale(${scale})`,
+              transition: "opacity 0.18s ease, transform 0.18s ease, color 0.18s ease",
+              userSelect: "none",
+            }}
+          >
+            {it.label}
+          </div>
+        );
+      })}
+      <div style={{ height: ITEM_H * PAD }} />
+    </div>
+  );
+}
+
+function WheelTimePicker({ theme, value, onChange, minValue }) {
+  const t = THEMES[theme];
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  const parsed = to12h(value) || { h12: 9, mm: 0, period: "AM" };
+
+  const MINUTE_STEP = 5; // each scroll changes minutes by 5
+  const hours = Array.from({ length: 12 }, (_, i) => ({ key: i + 1, label: String(i + 1).padStart(2, "0"), val: i + 1 }));
+  const minutes = Array.from({ length: 60 / MINUTE_STEP }, (_, i) => {
+    const v = i * MINUTE_STEP;
+    return { key: v, label: String(v).padStart(2, "0"), val: v };
+  });
+  const periods = [{ key: "AM", label: "AM", val: "AM" }, { key: "PM", label: "PM", val: "PM" }];
+
+  const hIndex = parsed.h12 - 1;
+  const mIndex = Math.min(minutes.length - 1, Math.round(parsed.mm / MINUTE_STEP) % minutes.length);
+  const pIndex = parsed.period === "PM" ? 1 : 0;
+
+  const emit = (h12, mm, period) => {
+    const next = to24h(h12, mm, period);
+    if (minValue && next < minValue) {
+      onChange(minValue);
+    } else {
+      onChange(next);
+    }
+  };
+
+  // close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const display = value ? formatDisplay(value) : "";
+
+  return (
+    <div ref={rootRef} style={{ position: "relative" }}>
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          background: t.inputBg,
+          border: `1px solid ${open ? t.accent : t.border}`,
+          borderRadius: 9,
+          padding: "9px 12px",
+          color: display ? t.textPrimary : t.textMuted,
+          fontSize: 14,
+          fontFamily: "'Inter', sans-serif",
+          cursor: "pointer",
+          outline: "none",
+          boxShadow: open ? `0 0 0 3px ${t.accentSoft}` : "none",
+          transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.5s ease",
+        }}
+      >
+        <span style={{ fontFamily: display ? "'Space Grotesk', sans-serif" : "'Inter', sans-serif", fontWeight: display ? 700 : 400, letterSpacing: display ? 0.3 : 0 }}>
+          {display || "Select time"}
+        </span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={open ? t.accent : t.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+      </button>
+
+      {/* Popover */}
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            left: 0,
+            zIndex: 200,
+            background: t.surfaceElevated,
+            backdropFilter: "blur(24px)",
+            WebkitBackdropFilter: "blur(24px)",
+            border: `1px solid ${t.borderStrong}`,
+            borderRadius: 16,
+            padding: 12,
+            boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+            animation: "pickerIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)",
+            minWidth: 230,
+          }}
+        >
+          <div style={{ position: "relative", display: "flex", justifyContent: "center", alignItems: "stretch", gap: 4 }}>
+            {/* center selection band */}
+            <div
+              style={{
+                position: "absolute",
+                top: ITEM_H * PAD,
+                left: 6,
+                right: 6,
+                height: ITEM_H,
+                borderRadius: 10,
+                background: t.accentSoft,
+                border: `1px solid ${t.borderAccent}`,
+                pointerEvents: "none",
+                zIndex: 1,
+              }}
+            />
+            {/* top/bottom fade masks */}
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: ITEM_H * PAD, background: `linear-gradient(${t.wheelMask}, ${t.wheelMask}00)`, pointerEvents: "none", zIndex: 2, borderRadius: "12px 12px 0 0" }} />
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: ITEM_H * PAD, background: `linear-gradient(${t.wheelMask}00, ${t.wheelMask})`, pointerEvents: "none", zIndex: 2, borderRadius: "0 0 12px 12px" }} />
+
+            <Wheel theme={theme} items={hours} index={hIndex} width={58} onIndexChange={(i) => emit(hours[i].val, parsed.mm, parsed.period)} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 700, color: t.textMuted, fontFamily: "'Space Grotesk', sans-serif", zIndex: 3 }}>:</div>
+            <Wheel theme={theme} items={minutes} index={mIndex} width={58} onIndexChange={(i) => emit(parsed.h12, minutes[i].val, parsed.period)} />
+            <Wheel theme={theme} items={periods} index={pIndex} width={54} onIndexChange={(i) => emit(parsed.h12, parsed.mm, periods[i].val)} />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            style={{
+              marginTop: 10,
+              width: "100%",
+              padding: "9px 0",
+              fontSize: 13,
+              fontWeight: 700,
+              borderRadius: 10,
+              background: t.accentGradient,
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "'Inter', sans-serif",
+              boxShadow: t.glowAccent,
+            }}
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============= Stepper (violation threshold) ============= */
+
+function Stepper({ theme, value, min = 1, max = 100, onChange }) {
+  const t = THEMES[theme];
+  const holdRef = useRef(null);
+
+  const clamp = (v) => Math.max(min, Math.min(max, v));
+
+  const bump = (delta) => onChange(clamp((Number(value) || min) + delta));
+
+  // press-and-hold to keep changing
+  const startHold = (delta) => {
+    bump(delta);
+    let speed = 260;
+    const tick = () => {
+      bump(delta);
+      speed = Math.max(60, speed - 30);
+      holdRef.current = setTimeout(tick, speed);
+    };
+    holdRef.current = setTimeout(tick, 380);
+  };
+  const stopHold = () => {
+    if (holdRef.current) {
+      clearTimeout(holdRef.current);
+      holdRef.current = null;
+    }
+  };
+  useEffect(() => () => stopHold(), []);
+
+  const atMin = (Number(value) || min) <= min;
+  const atMax = (Number(value) || min) >= max;
+
+  const btn = (disabled) => ({
+    width: 26,
+    height: 26,
+    flexShrink: 0,
+    borderRadius: 7,
+    background: disabled ? t.surfaceGlass : t.accentSoft,
+    border: `1px solid ${disabled ? t.border : t.borderAccent}`,
+    color: disabled ? t.textFaint : t.accent,
+    cursor: disabled ? "not-allowed" : "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: "'Inter', sans-serif",
+    transition: "all 0.2s ease",
+    userSelect: "none",
+    padding: 0,
+  });
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        background: t.inputBg,
+        border: `1px solid ${t.border}`,
+        borderRadius: 9,
+        padding: "5px 6px",
+        boxSizing: "border-box",
+      }}
+    >
+      <button
+        type="button"
+        disabled={atMin}
+        onMouseDown={() => !atMin && startHold(-1)}
+        onMouseUp={stopHold}
+        onMouseLeave={stopHold}
+        onTouchStart={(e) => { e.preventDefault(); if (!atMin) startHold(-1); }}
+        onTouchEnd={stopHold}
+        aria-label="Decrease"
+        style={btn(atMin)}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+      </button>
+
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/[^0-9]/g, "");
+          if (digits === "") { onChange(min); return; }
+          onChange(clamp(parseInt(digits, 10)));
+        }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          textAlign: "center",
+          background: "transparent",
+          border: "none",
+          outline: "none",
+          color: t.textPrimary,
+          fontSize: 14,
+          fontWeight: 700,
+          fontFamily: "'Space Grotesk', sans-serif",
+          letterSpacing: -0.2,
+          padding: 0,
+        }}
+      />
+
+      <button
+        type="button"
+        disabled={atMax}
+        onMouseDown={() => !atMax && startHold(1)}
+        onMouseUp={stopHold}
+        onMouseLeave={stopHold}
+        onTouchStart={(e) => { e.preventDefault(); if (!atMax) startHold(1); }}
+        onTouchEnd={stopHold}
+        aria-label="Increase"
+        style={btn(atMax)}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+      </button>
+    </div>
+  );
+}
+
+/* ============= Themed Date Picker (custom calendar) ============= */
+
+const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+function ymd(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function parseYmd(str) {
+  if (!str || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
+  const [y, m, d] = str.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function formatDateDisplay(str) {
+  const d = parseYmd(str);
+  if (!d) return "";
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
+function DatePicker({ theme, value, onChange, minDate }) {
+  const t = THEMES[theme];
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  const selected = parseYmd(value);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const minD = minDate ? parseYmd(minDate) : null;
+  if (minD) minD.setHours(0, 0, 0, 0);
+
+  const [viewMonth, setViewMonth] = useState(() => {
+    const base = selected || new Date();
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+
+  useEffect(() => {
+    if (open) {
+      const base = selected || new Date();
+      setViewMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+    }
+    // eslint-disable-next-line
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+
+  const gotoMonth = (delta) => setViewMonth(new Date(year, month + delta, 1));
+
+  const isDisabled = (d) => {
+    if (!d) return true;
+    const dd = new Date(d);
+    dd.setHours(0, 0, 0, 0);
+    if (minD && dd < minD) return true;
+    return false;
+  };
+  const isSelected = (d) => d && selected && ymd(d) === ymd(selected);
+  const isToday = (d) => d && ymd(d) === ymd(today);
+
+  const display = value ? formatDateDisplay(value) : "";
+
+  return (
+    <div ref={rootRef} style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          background: t.inputBg,
+          border: `1px solid ${open ? t.accent : t.border}`,
+          borderRadius: 9,
+          padding: "9px 12px",
+          color: display ? t.textPrimary : t.textMuted,
+          fontSize: 14,
+          fontFamily: "'Inter', sans-serif",
+          cursor: "pointer",
+          outline: "none",
+          boxShadow: open ? `0 0 0 3px ${t.accentSoft}` : "none",
+          transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.5s ease",
+        }}
+      >
+        <span style={{ fontWeight: display ? 600 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {display || "Select date"}
+        </span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={open ? t.accent : t.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            left: 0,
+            zIndex: 200,
+            background: t.surfaceElevated,
+            backdropFilter: "blur(24px)",
+            WebkitBackdropFilter: "blur(24px)",
+            border: `1px solid ${t.borderStrong}`,
+            borderRadius: 16,
+            padding: 14,
+            boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+            animation: "pickerIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)",
+            width: 268,
+          }}
+        >
+          {/* Month header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <button type="button" onClick={() => gotoMonth(-1)} style={{ width: 30, height: 30, borderRadius: 8, background: t.surfaceGlass, border: `1px solid ${t.border}`, color: t.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: 0.2 }}>
+              {MONTHS[month]} {year}
+            </div>
+            <button type="button" onClick={() => gotoMonth(1)} style={{ width: 30, height: 30, borderRadius: 8, background: t.surfaceGlass, border: `1px solid ${t.border}`, color: t.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+            </button>
+          </div>
+
+          {/* Weekday labels */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 6 }}>
+            {WEEKDAYS.map((w, i) => (
+              <div key={i} style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.4 }}>{w}</div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+            {cells.map((d, i) => {
+              if (!d) return <div key={`e-${i}`} style={{ height: 32 }} />;
+              const disabled = isDisabled(d);
+              const sel = isSelected(d);
+              const tod = isToday(d);
+              return (
+                <button
+                  key={ymd(d)}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => { onChange(ymd(d)); setOpen(false); }}
+                  style={{
+                    height: 32,
+                    borderRadius: 8,
+                    border: sel ? "none" : tod ? `1px solid ${t.borderAccent}` : "1px solid transparent",
+                    background: sel ? t.accentGradient : "transparent",
+                    color: sel ? "#fff" : disabled ? t.textFaint : t.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: sel || tod ? 700 : 500,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    opacity: disabled ? 0.4 : 1,
+                    fontFamily: "'Inter', sans-serif",
+                    boxShadow: sel ? t.glowAccent : "none",
+                    transition: "background 0.15s ease, color 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => { if (!disabled && !sel) e.currentTarget.style.background = t.surfaceGlassHover; }}
+                  onMouseLeave={(e) => { if (!disabled && !sel) e.currentTarget.style.background = "transparent"; }}
+                >
+                  {d.getDate()}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Footer: Today shortcut */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={() => {
+                const tstr = ymd(today);
+                if (!minD || today >= minD) { onChange(tstr); setOpen(false); }
+              }}
+              style={{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 9, background: t.accentSoft, color: t.accent, border: `1px solid ${t.borderAccent}`, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}
+            >
+              Today
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============= Proctoring icons ============= */
+
+function ProctoringIcon({ type, stroke, size }) {
+  const s = size * 0.5;
+  const common = { width: s, height: s, viewBox: "0 0 24 24", fill: "none", stroke, strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" };
+  switch (type) {
+    case "laptop": return (<svg {...common}><rect x="3" y="4" width="18" height="12" rx="2" /><line x1="2" y1="20" x2="22" y2="20" /></svg>);
+    case "browser": return (<svg {...common}><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><circle cx="6" cy="6.5" r="0.6" fill={stroke} /><circle cx="8.5" cy="6.5" r="0.6" fill={stroke} /><circle cx="11" cy="6.5" r="0.6" fill={stroke} /></svg>);
+    case "mic": return (<svg {...common}><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="19" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" /></svg>);
+    case "camera": return (<svg {...common}><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" /></svg>);
+    case "battery": return (<svg {...common}><rect x="2" y="7" width="18" height="10" rx="2" /><line x1="22" y1="11" x2="22" y2="13" /><rect x="4" y="9" width="8" height="6" fill={stroke} opacity="0.6" /></svg>);
+    case "wifi": return (<svg {...common}><path d="M5 12a10 10 0 0 1 14 0" /><path d="M8.5 15.5a5 5 0 0 1 7 0" /><line x1="12" y1="19" x2="12.01" y2="19" /></svg>);
+    case "shield": return (<svg {...common}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg>);
+    case "eye": return (<svg {...common}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>);
+    case "lock": return (<svg {...common}><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>);
+    case "clock": return (<svg {...common}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>);
+    case "monitor": return (<svg {...common}><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>);
+    case "user": return (<svg {...common}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>);
+    default: return null;
+  }
+}
+
+/* ============= Animated Background ============= */
+
+function AnimatedBackground({ theme }) {
+  const t = THEMES[theme];
+
+  const iconTiles = [
+    { type: "laptop",  top: "7%",   left: "2%",  size: 84, dur: 26, delay: 0, rotate: -6 },
+    { type: "eye",     top: "30%",  left: "6%",  size: 66, dur: 24, delay: 4, rotate: -4 },
+    { type: "wifi",    top: "55%",  left: "2%",  size: 72, dur: 26, delay: 5, rotate: 0 },
+    { type: "monitor", bottom: "8%",left: "6%",  size: 80, dur: 30, delay: 1, rotate: -10 },
+    { type: "lock",    top: "82%",  left: "1%",  size: 60, dur: 26, delay: 3, rotate: 8 },
+    { type: "mic",     top: "7%",   right: "2%", size: 74, dur: 28, delay: 1, rotate: 8 },
+    { type: "shield",  top: "28%",  right: "5%", size: 78, dur: 30, delay: 2, rotate: 12 },
+    { type: "battery", top: "52%",  right: "2%", size: 78, dur: 24, delay: 6, rotate: 6 },
+    { type: "clock",   bottom: "9%",right: "5%", size: 68, dur: 22, delay: 3, rotate: 0 },
+    { type: "user",    top: "80%",  right: "2%", size: 62, dur: 30, delay: 5, rotate: -6 },
+  ];
+
+  const bubbles = [
+    { top: "14%", left: "20%", size: 20, dur: 14, delay: 0 },
+    { top: "20%", left: "70%", size: 14, dur: 12, delay: 2 },
+    { top: "34%", left: "10%", size: 26, dur: 16, delay: 4 },
+    { top: "36%", left: "52%", size: 16, dur: 13, delay: 1 },
+    { top: "40%", left: "86%", size: 22, dur: 15, delay: 3 },
+    { top: "56%", left: "32%", size: 15, dur: 12, delay: 5 },
+    { top: "60%", left: "72%", size: 24, dur: 18, delay: 2 },
+    { top: "72%", left: "16%", size: 18, dur: 14, delay: 6 },
+    { top: "70%", left: "60%", size: 12, dur: 11, delay: 1 },
+    { top: "82%", left: "80%", size: 24, dur: 17, delay: 3 },
+    { top: "86%", left: "40%", size: 18, dur: 13, delay: 5 },
+    { top: "24%", left: "90%", size: 14, dur: 12, delay: 4 },
+    { top: "50%", left: "46%", size: 12, dur: 11, delay: 3 },
+  ];
+
+  return (
+    <div aria-hidden style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 0 }}>
+      <div style={{ position: "absolute", top: "-12%", left: "-8%", width: 520, height: 520, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent}22 0%, transparent 65%)`, filter: "blur(50px)", animation: "driftFloat 26s ease-in-out infinite" }} />
+      <div style={{ position: "absolute", bottom: "-14%", right: "-10%", width: 620, height: 620, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent3}22 0%, transparent 65%)`, filter: "blur(60px)", animation: "driftFloat 32s ease-in-out infinite" }} />
+      <div style={{ position: "absolute", top: "40%", left: "48%", width: 380, height: 380, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent2}1c 0%, transparent 65%)`, filter: "blur(60px)", animation: "driftFloat 28s ease-in-out infinite" }} />
+
+      {bubbles.map((b, i) => (
+        <div
+          key={`b-${i}`}
+          style={{
+            position: "absolute",
+            top: b.top,
+            left: b.left,
+            width: b.size,
+            height: b.size,
+            borderRadius: "50%",
+            background: t.bubbleFill,
+            border: `1px solid ${t.bubbleBorder}`,
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            animation: `bubbleRise ${b.dur}s ease-in-out infinite`,
+            animationDelay: `${b.delay}s`,
+            boxShadow: t.name === "dark"
+              ? `inset 0 1px 1px ${t.bubbleHighlight}, 0 0 12px rgba(255,255,255,0.06)`
+              : `inset 0 1px 1px ${t.bubbleHighlight}, 0 4px 10px rgba(75,96,232,0.10)`,
+          }}
+        >
+          <span style={{ position: "absolute", top: "18%", left: "22%", width: b.size * 0.28, height: b.size * 0.28, borderRadius: "50%", background: t.bubbleHighlight, opacity: 0.6, filter: "blur(1px)" }} />
+        </div>
+      ))}
+
+      {iconTiles.map((item, i) => (
+        <div
+          key={`icon-${i}`}
+          style={{
+            position: "absolute",
+            top: item.top,
+            bottom: item.bottom,
+            left: item.left,
+            right: item.right,
+            width: item.size,
+            height: item.size,
+            pointerEvents: "none",
+            animation: `driftFloat ${item.dur}s ease-in-out infinite`,
+            animationDelay: `${item.delay}s`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transform: `rotate(${item.rotate}deg)`,
+            filter: t.name === "dark" ? "drop-shadow(0 4px 12px rgba(91,140,255,0.15))" : "drop-shadow(0 4px 12px rgba(75,96,232,0.18))",
+          }}
+        >
+          <ProctoringIcon type={item.type} stroke={t.iconStroke} size={item.size * 2} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============= Date/time helpers ============= */
 
 const defaultForm = {
   name: "",
@@ -230,7 +939,6 @@ const defaultForm = {
   violation_threshold: 10,
   instructions: "",
   allowed_websites: [],
-  allowed_applications: [],
 };
 
 const todayStr = () => {
@@ -262,31 +970,31 @@ const calculateDuration = (start, end) => {
 function Field({ label, error, children, theme, hint }) {
   const t = THEMES[theme];
   return (
-    <div style={{ marginBottom: 18 }}>
-      <label style={{ fontSize: 11, color: t.textMuted, display: "block", marginBottom: 7, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase" }}>
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ fontSize: 11.5, color: t.label, display: "block", marginBottom: 6, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
         {label}
       </label>
       {children}
       {hint && !error && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 5 }}>{hint}</div>}
-      {error && <div style={{ fontSize: 11, color: t.danger, marginTop: 5, fontWeight: 500 }}>{error}</div>}
+      {error && <div style={{ fontSize: 11, color: t.danger, marginTop: 5, fontWeight: 600 }}>{error}</div>}
     </div>
   );
 }
 
-function SectionCard({ title, children, theme, danger }) {
+function SectionCard({ title, children, theme, danger, style }) {
   const t = THEMES[theme];
   return (
     <div
       style={{
         background: t.cardSurface,
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
-        border: `1px solid ${danger ? t.danger + "55" : t.border}`,
-        borderRadius: 18,
-        padding: 24,
-        marginBottom: 20,
-        boxShadow: t.name === "light" ? "0 6px 20px rgba(20,28,60,0.07)" : "0 4px 20px rgba(0,0,0,0.12)",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        border: `1px solid ${danger ? t.danger + "66" : t.border}`,
+        borderRadius: 16,
+        padding: 20,
+        boxShadow: t.name === "light" ? "0 6px 20px rgba(20,28,60,0.06)" : "0 4px 20px rgba(0,0,0,0.10)",
         transition: "background 0.55s ease, border-color 0.4s ease, box-shadow 0.5s ease",
+        ...style,
       }}
     >
       {title}
@@ -298,23 +1006,12 @@ function SectionCard({ title, children, theme, danger }) {
 function SectionHeading({ children, theme, desc }) {
   const t = THEMES[theme];
   return (
-    <div style={{ marginBottom: desc ? 14 : 18 }}>
-      <div
-        style={{
-          fontSize: 10.5,
-          color: t.textMuted,
-          fontWeight: 700,
-          letterSpacing: 1.2,
-          textTransform: "uppercase",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
+    <div style={{ marginBottom: desc ? 14 : 16 }}>
+      <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 700, letterSpacing: 0.3, fontFamily: "'Space Grotesk', sans-serif", display: "flex", alignItems: "center", gap: 9 }}>
+        <span style={{ display: "inline-block", width: 22, height: 2, borderRadius: 2, background: t.accentGradient }} />
         {children}
       </div>
-      {desc && <p style={{ fontSize: 12, color: t.textMuted, margin: "10px 0 0", lineHeight: 1.55 }}>{desc}</p>}
+      {desc && <p style={{ fontSize: 11.5, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.5 }}>{desc}</p>}
     </div>
   );
 }
@@ -326,7 +1023,6 @@ export default function CreateExam({ onBack, onCreated }) {
   const { user, accessToken } = useAuthStore();
   const [form, setForm] = useState(defaultForm);
   const [websiteInput, setWebsiteInput] = useState("");
-  const [appInput, setAppInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [saved, setSaved] = useState(false);
@@ -339,8 +1035,8 @@ export default function CreateExam({ onBack, onCreated }) {
   const inputStyle = (name) => ({
     background: t.inputBg,
     border: `1px solid ${focusField === name ? t.accent : t.border}`,
-    borderRadius: 10,
-    padding: "10px 12px",
+    borderRadius: 9,
+    padding: "9px 12px",
     color: t.textPrimary,
     fontSize: 14,
     width: "100%",
@@ -354,58 +1050,47 @@ export default function CreateExam({ onBack, onCreated }) {
   const validate = () => {
     const e = {};
     if (!form.name.trim()) e.name = "Exam name is required";
-
     if (!form.date) {
       e.date = "Date is required";
     } else if (form.date < todayStr()) {
       e.date = "Date cannot be in the past";
     }
-
     if (!form.start_time) e.start_time = "Start time is required";
     if (!form.end_time) e.end_time = "End time is required";
-
-    if (form.start_time && form.end_time && form.end_time <= form.start_time) {
-      e.end_time = "End time must be after start time";
-    }
-
-    if (form.date === todayStr() && form.start_time && form.start_time < nowTimeStr()) {
-      e.start_time = "Start time cannot be in the past";
-    }
-
-    if (form.duration_minutes < 1) e.duration_minutes = "Duration must be at least 1 minute";
-    if (form.violation_threshold < 1) e.violation_threshold = "Violation threshold must be at least 1";
-    if (form.allowed_websites.length === 0) e.websites = "Add at least one allowed website";
-
+    if (form.start_time && form.end_time && form.end_time <= form.start_time) e.end_time = "End must be after start";
+    if (form.date === todayStr() && form.start_time && form.start_time < nowTimeStr()) e.start_time = "Cannot be in the past";
+    if (form.duration_minutes < 1) e.duration_minutes = "Min 1 minute";
+    if (form.violation_threshold < 1) e.violation_threshold = "Min 1";
+    if (form.allowed_websites.length === 0) e.websites = "Add at least one website";
     setErrors(e);
     return Object.keys(e).length === 0;
+  };
+
+  const setStartTime = (val) => {
+    setForm((prev) => ({ ...prev, start_time: val, duration_minutes: calculateDuration(val, prev.end_time) }));
+    setErrors((prev) => ({
+      ...prev,
+      start_time: form.date === todayStr() && val && val < nowTimeStr() ? "Cannot be in the past" : undefined,
+      end_time: form.end_time && val && form.end_time <= val ? "End must be after start" : undefined,
+    }));
+  };
+
+  const setEndTime = (val) => {
+    setForm((prev) => ({ ...prev, end_time: val, duration_minutes: calculateDuration(prev.start_time, val) }));
+    setErrors((prev) => ({
+      ...prev,
+      end_time: form.start_time && val && val <= form.start_time ? "End must be after start" : undefined,
+    }));
   };
 
   const addWebsite = () => {
     if (!websiteInput.trim()) return;
     let url = websiteInput.trim();
     if (!url.startsWith("http")) url = `https://${url}`;
-    if (!form.allowed_websites.includes(url)) {
-      set("allowed_websites", [...form.allowed_websites, url]);
-    }
+    if (!form.allowed_websites.includes(url)) set("allowed_websites", [...form.allowed_websites, url]);
     setWebsiteInput("");
   };
-
-  const removeWebsite = (url) => {
-    set("allowed_websites", form.allowed_websites.filter((w) => w !== url));
-  };
-
-  const addApp = () => {
-    if (!appInput.trim()) return;
-    const value = appInput.trim();
-    if (!form.allowed_applications.includes(value)) {
-      set("allowed_applications", [...form.allowed_applications, value]);
-    }
-    setAppInput("");
-  };
-
-  const removeApp = (app) => {
-    set("allowed_applications", form.allowed_applications.filter((a) => a !== app));
-  };
+  const removeWebsite = (url) => set("allowed_websites", form.allowed_websites.filter((w) => w !== url));
 
   const handleSave = async (status = "Published") => {
     if (!validate()) return;
@@ -413,12 +1098,7 @@ export default function CreateExam({ onBack, onCreated }) {
     try {
       const res = await axios.post(
         `${API}/api/exams`,
-        {
-          ...form,
-          duration_minutes: calculateDuration(form.start_time, form.end_time),
-          examiner_id: user.user_id,
-          status,
-        },
+        { ...form, duration_minutes: calculateDuration(form.start_time, form.end_time), examiner_id: user.user_id, status },
         { headers }
       );
       setSaved(true);
@@ -435,56 +1115,46 @@ export default function CreateExam({ onBack, onCreated }) {
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
       @keyframes spin { to { transform: rotate(360deg); } }
       @keyframes popIn { 0% { opacity: 0; transform: scale(0.5); } 70% { opacity: 1; transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+      @keyframes pickerIn { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
       @keyframes ringPulse { 0% { transform: scale(0.9); opacity: 0.7; } 100% { transform: scale(1.7); opacity: 0; } }
       @keyframes cardEnter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
-      @keyframes floatBlob {
+      @keyframes driftFloat {
         0%, 100% { transform: translate(0, 0) scale(1); }
-        33% { transform: translate(24px, -18px) scale(1.05); }
-        66% { transform: translate(-18px, 20px) scale(0.96); }
+        33%      { transform: translate(22px, -18px) scale(1.04); }
+        66%      { transform: translate(-16px, 20px) scale(0.97); }
       }
-      ::-webkit-scrollbar { width: 9px; height: 9px; }
+      @keyframes bubbleRise {
+        0%   { transform: translate(0, 0) scale(1); opacity: 0.55; }
+        50%  { transform: translate(8px, -30px) scale(1.08); opacity: 0.9; }
+        100% { transform: translate(-4px, -60px) scale(0.94); opacity: 0.4; }
+      }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: ${t.borderStrong}; border-radius: 999px; }
       ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
-      .brand-gradient { background: ${t.accentGradient}; background-size: 200% 200%; animation: gradientShift 8s ease infinite; }
+      .wheel-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
       button, a, input, textarea { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease; }
-      input[type="date"]::-webkit-calendar-picker-indicator,
-      input[type="time"]::-webkit-calendar-picker-indicator {
-        filter: ${t.name === "dark" ? "invert(0.7)" : "invert(0.3)"};
-        cursor: pointer;
-      }
+      input::placeholder, textarea::placeholder { color: ${t.textMuted}; opacity: 0.8; }
     `}</style>
   );
 
   if (saved) {
     return (
-      <div
-        style={{
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          background: t.canvas,
-          backgroundImage: t.canvasTint,
-          color: t.textPrimary,
-          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-          transition: "background 0.7s ease, color 0.6s ease",
-        }}
-      >
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: t.canvas, backgroundImage: t.canvasTint, color: t.textPrimary, fontFamily: "'Inter', sans-serif", transition: "background 0.7s ease, color 0.6s ease", position: "relative" }}>
         {globalStyle}
-        <div style={{ position: "relative", width: 100, height: 100, marginBottom: 24 }}>
-          <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2px solid ${t.success}`, opacity: 0.55, animation: "ringPulse 2s ease-out infinite" }} />
-          <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2px solid ${t.success}`, opacity: 0.35, animation: "ringPulse 2s ease-out 0.7s infinite" }} />
-          <div style={{ position: "absolute", inset: 12, borderRadius: "50%", background: t.successGradient, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: t.glowSuccess, animation: "popIn 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55)" }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
+        <AnimatedBackground theme={theme} />
+        <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ position: "relative", width: 100, height: 100, marginBottom: 24 }}>
+            <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2px solid ${t.success}`, opacity: 0.55, animation: "ringPulse 2s ease-out infinite" }} />
+            <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: `2px solid ${t.success}`, opacity: 0.35, animation: "ringPulse 2s ease-out 0.7s infinite" }} />
+            <div style={{ position: "absolute", inset: 12, borderRadius: "50%", background: t.successGradient, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: t.glowSuccess, animation: "popIn 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55)" }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            </div>
           </div>
+          <h2 style={{ fontSize: 24, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.4, margin: 0, color: t.textPrimary }}>Exam Created</h2>
+          <p style={{ color: t.textSecondary, marginTop: 8, fontSize: 14 }}>Redirecting to exam list...</p>
         </div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.4, margin: 0 }}>Exam Created</h2>
-        <p style={{ color: t.textMuted, marginTop: 8 }}>Redirecting to exam list...</p>
       </div>
     );
   }
@@ -501,24 +1171,23 @@ export default function CreateExam({ onBack, onCreated }) {
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         transition: "background 0.7s ease, color 0.6s ease",
         position: "relative",
+        overflow: "hidden",
       }}
     >
       {globalStyle}
-
-      <div style={{ position: "absolute", top: "-10%", left: "-8%", width: 460, height: 460, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent}22 0%, transparent 65%)`, filter: "blur(50px)", animation: "floatBlob 24s ease-in-out infinite", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", bottom: "-14%", right: "-10%", width: 540, height: 540, borderRadius: "50%", background: `radial-gradient(circle, ${t.accent3}18 0%, transparent 65%)`, filter: "blur(60px)", animation: "floatBlob 30s ease-in-out infinite", pointerEvents: "none" }} />
+      <AnimatedBackground theme={theme} />
 
       {/* Header */}
       <header
         style={{
-          minHeight: 64,
+          minHeight: 60,
           background: t.surface,
           backdropFilter: "blur(24px)",
           WebkitBackdropFilter: "blur(24px)",
           borderBottom: `1px solid ${t.border}`,
           display: "flex",
           alignItems: "center",
-          padding: "0 24px",
+          padding: "0 22px",
           gap: 14,
           flexShrink: 0,
           position: "relative",
@@ -527,8 +1196,8 @@ export default function CreateExam({ onBack, onCreated }) {
         }}
       >
         <BackButton theme={theme} onClick={onBack} />
-        <div style={{ width: 1, height: 24, background: t.border }} />
-        <span style={{ fontWeight: 700, fontSize: 15, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.2 }}>
+        <div style={{ width: 1, height: 22, background: t.borderStrong }} />
+        <span style={{ fontWeight: 700, fontSize: 15.5, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -0.2 }}>
           Create New Exam
         </span>
         <div style={{ marginLeft: "auto" }}>
@@ -536,417 +1205,128 @@ export default function CreateExam({ onBack, onCreated }) {
         </div>
       </header>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "28px 24px 40px", position: "relative", zIndex: 1 }}>
-        <div style={{ maxWidth: 700, margin: "0 auto", animation: "cardEnter 0.5s ease" }}>
-          {errors.submit && (
-            <div
-              style={{
-                background: t.dangerBg,
-                border: `1px solid ${t.danger}55`,
-                borderRadius: 12,
-                padding: "12px 16px",
-                color: t.danger,
-                fontSize: 13,
-                marginBottom: 20,
-                display: "flex",
-                gap: 10,
-                alignItems: "flex-start",
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <span>{errors.submit}</span>
+      {/* Body */}
+      <div style={{ flex: 1, minHeight: 0, padding: "18px 22px", position: "relative", zIndex: 1, display: "flex", flexDirection: "column" }}>
+        {errors.submit && (
+          <div style={{ background: t.dangerBg, border: `1px solid ${t.danger}66`, borderRadius: 10, padding: "10px 14px", color: t.danger, fontSize: 13, marginBottom: 14, display: "flex", gap: 9, alignItems: "center", flexShrink: 0, fontWeight: 600 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+            <span>{errors.submit}</span>
+          </div>
+        )}
+
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+            gridTemplateRows: "1fr auto",
+            gap: 16,
+            maxWidth: 1180,
+            width: "100%",
+            margin: "0 auto",
+            animation: "cardEnter 0.5s ease",
+          }}
+        >
+          {/* LEFT COLUMN — Basic info */}
+          <SectionCard theme={theme} style={{ gridRow: "1 / 2", overflow: "visible", display: "flex", flexDirection: "column" }} title={<SectionHeading theme={theme}>Basic Information</SectionHeading>}>
+            <div style={{ overflowY: "visible", paddingRight: 6, flex: 1, minHeight: 0 }}>
+              <Field label="Exam Name *" error={errors.name} theme={theme}>
+                <input value={form.name} onChange={(e) => set("name", e.target.value)} onFocus={() => setFocusField("name")} onBlur={() => setFocusField("")} placeholder="e.g. Java Technical Assessment" style={inputStyle("name")} />
+              </Field>
+
+              <Field label="Description" theme={theme}>
+                <textarea value={form.description} onChange={(e) => set("description", e.target.value)} onFocus={() => setFocusField("description")} onBlur={() => setFocusField("")} rows={3} placeholder="Brief description of this exam..." style={{ ...inputStyle("description"), resize: "none", lineHeight: 1.55 }} />
+              </Field>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                <Field label="Date *" error={errors.date} theme={theme}>
+                  <DatePicker
+                    theme={theme}
+                    value={form.date}
+                    minDate={todayStr()}
+                    onChange={(val) => {
+                      set("date", val);
+                      setErrors((prev) => ({ ...prev, date: val && val < todayStr() ? "Cannot be in the past" : undefined, start_time: val === todayStr() && form.start_time && form.start_time < nowTimeStr() ? "Cannot be in the past" : undefined }));
+                    }}
+                  />
+                </Field>
+                <Field label="Start *" error={errors.start_time} theme={theme}>
+                  <WheelTimePicker theme={theme} value={form.start_time} onChange={setStartTime} minValue={form.date === todayStr() ? nowTimeStr() : undefined} />
+                </Field>
+                <Field label="End *" error={errors.end_time} theme={theme}>
+                  <WheelTimePicker theme={theme} value={form.end_time} onChange={setEndTime} minValue={form.start_time || undefined} />
+                </Field>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Field label="Duration (min)" error={errors.duration_minutes} theme={theme} hint="Auto from start & end time">
+                  <input type="number" value={form.duration_minutes} readOnly tabIndex={-1} style={{ ...inputStyle("duration"), background: t.inputReadonly, cursor: "not-allowed", opacity: 0.9, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }} />
+                </Field>
+                <Field label="Violation Threshold" error={errors.violation_threshold} theme={theme} hint="Locks at this risk score">
+                  <Stepper
+                    theme={theme}
+                    value={form.violation_threshold}
+                    min={1}
+                    max={100}
+                    onChange={(v) => set("violation_threshold", v)}
+                  />
+                </Field>
+              </div>
             </div>
-          )}
+          </SectionCard>
 
-          {/* Basic Information */}
-          <SectionCard theme={theme} title={<SectionHeading theme={theme}>Basic Information</SectionHeading>}>
-            <Field label="Exam Name *" error={errors.name} theme={theme}>
-              <input
-                value={form.name}
-                onChange={(e) => set("name", e.target.value)}
-                onFocus={() => setFocusField("name")}
-                onBlur={() => setFocusField("")}
-                placeholder="e.g. Java Technical Assessment"
-                style={inputStyle("name")}
-              />
-            </Field>
+          {/* RIGHT COLUMN — Websites + Instructions */}
+          <div style={{ gridRow: "1 / 2", minHeight: 0, display: "flex", flexDirection: "column", gap: 16, overflow: "hidden" }}>
+            <SectionCard theme={theme} danger={!!errors.websites} style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: "1 1 0" }} title={<SectionHeading theme={theme} desc="Candidates can only reach these sites during the exam. Add the exam platform and its login page.">Allowed Websites *</SectionHeading>}>
+              {errors.websites && <div style={{ fontSize: 11, color: t.danger, marginBottom: 8, fontWeight: 600 }}>{errors.websites}</div>}
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                <input value={websiteInput} onChange={(e) => setWebsiteInput(e.target.value)} onFocus={() => setFocusField("web")} onBlur={() => setFocusField("")} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addWebsite(); } }} placeholder="exam.company.com" style={{ ...inputStyle("web"), flex: 1 }} />
+                <button onClick={addWebsite} style={{ padding: "9px 18px", fontSize: 13, fontWeight: 700, borderRadius: 9, background: t.accentGradient, color: "#fff", border: "none", cursor: "pointer", fontFamily: "'Inter', sans-serif", boxShadow: t.glowAccent, flexShrink: 0 }}>Add</button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                {form.allowed_websites.length === 0 ? (
+                  <div style={{ fontSize: 12.5, color: t.textMuted, padding: "6px 0" }}>No websites added yet.</div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {form.allowed_websites.map((url) => (
+                      <div key={url} style={{ background: t.successBg, border: `1px solid ${t.success}66`, borderRadius: 999, padding: "5px 8px 5px 12px", fontSize: 12, color: t.success, display: "flex", alignItems: "center", gap: 8, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                        {url}
+                        <button onClick={() => removeWebsite(url)} style={{ width: 17, height: 17, borderRadius: "50%", background: "transparent", border: "none", color: t.success, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </SectionCard>
 
-            <Field label="Description" theme={theme}>
+            <SectionCard theme={theme} style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: "1 1 0" }} title={<SectionHeading theme={theme} desc="Shown to candidates on the Instructions screen before the exam begins.">Candidate Instructions</SectionHeading>}>
               <textarea
-                value={form.description}
-                onChange={(e) => set("description", e.target.value)}
-                onFocus={() => setFocusField("description")}
+                value={form.instructions}
+                onChange={(e) => set("instructions", e.target.value)}
+                onFocus={() => setFocusField("instr")}
                 onBlur={() => setFocusField("")}
-                rows={3}
-                placeholder="Brief description of this exam..."
-                style={{ ...inputStyle("description"), resize: "vertical", lineHeight: 1.6 }}
+                placeholder="e.g. This is a 2-hour Java assessment. Keep your camera on at all times. Read all questions carefully..."
+                style={{ ...inputStyle("instr"), resize: "none", lineHeight: 1.65, flex: 1, minHeight: 0 }}
               />
-            </Field>
+            </SectionCard>
+          </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-              <Field label="Date *" error={errors.date} theme={theme}>
-                <input
-                  type="date"
-                  value={form.date}
-                  min={todayStr()}
-                  onFocus={() => setFocusField("date")}
-                  onBlur={() => setFocusField("")}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    set("date", val);
-                    setErrors((prev) => ({
-                      ...prev,
-                      date: val && val < todayStr() ? "Date cannot be in the past" : undefined,
-                      start_time:
-                        val === todayStr() && form.start_time && form.start_time < nowTimeStr()
-                          ? "Start time cannot be in the past"
-                          : undefined,
-                    }));
-                  }}
-                  style={inputStyle("date")}
-                />
-              </Field>
-
-              <Field label="Start Time *" error={errors.start_time} theme={theme}>
-                <input
-                  type="time"
-                  value={form.start_time}
-                  min={form.date === todayStr() ? nowTimeStr() : undefined}
-                  onFocus={() => setFocusField("start_time")}
-                  onBlur={() => setFocusField("")}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setForm((prev) => ({
-                      ...prev,
-                      start_time: val,
-                      duration_minutes: calculateDuration(val, prev.end_time),
-                    }));
-                    setErrors((prev) => ({
-                      ...prev,
-                      start_time:
-                        form.date === todayStr() && val && val < nowTimeStr()
-                          ? "Start time cannot be in the past"
-                          : undefined,
-                      end_time:
-                        form.end_time && val && form.end_time <= val
-                          ? "End time must be after start time"
-                          : undefined,
-                    }));
-                  }}
-                  style={inputStyle("start_time")}
-                />
-              </Field>
-
-              <Field label="End Time *" error={errors.end_time} theme={theme}>
-                <input
-                  type="time"
-                  value={form.end_time}
-                  min={form.start_time || undefined}
-                  onFocus={() => setFocusField("end_time")}
-                  onBlur={() => setFocusField("")}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setForm((prev) => ({
-                      ...prev,
-                      end_time: val,
-                      duration_minutes: calculateDuration(prev.start_time, val),
-                    }));
-                    setErrors((prev) => ({
-                      ...prev,
-                      end_time:
-                        form.start_time && val && val <= form.start_time
-                          ? "End time must be after start time"
-                          : undefined,
-                    }));
-                  }}
-                  style={inputStyle("end_time")}
-                />
-              </Field>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Field label="Duration (minutes)" error={errors.duration_minutes} theme={theme} hint="Auto-calculated from Start Time and End Time">
-                <input
-                  type="number"
-                  value={form.duration_minutes}
-                  readOnly
-                  tabIndex={-1}
-                  style={{
-                    ...inputStyle("duration"),
-                    background: t.inputReadonly,
-                    cursor: "not-allowed",
-                    opacity: 0.85,
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    fontWeight: 700,
-                  }}
-                />
-              </Field>
-
-              <Field label="Violation Threshold" error={errors.violation_threshold} theme={theme} hint="Assessment locks when total risk score reaches this number">
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={form.violation_threshold}
-                  onFocus={() => setFocusField("vt")}
-                  onBlur={() => setFocusField("")}
-                  onChange={(e) => set("violation_threshold", parseInt(e.target.value, 10) || 10)}
-                  style={inputStyle("vt")}
-                />
-              </Field>
-            </div>
-          </SectionCard>
-
-          {/* Allowed Websites */}
-          <SectionCard
-            theme={theme}
-            danger={!!errors.websites}
-            title={
-              <SectionHeading theme={theme} desc="Candidates can only visit these websites during the exam. Add the exam platform + login page.">
-                Allowed Websites *
-              </SectionHeading>
-            }
-          >
-            {errors.websites && (
-              <div style={{ fontSize: 11, color: t.danger, marginBottom: 12, fontWeight: 500 }}>{errors.websites}</div>
-            )}
-
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              <input
-                value={websiteInput}
-                onChange={(e) => setWebsiteInput(e.target.value)}
-                onFocus={() => setFocusField("web")}
-                onBlur={() => setFocusField("")}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addWebsite();
-                  }
-                }}
-                placeholder="exam.company.com"
-                style={{ ...inputStyle("web"), flex: 1 }}
-              />
-              <button
-                onClick={addWebsite}
-                style={{
-                  padding: "10px 18px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  borderRadius: 10,
-                  background: t.accentGradient,
-                  color: "#fff",
-                  border: "none",
-                  cursor: "pointer",
-                  fontFamily: "'Inter', sans-serif",
-                  boxShadow: t.glowAccent,
-                }}
-              >
-                Add
-              </button>
-            </div>
-
-            {form.allowed_websites.length === 0 ? (
-              <div style={{ fontSize: 12, color: t.textMuted, padding: "6px 0" }}>No websites added yet.</div>
-            ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {form.allowed_websites.map((url) => (
-                  <div
-                    key={url}
-                    style={{
-                      background: t.successBg,
-                      border: `1px solid ${t.success}55`,
-                      borderRadius: 999,
-                      padding: "5px 8px 5px 12px",
-                      fontSize: 12,
-                      color: t.success,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontFamily: "'JetBrains Mono', monospace",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {url}
-                    <button
-                      onClick={() => removeWebsite(url)}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: "50%",
-                        background: "transparent",
-                        border: "none",
-                        color: t.success,
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 0,
-                      }}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </SectionCard>
-
-          {/* Allowed Applications */}
-          <SectionCard
-            theme={theme}
-            title={
-              <SectionHeading theme={theme} desc="Optional. Applications that are permitted to run (e.g. Calculator, Notepad). All others will be flagged.">
-                Allowed Applications
-              </SectionHeading>
-            }
-          >
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              <input
-                value={appInput}
-                onChange={(e) => setAppInput(e.target.value)}
-                onFocus={() => setFocusField("app")}
-                onBlur={() => setFocusField("")}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addApp();
-                  }
-                }}
-                placeholder="Calculator"
-                style={{ ...inputStyle("app"), flex: 1 }}
-              />
-              <button
-                onClick={addApp}
-                style={{
-                  padding: "10px 18px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  borderRadius: 10,
-                  background: t.surfaceGlass,
-                  color: t.textSecondary,
-                  border: `1px solid ${t.borderStrong}`,
-                  cursor: "pointer",
-                  fontFamily: "'Inter', sans-serif",
-                }}
-              >
-                Add
-              </button>
-            </div>
-
-            {form.allowed_applications.length === 0 ? (
-              <div style={{ fontSize: 12, color: t.textMuted, padding: "6px 0" }}>No applications added yet.</div>
-            ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {form.allowed_applications.map((app) => (
-                  <div
-                    key={app}
-                    style={{
-                      background: t.surfaceGlass,
-                      border: `1px solid ${t.border}`,
-                      borderRadius: 999,
-                      padding: "5px 8px 5px 12px",
-                      fontSize: 12,
-                      color: t.textSecondary,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {app}
-                    <button
-                      onClick={() => removeApp(app)}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: "50%",
-                        background: "transparent",
-                        border: "none",
-                        color: t.textMuted,
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 0,
-                      }}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </SectionCard>
-
-          {/* Candidate Instructions */}
-          <SectionCard
-            theme={theme}
-            title={
-              <SectionHeading theme={theme} desc="These will be shown to candidates on the Instructions screen before the exam starts.">
-                Candidate Instructions
-              </SectionHeading>
-            }
-          >
-            <textarea
-              value={form.instructions}
-              onChange={(e) => set("instructions", e.target.value)}
-              onFocus={() => setFocusField("instr")}
-              onBlur={() => setFocusField("")}
-              rows={5}
-              placeholder="e.g. This is a 2-hour Java assessment. Keep your camera on at all times. Read all questions carefully..."
-              style={{ ...inputStyle("instr"), resize: "vertical", lineHeight: 1.7 }}
-            />
-          </SectionCard>
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
+          {/* FOOTER ACTIONS */}
+          <div style={{ gridColumn: "1 / -1", gridRow: "2 / 3", display: "flex", gap: 12, justifyContent: "flex-end", alignItems: "center", flexShrink: 0 }}>
             <button
               onClick={() => handleSave("Draft")}
               disabled={loading}
-              style={{
-                padding: "12px 24px",
-                fontSize: 14,
-                fontWeight: 700,
-                borderRadius: 12,
-                background: t.surfaceGlass,
-                color: t.textPrimary,
-                border: `1px solid ${t.borderStrong}`,
-                cursor: loading ? "not-allowed" : "pointer",
-                fontFamily: "'Inter', sans-serif",
-                opacity: loading ? 0.6 : 1,
-              }}
+              style={{ padding: "12px 24px", fontSize: 14, fontWeight: 700, borderRadius: 12, background: t.surfaceGlass, color: t.textPrimary, border: `1px solid ${t.borderStrong}`, cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Inter', sans-serif", opacity: loading ? 0.6 : 1 }}
             >
               Save as Draft
             </button>
-
             <button
               onClick={() => handleSave("Published")}
               disabled={loading}
-              style={{
-                padding: "12px 28px",
-                fontSize: 14,
-                fontWeight: 700,
-                borderRadius: 12,
-                background: t.accentGradient,
-                color: "#fff",
-                border: "none",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontFamily: "'Inter', sans-serif",
-                letterSpacing: 0.3,
-                boxShadow: loading ? "none" : t.glowAccent,
-                opacity: loading ? 0.7 : 1,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-              }}
+              style={{ padding: "12px 28px", fontSize: 14, fontWeight: 700, borderRadius: 12, background: t.accentGradient, color: "#fff", border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Inter', sans-serif", letterSpacing: 0.3, boxShadow: loading ? "none" : t.glowAccent, opacity: loading ? 0.7 : 1, display: "inline-flex", alignItems: "center", gap: 8 }}
             >
               {loading ? (
                 <>

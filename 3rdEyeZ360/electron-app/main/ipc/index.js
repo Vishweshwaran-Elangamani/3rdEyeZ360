@@ -1,4 +1,4 @@
-const { ipcMain } = require("electron");
+const { ipcMain, BrowserWindow } = require("electron");
 const { setupLockdown, removeLockdown } = require("../lockdown/window");
 const {
   createBrowserView,
@@ -45,6 +45,7 @@ function registerIpcHandlers(mainWindow) {
   ipcMain.removeHandler("start-capture");
   ipcMain.removeHandler("stop-capture");
   ipcMain.removeHandler("dev-reset-to-login");
+  ipcMain.removeHandler("capture-website-preview");
   ipcMain.removeAllListeners("webcam-frame");
 
   ipcMain.handle("enable-lockdown", () => {
@@ -177,6 +178,112 @@ function registerIpcHandlers(mainWindow) {
 
     stopCapture(mainWindow);
     return { success: true };
+  });
+
+  ipcMain.handle("capture-website-preview", async (_event, rawUrl) => {
+    let previewWindow = null;
+
+    try {
+      const value = String(rawUrl || "").trim();
+      if (!value) {
+        return { success: false, error: "Website URL is required" };
+      }
+
+      const normalizedUrl = /^https?:\/\//i.test(value)
+        ? value
+        : `https://${value}`;
+
+      new URL(normalizedUrl);
+
+      previewWindow = new BrowserWindow({
+        width: 1280,
+        height: 800,
+        show: false,
+        backgroundColor: "#ffffff",
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          partition: "persist:examiner-preview",
+        },
+      });
+
+      previewWindow.webContents.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/124.0.0.0 Safari/537.36"
+      );
+
+      const loadResult = await new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error("Website preview timed out"));
+        }, 15000);
+
+        const cleanup = () => {
+          clearTimeout(timeoutId);
+          previewWindow.webContents.removeAllListeners("did-finish-load");
+          previewWindow.webContents.removeAllListeners("did-fail-load");
+        };
+
+        previewWindow.webContents.once("did-finish-load", () => {
+          cleanup();
+          resolve(true);
+        });
+
+        previewWindow.webContents.once(
+          "did-fail-load",
+          (_loadEvent, errorCode, errorDescription, validatedURL, isMainFrame) => {
+            if (!isMainFrame || errorCode === -3) return;
+            cleanup();
+            reject(
+              new Error(
+                errorDescription || `Unable to load ${validatedURL || normalizedUrl}`
+              )
+            );
+          }
+        );
+
+        previewWindow.loadURL(normalizedUrl).catch((error) => {
+          cleanup();
+          reject(error);
+        });
+      });
+
+      if (!loadResult || !previewWindow || previewWindow.isDestroyed()) {
+        throw new Error("Website preview window became unavailable");
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+
+      const image = await previewWindow.webContents.capturePage({
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+      });
+
+      const title = previewWindow.webContents.getTitle() || normalizedUrl;
+      const finalUrl = previewWindow.webContents.getURL() || normalizedUrl;
+      const dataUrl = image.toDataURL();
+
+      return {
+        success: true,
+        requestedUrl: normalizedUrl,
+        finalUrl,
+        title,
+        dataUrl,
+      };
+    } catch (error) {
+      console.log("Website preview capture failed:", error.message);
+      return {
+        success: false,
+        error: error.message || "Unable to capture website preview",
+      };
+    } finally {
+      if (previewWindow && !previewWindow.isDestroyed()) {
+        previewWindow.destroy();
+      }
+    }
   });
 
   ipcMain.handle("dev-reset-to-login", async () => {

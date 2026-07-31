@@ -165,6 +165,32 @@ function statusColor(status, t) {
   return t[key] || t.textMuted;
 }
 
+function normalizeStatusKey(status) {
+  return String(status ?? "").trim().toUpperCase().replace(/[\s_-]+/g, "");
+}
+
+function formatStatus(status) {
+  if (status === undefined || status === null || String(status).trim() === "") return "Unknown";
+  const labels = {
+    DRAFT: "Draft", PUBLISHED: "Published", SCHEDULED: "Scheduled",
+    AVAILABLE: "Available", ASSIGNED: "Assigned", READY: "Ready", PENDING: "Pending",
+    RUNNING: "Running", ACTIVE: "Active", PAUSED: "Paused", RESUMED: "Resumed",
+    INTERRUPTED: "Interrupted", COMPLETED: "Completed", TERMINATED: "Terminated",
+    LOCKED: "Locked", CANCELLED: "Cancelled", CANCELED: "Canceled",
+    APPROVED: "Approved", REJECTED: "Rejected",
+    LATEENTRYREQUESTED: "Late Entry Requested", LATEENTRYAPPROVED: "Late Entry Approved",
+    LATEENTRYREJECTED: "Late Entry Rejected", REENTRYREQUESTED: "Re-entry Requested",
+    REENTRYAPPROVED: "Re-entry Approved", REENTRYREJECTED: "Re-entry Rejected",
+    NOTSTARTED: "Not Started", INPROGRESS: "In Progress", UNDERREVIEW: "Under Review",
+    NOTATTENDED: "Not Attended",
+  };
+  const key = normalizeStatusKey(status);
+  if (labels[key]) return labels[key];
+  return String(status).trim().replace(/_/g, " ").replace(/-/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s+/g, " ").toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function normalizeExam(exam) {
   if (!exam) return null;
   return {
@@ -1693,7 +1719,7 @@ export default function ExaminerDashboard() {
                         <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0, boxShadow: `0 0 6px ${color}` }} />
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: t.textPrimary }}>{c.candidatename}</div>
-                      <div style={{ fontSize: 11, color, marginBottom: 8, fontWeight: 600 }}>{c.status}</div>
+                      <div style={{ fontSize: 11, color, marginBottom: 8, fontWeight: 600 }}>{formatStatus(c.status)}</div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: t.textSecondary, fontWeight: 600 }}>
                         <span title="Violations">V {c.violationcount}</span>
                         <span title="Risk score">R {c.riskscore}</span>
@@ -1711,36 +1737,66 @@ export default function ExaminerDashboard() {
             </div>
 
             {/* Detail panel — fixed structure so Violations + Chat are always visible */}
-            <div style={{ width: 380, flexShrink: 0, borderLeft: `1px solid ${t.border}`, background: t.panelBg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", transition: "background 0.55s ease, border-color 0.5s ease" }}>
+            <div style={{ width: 410, maxWidth: "34vw", minWidth: 360, flexShrink: 0, borderLeft: `1px solid ${t.border}`, background: t.panelBg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", transition: "background 0.55s ease, border-color 0.5s ease" }}>
               {!selectedCandidate ? (
                 <div style={{ padding: 20, color: t.textMuted, fontSize: 13 }}>Select a candidate to view details.</div>
               ) : (
                 <>
-                  {/* Header (fixed) */}
-                  <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
-                    <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 3, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif" }}>{selectedCandidate.candidatename}</div>
-                    <div style={{ fontSize: 11.5, color: t.textMuted, marginBottom: 12, fontFamily: "'JetBrains Mono', monospace" }}>{selectedCandidate.candidateid}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-                      <StatBox label="Status" value={selectedCandidate.status} color={statusColor(selectedCandidate.status, t)} t={t} />
-                      <StatBox label="Warnings" value={selectedCandidate.warningcount} color={t.warning} t={t} />
-                      <StatBox label="Violations" value={selectedCandidate.violationcount} color={t.danger} t={t} />
-                      <StatBox label="Credibility" value={`${selectedCandidate.credibilityscore}%`} color={t.accent} t={t} />
+                  {/* Candidate summary */}
+                  <div style={{ padding: "18px 18px 16px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 14 }}>
+                      <div className="avatar-gradient" style={{ width: 38, height: 38, borderRadius: 12, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                        {String(selectedCandidate.candidatename || "C").charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, fontFamily: "'Space Grotesk', sans-serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{selectedCandidate.candidatename}</div>
+                        <div style={{ marginTop: 3, fontSize: 10.5, color: t.textMuted, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{selectedCandidate.candidateid}</div>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                      <GhostButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "pause")} style={{ padding: "7px 12px" }}>Pause</GhostButton>
-                      <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "resume")} gradient={t.successGradient} glow={t.glowSuccess} style={{ padding: "7px 12px" }}>Resume</GradientButton>
-                      <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "terminate")} gradient={t.dangerGradient} glow={t.glowDanger} style={{ padding: "7px 12px" }}>Terminate</GradientButton>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", marginBottom: 10, borderRadius: 11, background: `${statusColor(selectedCandidate.status, t)}12`, border: `1px solid ${statusColor(selectedCandidate.status, t)}55` }}>
+                      <div style={{ fontSize: 9.5, color: t.textMuted, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase" }}>Current Status</div>
+                      <div style={{ color: statusColor(selectedCandidate.status, t), fontSize: 12, fontWeight: 800, textAlign: "right" }}>{formatStatus(selectedCandidate.status)}</div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                      {[
+                        ["Warnings", selectedCandidate.warningcount, t.warning],
+                        ["Violations", selectedCandidate.violationcount, t.danger],
+                        ["Credibility", `${selectedCandidate.credibilityscore}%`, t.accent],
+                      ].map(([label, value, color]) => (
+                        <div key={label} style={{ minWidth: 0, padding: "10px 6px", borderRadius: 10, background: t.surfaceGlass, border: `1px solid ${t.border}`, textAlign: "center" }}>
+                          <div style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+                          <div style={{ marginTop: 4, fontSize: 18, color, fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif" }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 12 }}>
+                      <GhostButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "pause")} style={{ padding: "8px 6px", justifyContent: "center" }}>Pause</GhostButton>
+                      <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "resume")} gradient={t.successGradient} glow={t.glowSuccess} style={{ padding: "8px 6px", width: "100%" }}>Resume</GradientButton>
+                      <GradientButton theme={theme} onClick={() => doAction(selectedCandidate.assessmentid, "terminate")} gradient={t.dangerGradient} glow={t.glowDanger} style={{ padding: "8px 6px", width: "100%" }}>Terminate</GradientButton>
                     </div>
                   </div>
 
                   {/* Scrollable middle: live data + violations */}
                   <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8, color: t.textPrimary, textTransform: "uppercase", letterSpacing: 0.5 }}>Latest live data</div>
-                    <div style={{ fontSize: 12, color: t.textSecondary, display: "grid", gap: 6, marginBottom: 18, background: t.surfaceGlass, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px" }}>
-                      <div>Status: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.status || "—"}</span></div>
-                      <div>Focus: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.focus ?? "—"}</span></div>
-                      <div>Noise: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.noise_level ?? "—"}</span></div>
-                      <div>Face count: <span style={{ color: t.textPrimary, fontWeight: 600 }}>{liveData[selectedCandidate.candidateid]?.face_count ?? "—"}</span></div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: t.textPrimary, textTransform: "uppercase", letterSpacing: 0.7 }}>Latest Live Data</div>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: liveData[selectedCandidate.candidateid] ? t.success : t.textFaint, boxShadow: liveData[selectedCandidate.candidateid] ? `0 0 7px ${t.success}` : "none" }} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 18 }}>
+                      {[
+                        ["Status", liveData[selectedCandidate.candidateid]?.status ? formatStatus(liveData[selectedCandidate.candidateid].status) : "—"],
+                        ["Focus", liveData[selectedCandidate.candidateid]?.focus ?? "—"],
+                        ["Noise", liveData[selectedCandidate.candidateid]?.noise_level ?? "—"],
+                        ["Face Count", liveData[selectedCandidate.candidateid]?.face_count ?? "—"],
+                      ].map(([label, value]) => (
+                        <div key={label} style={{ minWidth: 0, padding: "9px 10px", background: t.surfaceGlass, border: `1px solid ${t.border}`, borderRadius: 9 }}>
+                          <div style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 800, letterSpacing: 0.45, textTransform: "uppercase" }}>{label}</div>
+                          <div title={String(value)} style={{ marginTop: 4, color: t.textPrimary, fontSize: 11.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+                        </div>
+                      ))}
                     </div>
 
                     <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 10, color: t.textPrimary, textTransform: "uppercase", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 8 }}>

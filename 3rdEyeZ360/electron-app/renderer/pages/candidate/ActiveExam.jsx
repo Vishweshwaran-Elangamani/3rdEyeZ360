@@ -486,6 +486,61 @@ function toUpper(value) {
 function canonicalStatus(value) {
   return toUpper(value).replace(/\s+/g, "").replace(/_/g, "");
 }
+
+function formatStatus(status) {
+  if (
+    status === undefined ||
+    status === null ||
+    String(status).trim() === "" ||
+    String(status).trim() === "—"
+  ) {
+    return "—";
+  }
+
+  const labels = {
+    DRAFT: "Draft",
+    PUBLISHED: "Published",
+    SCHEDULED: "Scheduled",
+    AVAILABLE: "Available",
+    ASSIGNED: "Assigned",
+    READY: "Ready",
+    PENDING: "Pending",
+    RUNNING: "Running",
+    ACTIVE: "Active",
+    PAUSED: "Paused",
+    RESUMED: "Resumed",
+    INTERRUPTED: "Interrupted",
+    COMPLETED: "Completed",
+    TERMINATED: "Terminated",
+    LOCKED: "Locked",
+    CANCELLED: "Cancelled",
+    CANCELED: "Canceled",
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+    LATEENTRYREQUESTED: "Late Entry Requested",
+    LATEENTRYAPPROVED: "Late Entry Approved",
+    LATEENTRYREJECTED: "Late Entry Rejected",
+    REENTRYREQUESTED: "Re-entry Requested",
+    REENTRYAPPROVED: "Re-entry Approved",
+    REENTRYREJECTED: "Re-entry Rejected",
+    NOTSTARTED: "Not Started",
+    INPROGRESS: "In Progress",
+    UNDERREVIEW: "Under Review",
+    NOTATTENDED: "Not Attended",
+  };
+
+  const key = canonicalStatus(status).replace(/-/g, "");
+  if (labels[key]) return labels[key];
+
+  return String(status)
+    .trim()
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 function normalizeSites(...sources) {
   const unique = new Set();
   for (const source of sources) {
@@ -616,7 +671,7 @@ function StatusChip({ status, theme, label }) {
           boxShadow: `0 0 8px ${color}66`,
         }}
       />
-      {label ? `${label}: ` : ""}{status || "—"}
+      {label ? `${label}: ` : ""}{formatStatus(status)}
     </div>
   );
 }
@@ -1390,8 +1445,8 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {[
-                { label: "Assessment", value: assessmentStatus, color: canonicalStatus(assessmentStatus) === "PAUSED" ? t.warning : t.success },
-                { label: "Exam", value: examStatus, color: canonicalStatus(examStatus) === "RUNNING" ? t.success : t.textPrimary },
+                { label: "Assessment", value: formatStatus(assessmentStatus), color: canonicalStatus(assessmentStatus) === "PAUSED" ? t.warning : t.success },
+                { label: "Exam", value: formatStatus(examStatus), color: canonicalStatus(examStatus) === "RUNNING" ? t.success : t.textPrimary },
                 { label: "Start", value: merged.starttime || "—", color: t.textPrimary, mono: true },
                 { label: "Duration", value: `${durationMinutes} min`, color: t.textPrimary, mono: true },
               ].map((row, i) => (

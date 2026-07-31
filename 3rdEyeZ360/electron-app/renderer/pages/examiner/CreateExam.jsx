@@ -1027,6 +1027,8 @@ export default function CreateExam({ onBack, onCreated }) {
   const [errors, setErrors] = useState({});
   const [saved, setSaved] = useState(false);
   const [focusField, setFocusField] = useState("");
+  const [websitePreviews, setWebsitePreviews] = useState({});
+  const [previewLoading, setPreviewLoading] = useState({});
 
   const headers = { Authorization: `Bearer ${accessToken}` };
 
@@ -1083,14 +1085,94 @@ export default function CreateExam({ onBack, onCreated }) {
     }));
   };
 
-  const addWebsite = () => {
-    if (!websiteInput.trim()) return;
-    let url = websiteInput.trim();
-    if (!url.startsWith("http")) url = `https://${url}`;
-    if (!form.allowed_websites.includes(url)) set("allowed_websites", [...form.allowed_websites, url]);
-    setWebsiteInput("");
+  const normalizeWebsiteUrl = (value) => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return "";
+    const withProtocol = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
+    try {
+      return new URL(withProtocol).toString();
+    } catch {
+      return "";
+    }
   };
-  const removeWebsite = (url) => set("allowed_websites", form.allowed_websites.filter((w) => w !== url));
+
+  const websiteHost = (value) => {
+    try {
+      return new URL(normalizeWebsiteUrl(value)).hostname.replace(/^www\./i, "");
+    } catch {
+      return value;
+    }
+  };
+
+  const capturePreview = async (url) => {
+    if (!window.electronAPI?.captureWebsitePreview) {
+      setWebsitePreviews((prev) => ({
+        ...prev,
+        [url]: { error: "Preview is available only in the Electron application." },
+      }));
+      return;
+    }
+
+    setPreviewLoading((prev) => ({ ...prev, [url]: true }));
+
+    try {
+      const result = await window.electronAPI.captureWebsitePreview(url);
+      if (!result?.success || !result?.dataUrl) {
+        throw new Error(result?.error || "Unable to capture website preview");
+      }
+
+      setWebsitePreviews((prev) => ({
+        ...prev,
+        [url]: {
+          dataUrl: result.dataUrl,
+          title: result.title,
+          finalUrl: result.finalUrl,
+          error: "",
+        },
+      }));
+    } catch (error) {
+      setWebsitePreviews((prev) => ({
+        ...prev,
+        [url]: {
+          error: error?.message || "Unable to capture website preview",
+        },
+      }));
+    } finally {
+      setPreviewLoading((prev) => ({ ...prev, [url]: false }));
+    }
+  };
+
+  const addWebsite = () => {
+    const url = normalizeWebsiteUrl(websiteInput);
+    if (!url) {
+      setErrors((prev) => ({ ...prev, websites: "Enter a valid website address" }));
+      return;
+    }
+
+    if (!form.allowed_websites.includes(url)) {
+      set("allowed_websites", [...form.allowed_websites, url]);
+    }
+
+    setErrors((prev) => ({ ...prev, websites: undefined }));
+    setWebsiteInput("");
+    capturePreview(url);
+  };
+
+  const removeWebsite = (url) => {
+    set("allowed_websites", form.allowed_websites.filter((w) => w !== url));
+    setWebsitePreviews((prev) => {
+      const next = { ...prev };
+      delete next[url];
+      return next;
+    });
+    setPreviewLoading((prev) => {
+      const next = { ...prev };
+      delete next[url];
+      return next;
+    });
+  };
 
   const handleSave = async (status = "Published") => {
     if (!validate()) return;
@@ -1278,31 +1360,111 @@ export default function CreateExam({ onBack, onCreated }) {
 
           {/* RIGHT COLUMN — Websites + Instructions */}
           <div style={{ gridRow: "1 / 2", minHeight: 0, display: "flex", flexDirection: "column", gap: 16, overflow: "hidden" }}>
-            <SectionCard theme={theme} danger={!!errors.websites} style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: "1 1 0" }} title={<SectionHeading theme={theme} desc="Candidates can only reach these sites during the exam. Add the exam platform and its login page.">Allowed Websites *</SectionHeading>}>
+            <SectionCard
+              theme={theme}
+              danger={Boolean(errors.websites)}
+              style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: "1.25 1 0" }}
+              title={<SectionHeading theme={theme} desc="Each added website is captured by Electron Chromium and shown below as a small visual preview.">Allowed Websites *</SectionHeading>}
+            >
               {errors.websites && <div style={{ fontSize: 11, color: t.danger, marginBottom: 8, fontWeight: 600 }}>{errors.websites}</div>}
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <input value={websiteInput} onChange={(e) => setWebsiteInput(e.target.value)} onFocus={() => setFocusField("web")} onBlur={() => setFocusField("")} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addWebsite(); } }} placeholder="exam.company.com" style={{ ...inputStyle("web"), flex: 1 }} />
-                <button onClick={addWebsite} style={{ padding: "9px 18px", fontSize: 13, fontWeight: 700, borderRadius: 9, background: t.accentGradient, color: "#fff", border: "none", cursor: "pointer", fontFamily: "'Inter', sans-serif", boxShadow: t.glowAccent, flexShrink: 0 }}>Add</button>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 12, flexShrink: 0 }}>
+                <input
+                  value={websiteInput}
+                  onChange={(e) => setWebsiteInput(e.target.value)}
+                  onFocus={() => setFocusField("web")}
+                  onBlur={() => setFocusField("")}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addWebsite();
+                    }
+                  }}
+                  placeholder="exam.company.com"
+                  style={{ ...inputStyle("web"), flex: 1 }}
+                />
+                <button type="button" onClick={addWebsite} style={{ padding: "9px 18px", fontSize: 13, fontWeight: 700, borderRadius: 9, background: t.accentGradient, color: "#fff", border: "none", cursor: "pointer", fontFamily: "'Inter', sans-serif", boxShadow: t.glowAccent, flexShrink: 0 }}>
+                  Add
+                </button>
               </div>
-              <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
                 {form.allowed_websites.length === 0 ? (
-                  <div style={{ fontSize: 12.5, color: t.textMuted, padding: "6px 0" }}>No websites added yet.</div>
+                  <div style={{ fontSize: 12.5, color: t.textMuted, padding: "8px 0" }}>
+                    No websites added yet.
+                  </div>
                 ) : (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {form.allowed_websites.map((url) => (
-                      <div key={url} style={{ background: t.successBg, border: `1px solid ${t.success}66`, borderRadius: 999, padding: "5px 8px 5px 12px", fontSize: 12, color: t.success, display: "flex", alignItems: "center", gap: 8, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                        {url}
-                        <button onClick={() => removeWebsite(url)} style={{ width: 17, height: 17, borderRadius: "50%", background: "transparent", border: "none", color: t.success, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                        </button>
-                      </div>
-                    ))}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                    {form.allowed_websites.map((url) => {
+                      const preview = websitePreviews[url];
+                      const isLoading = Boolean(previewLoading[url]);
+
+                      return (
+                        <div
+                          key={url}
+                          style={{
+                            minWidth: 0,
+                            overflow: "hidden",
+                            borderRadius: 11,
+                            border: `1px solid ${preview?.error ? `${t.danger}66` : t.borderStrong}`,
+                            background: t.surfaceGlass,
+                          }}
+                        >
+                          <div style={{ height: 88, position: "relative", overflow: "hidden", background: t.inputReadonly }}>
+                            {preview?.dataUrl ? (
+                              <img
+                                src={preview.dataUrl}
+                                alt={`Preview of ${websiteHost(url)}`}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" }}
+                              />
+                            ) : (
+                              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 7, padding: 10, color: preview?.error ? t.danger : t.textMuted, textAlign: "center", fontSize: 10.5 }}>
+                                {isLoading ? (
+                                  <>
+                                    <span style={{ width: 18, height: 18, border: `2px solid ${t.borderStrong}`, borderTopColor: t.accent, borderRadius: "50%", animation: "spin 0.75s linear infinite" }} />
+                                    Capturing preview...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /></svg>
+                                    {preview?.error || "Preview not captured"}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ padding: "8px 9px", display: "flex", alignItems: "center", gap: 8, borderTop: `1px solid ${t.border}` }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div title={preview?.title || websiteHost(url)} style={{ fontSize: 10.5, fontWeight: 700, color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {preview?.title || websiteHost(url)}
+                              </div>
+                              <div title={url} style={{ marginTop: 2, fontSize: 9, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {websiteHost(url)}
+                              </div>
+                            </div>
+
+                            <button type="button" disabled={isLoading} onClick={() => capturePreview(url)} title="Refresh preview" style={{ width: 26, height: 26, borderRadius: 7, border: `1px solid ${t.border}`, background: t.surfaceGlass, color: t.textSecondary, cursor: isLoading ? "wait" : "pointer", padding: 0, flexShrink: 0 }}>
+                              ↻
+                            </button>
+
+                            <button type="button" onClick={() => removeWebsite(url)} title="Remove website" style={{ width: 26, height: 26, borderRadius: 7, border: `1px solid ${t.danger}44`, background: t.dangerBg, color: t.danger, cursor: "pointer", padding: 0, flexShrink: 0 }}>
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </SectionCard>
 
-            <SectionCard theme={theme} style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: "1 1 0" }} title={<SectionHeading theme={theme} desc="Shown to candidates on the Instructions screen before the exam begins.">Candidate Instructions</SectionHeading>}>
+            <SectionCard
+              theme={theme}
+              style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: "0.75 1 0" }}
+              title={<SectionHeading theme={theme} desc="Shown to candidates on the Instructions screen before the exam begins.">Candidate Instructions</SectionHeading>}
+            >
               <textarea
                 value={form.instructions}
                 onChange={(e) => set("instructions", e.target.value)}

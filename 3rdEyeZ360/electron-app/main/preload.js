@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.removeAllListeners("detection-result");
   },
 
+  captureWebsitePreview: (url) => ipcRenderer.invoke("capture-website-preview", url),
+
   openBrowser: (data) => ipcRenderer.invoke("open-browser", data),
   closeBrowser: () => ipcRenderer.invoke("close-browser"),
   navigateBrowser: (url) => ipcRenderer.invoke("navigate-browser", url),

@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
 
@@ -24,7 +30,8 @@ const THEMES = {
     accent: "#5b8cff",
     accent2: "#a065ff",
     accent3: "#ff6ec7",
-    accentGradient: "linear-gradient(135deg, #5b8cff 0%, #a065ff 50%, #ff6ec7 100%)",
+    accentGradient:
+      "linear-gradient(135deg, #5b8cff 0%, #a065ff 50%, #ff6ec7 100%)",
     accentGradientSoft:
       "linear-gradient(135deg, rgba(91,140,255,0.15) 0%, rgba(160,101,255,0.15) 50%, rgba(255,110,199,0.15) 100%)",
     accentSoft: "rgba(91,140,255,0.12)",
@@ -39,7 +46,8 @@ const THEMES = {
     dangerBg: "rgba(239,106,106,0.1)",
     info: "#6da5ff",
     infoBg: "rgba(109,165,255,0.1)",
-    glowAccent: "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
+    glowAccent:
+      "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
     inputBg: "rgba(255,255,255,0.04)",
   },
   light: {
@@ -63,7 +71,8 @@ const THEMES = {
     accent: "#4b60e8",
     accent2: "#7c3aed",
     accent3: "#e94aa8",
-    accentGradient: "linear-gradient(135deg, #4b60e8 0%, #7c3aed 50%, #e94aa8 100%)",
+    accentGradient:
+      "linear-gradient(135deg, #4b60e8 0%, #7c3aed 50%, #e94aa8 100%)",
     accentGradientSoft:
       "linear-gradient(135deg, rgba(75,96,232,0.12) 0%, rgba(124,58,237,0.12) 50%, rgba(233,74,168,0.12) 100%)",
     accentSoft: "rgba(75,96,232,0.12)",
@@ -78,7 +87,8 @@ const THEMES = {
     dangerBg: "rgba(220,38,38,0.12)",
     info: "#2563eb",
     infoBg: "rgba(37,99,235,0.12)",
-    glowAccent: "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
+    glowAccent:
+      "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
     inputBg: "#ffffff",
   },
 };
@@ -94,7 +104,10 @@ function useTheme() {
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === THEME_STORAGE_KEY && (e.newValue === "light" || e.newValue === "dark")) {
+      if (
+        e.key === THEME_STORAGE_KEY &&
+        (e.newValue === "light" || e.newValue === "dark")
+      ) {
         setTheme(e.newValue);
       }
     };
@@ -143,7 +156,20 @@ function ThemeToggle({ theme, onToggle }) {
         { top: 20, left: 16, size: 1.5, o: isDark ? 0.6 : 0 },
         { top: 10, left: 22, size: 1.5, o: isDark ? 0.7 : 0 },
       ].map((s, i) => (
-        <span key={i} style={{ position: "absolute", top: s.top, left: s.left, width: s.size, height: s.size, borderRadius: "50%", background: "#ffffff", opacity: s.o, transition: "opacity 0.6s ease" }} />
+        <span
+          key={i}
+          style={{
+            position: "absolute",
+            top: s.top,
+            left: s.left,
+            width: s.size,
+            height: s.size,
+            borderRadius: "50%",
+            background: "#ffffff",
+            opacity: s.o,
+            transition: "opacity 0.6s ease",
+          }}
+        />
       ))}
       <span
         style={{
@@ -159,16 +185,47 @@ function ThemeToggle({ theme, onToggle }) {
           boxShadow: isDark
             ? "0 2px 10px rgba(0,0,0,0.5), inset -2px -2px 5px rgba(0,0,0,0.2)"
             : "0 2px 12px rgba(255,150,0,0.45), inset -2px -2px 5px rgba(180,90,0,0.2)",
-          transition: "left 0.5s cubic-bezier(0.68, -0.4, 0.27, 1.4), background 0.5s ease, box-shadow 0.5s ease",
+          transition:
+            "left 0.5s cubic-bezier(0.68, -0.4, 0.27, 1.4), background 0.5s ease, box-shadow 0.5s ease",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#3d4460" : "#7a4a00"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 1 : 0, transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={isDark ? "#3d4460" : "#7a4a00"}
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            opacity: isDark ? 1 : 0,
+            transform: isDark ? "rotate(0)" : "rotate(-140deg) scale(0.4)",
+            transition: "opacity 0.4s ease, transform 0.5s ease",
+            position: "absolute",
+          }}
+        >
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a4a00" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isDark ? 0 : 1, transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)", transition: "opacity 0.4s ease, transform 0.5s ease", position: "absolute" }}>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#7a4a00"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            opacity: isDark ? 0 : 1,
+            transform: isDark ? "rotate(140deg) scale(0.4)" : "rotate(0)",
+            transition: "opacity 0.4s ease, transform 0.5s ease",
+            position: "absolute",
+          }}
+        >
           <circle cx="12" cy="12" r="4" />
           <line x1="12" y1="2" x2="12" y2="4" />
           <line x1="12" y1="20" x2="12" y2="22" />
@@ -272,9 +329,31 @@ function LogoutButton({ onLogout, theme }) {
       }}
     >
       {loading ? (
-        <span style={{ width: 14, height: 14, border: `2px solid ${t.textMuted}44`, borderTopColor: t.textPrimary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+        <span
+          style={{
+            width: 14,
+            height: 14,
+            border: `2px solid ${t.textMuted}44`,
+            borderTopColor: t.textPrimary,
+            borderRadius: "50%",
+            animation: "spin 0.7s linear infinite",
+          }}
+        />
       ) : (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: hover ? "translateX(2px)" : "translateX(0)", transition: "transform 0.3s ease" }}>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            transform: hover ? "translateX(2px)" : "translateX(0)",
+            transition: "transform 0.3s ease",
+          }}
+        >
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
           <polyline points="16 17 21 12 16 7" />
           <line x1="21" y1="12" x2="9" y2="12" />
@@ -286,13 +365,31 @@ function LogoutButton({ onLogout, theme }) {
 
 const CHECK_ICONS = {
   camera: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M23 7l-7 5 7 5V7z" />
       <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
     </svg>
   ),
   face: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M3 7V5a2 2 0 0 1 2-2h2" />
       <path d="M17 3h2a2 2 0 0 1 2 2v2" />
       <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
@@ -303,7 +400,16 @@ const CHECK_ICONS = {
     </svg>
   ),
   internet: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="12" cy="12" r="10" />
       <line x1="2" y1="12" x2="22" y2="12" />
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
@@ -356,7 +462,16 @@ function StatusBadge({ status, t }) {
           animation: "popIn 0.35s cubic-bezier(0.68, -0.55, 0.27, 1.55)",
         }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <polyline points="20 6 9 17 4 12" />
         </svg>
       </div>
@@ -377,7 +492,16 @@ function StatusBadge({ status, t }) {
         animation: "popIn 0.35s cubic-bezier(0.68, -0.55, 0.27, 1.55)",
       }}
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <line x1="18" y1="6" x2="6" y2="18" />
         <line x1="6" y1="6" x2="18" y2="18" />
       </svg>
@@ -392,15 +516,20 @@ function CheckItem({ label, status, iconKey, theme, index }) {
       ? label === "Camera & Microphone"
         ? "Allow camera and microphone access in your browser"
         : label === "Internet Connection"
-        ? "Check your network or backend service"
-        : "Keep your face centered and visible in the frame"
+          ? "Check your network or backend service"
+          : "Keep your face centered and visible in the frame"
       : status === true
-      ? "Ready"
-      : "Checking...";
+        ? "Ready"
+        : "Checking...";
 
-  const stateColor = status === true ? t.success : status === false ? t.danger : t.warning;
+  const stateColor =
+    status === true ? t.success : status === false ? t.danger : t.warning;
   const borderColor =
-    status === true ? `${t.success}44` : status === false ? `${t.danger}55` : t.border;
+    status === true
+      ? `${t.success}44`
+      : status === false
+        ? `${t.danger}55`
+        : t.border;
 
   return (
     <div
@@ -436,7 +565,12 @@ function CheckItem({ label, status, iconKey, theme, index }) {
           width: 36,
           height: 36,
           borderRadius: 10,
-          background: status === true ? t.successBg : status === false ? t.dangerBg : t.surfaceGlassHover,
+          background:
+            status === true
+              ? t.successBg
+              : status === false
+                ? t.dangerBg
+                : t.surfaceGlassHover,
           border: `1px solid ${status === true ? t.success + "33" : status === false ? t.danger + "33" : t.border}`,
           display: "flex",
           alignItems: "center",
@@ -461,7 +595,16 @@ function CheckItem({ label, status, iconKey, theme, index }) {
         >
           {label}
         </div>
-        <div style={{ fontSize: 12, color: stateColor, fontWeight: 500, letterSpacing: 0.2 }}>{hint}</div>
+        <div
+          style={{
+            fontSize: 12,
+            color: stateColor,
+            fontWeight: 500,
+            letterSpacing: 0.2,
+          }}
+        >
+          {hint}
+        </div>
       </div>
 
       <StatusBadge status={status} t={t} />
@@ -469,9 +612,133 @@ function CheckItem({ label, status, iconKey, theme, index }) {
   );
 }
 
+function normalizeStatusKey(status) {
+  return String(status ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, "");
+}
+
+function formatStatus(status) {
+  if (
+    status === undefined ||
+    status === null ||
+    String(status).trim() === "" ||
+    String(status).trim() === "—"
+  ) {
+    return "—";
+  }
+
+  const statusLabels = {
+    DRAFT: "Draft",
+    PUBLISHED: "Published",
+    SCHEDULED: "Scheduled",
+    AVAILABLE: "Available",
+    ASSIGNED: "Assigned",
+    READY: "Ready",
+    PENDING: "Pending",
+
+    RUNNING: "Running",
+    ACTIVE: "Active",
+    PAUSED: "Paused",
+    RESUMED: "Resumed",
+    INTERRUPTED: "Interrupted",
+
+    COMPLETED: "Completed",
+    TERMINATED: "Terminated",
+    LOCKED: "Locked",
+    CANCELLED: "Cancelled",
+    CANCELED: "Canceled",
+
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+
+    LATEENTRYREQUESTED: "Late Entry Requested",
+    LATEENTRYAPPROVED: "Late Entry Approved",
+    LATEENTRYREJECTED: "Late Entry Rejected",
+
+    REENTRYREQUESTED: "Re-entry Requested",
+    REENTRYAPPROVED: "Re-entry Approved",
+    REENTRYREJECTED: "Re-entry Rejected",
+
+    NOTSTARTED: "Not Started",
+    INPROGRESS: "In Progress",
+    UNDERREVIEW: "Under Review",
+    NOTATTENDED: "Not Attended",
+  };
+
+  const normalizedStatus = normalizeStatusKey(status);
+
+  if (statusLabels[normalizedStatus]) {
+    return statusLabels[normalizedStatus];
+  }
+
+  return String(status)
+    .trim()
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getStatusColor(status, t) {
+  const normalizedStatus = normalizeStatusKey(status);
+
+  if (
+    [
+      "RUNNING",
+      "ACTIVE",
+      "READY",
+      "APPROVED",
+      "LATEENTRYAPPROVED",
+      "REENTRYAPPROVED",
+      "COMPLETED",
+    ].includes(normalizedStatus)
+  ) {
+    return t.success;
+  }
+
+  if (
+    [
+      "PENDING",
+      "PAUSED",
+      "INTERRUPTED",
+      "LATEENTRYREQUESTED",
+      "REENTRYREQUESTED",
+    ].includes(normalizedStatus)
+  ) {
+    return t.warning;
+  }
+
+  if (
+    [
+      "LOCKED",
+      "TERMINATED",
+      "REJECTED",
+      "LATEENTRYREJECTED",
+      "REENTRYREJECTED",
+      "CANCELLED",
+      "CANCELED",
+    ].includes(normalizedStatus)
+  ) {
+    return t.danger;
+  }
+
+  return t.textPrimary;
+}
+
 function InfoRow({ label, value, mono, t }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 12,
+      }}
+    >
       <span
         style={{
           fontSize: 11.5,
@@ -490,7 +757,9 @@ function InfoRow({ label, value, mono, t }) {
           color: t.textPrimary,
           fontWeight: 600,
           textAlign: "right",
-          fontFamily: mono ? "'JetBrains Mono', monospace" : "'Inter', sans-serif",
+          fontFamily: mono
+            ? "'JetBrains Mono', monospace"
+            : "'Inter', sans-serif",
           wordBreak: "break-word",
         }}
       >
@@ -508,7 +777,11 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
   const streamRef = useRef(null);
   const hasAutoStartedRef = useRef(false);
 
-  const [checks, setChecks] = useState({ camera: null, face: null, internet: null });
+  const [checks, setChecks] = useState({
+    camera: null,
+    face: null,
+    internet: null,
+  });
   const [running, setRunning] = useState(false);
 
   const examView = useMemo(
@@ -522,10 +795,14 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
       endtime: exam?.endtime || "—",
       status: exam?.status || "—",
       examstatus: exam?.examstatus || "—",
-      allowedwebsites: Array.isArray(exam?.allowedwebsites) ? exam.allowedwebsites : [],
-      allowedapplications: Array.isArray(exam?.allowedapplications) ? exam.allowedapplications : [],
+      allowedwebsites: Array.isArray(exam?.allowedwebsites)
+        ? exam.allowedwebsites
+        : [],
+      allowedapplications: Array.isArray(exam?.allowedapplications)
+        ? exam.allowedapplications
+        : [],
     }),
-    [exam]
+    [exam],
   );
 
   const stopMedia = useCallback(() => {
@@ -550,10 +827,16 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
     }
     if (typeof onBack === "function") {
       onBack();
-    } else if (typeof window !== "undefined" && window.history && window.history.length > 1) {
+    } else if (
+      typeof window !== "undefined" &&
+      window.history &&
+      window.history.length > 1
+    ) {
       window.history.back();
     } else {
-      console.log("Back pressed but no onBack handler and no history to go back to.");
+      console.log(
+        "Back pressed but no onBack handler and no history to go back to.",
+      );
     }
   }, [onBack, stopMedia]);
 
@@ -574,7 +857,10 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
 
     try {
       stopMedia();
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       next.camera = true;
@@ -610,19 +896,27 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
 
   const allPassed = Object.values(checks).every((v) => v === true);
   const hasAnyFailure = Object.values(checks).some((v) => v === false);
-  const completedChecks = Object.values(checks).filter((v) => v !== null).length;
+  const completedChecks = Object.values(checks).filter(
+    (v) => v !== null,
+  ).length;
   const totalChecks = 3;
   const progressPct = (completedChecks / totalChecks) * 100;
 
   const overallLabel = running
     ? "Running system checks"
     : allPassed
-    ? "All systems ready"
-    : hasAnyFailure
-    ? "Some checks need attention"
-    : "Ready to verify";
+      ? "All systems ready"
+      : hasAnyFailure
+        ? "Some checks need attention"
+        : "Ready to verify";
 
-  const overallColor = running ? t.warning : allPassed ? t.success : hasAnyFailure ? t.danger : t.accent;
+  const overallColor = running
+    ? t.warning
+    : allPassed
+      ? t.success
+      : hasAnyFailure
+        ? t.danger
+        : t.accent;
 
   return (
     <div
@@ -635,7 +929,8 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
         backgroundImage: t.canvasTint,
         overflow: "hidden",
         color: t.textPrimary,
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        fontFamily:
+          "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         transition: "background 0.7s ease, color 0.6s ease",
         position: "relative",
       }}
@@ -746,7 +1041,14 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <BackButton theme={theme} onClick={handleBack} />
           <div style={{ width: 1, height: 24, background: t.border }} />
-          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, gap: 6 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              lineHeight: 1.2,
+              gap: 6,
+            }}
+          >
             <span
               style={{
                 fontWeight: 700,
@@ -810,13 +1112,27 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                 display: "flex",
                 flexDirection: "column",
                 gap: 20,
-                boxShadow: t.name === "light" ? "0 12px 40px rgba(20,28,60,0.10)" : "0 4px 20px rgba(0,0,0,0.15)",
+                boxShadow:
+                  t.name === "light"
+                    ? "0 12px 40px rgba(20,28,60,0.10)"
+                    : "0 4px 20px rgba(0,0,0,0.15)",
                 position: "relative",
                 overflow: "hidden",
-                transition: "background 0.55s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+                transition:
+                  "background 0.55s ease, border-color 0.5s ease, box-shadow 0.5s ease",
               }}
             >
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: t.accentGradient, opacity: 0.7 }} />
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 3,
+                  background: t.accentGradient,
+                  opacity: 0.7,
+                }}
+              />
 
               <div>
                 <div
@@ -843,7 +1159,9 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       borderRadius: "50%",
                       background: overallColor,
                       boxShadow: `0 0 6px ${overallColor}`,
-                      animation: running ? "pulseDot 1.2s ease-in-out infinite" : "none",
+                      animation: running
+                        ? "pulseDot 1.2s ease-in-out infinite"
+                        : "none",
                     }}
                   />
                   {overallLabel}
@@ -871,7 +1189,8 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     maxWidth: 480,
                   }}
                 >
-                  We need to confirm your camera, microphone, and internet connection are working before you enter the exam hall.
+                  We need to confirm your camera, microphone, and internet
+                  connection are working before you enter the exam hall.
                 </p>
               </div>
 
@@ -891,7 +1210,12 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                   autoPlay
                   muted
                   playsInline
-                  style={{ width: "100%", height: "100%", objectFit: "cover", background: "#000000" }}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    background: "#000000",
+                  }}
                 />
 
                 {checks.camera === true && (
@@ -917,10 +1241,26 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
 
                     {[0, 1, 2, 3].map((i) => {
                       const positions = [
-                        { top: 12, left: 12, borders: { top: true, left: true } },
-                        { top: 12, right: 12, borders: { top: true, right: true } },
-                        { bottom: 12, left: 12, borders: { bottom: true, left: true } },
-                        { bottom: 12, right: 12, borders: { bottom: true, right: true } },
+                        {
+                          top: 12,
+                          left: 12,
+                          borders: { top: true, left: true },
+                        },
+                        {
+                          top: 12,
+                          right: 12,
+                          borders: { top: true, right: true },
+                        },
+                        {
+                          bottom: 12,
+                          left: 12,
+                          borders: { bottom: true, left: true },
+                        },
+                        {
+                          bottom: 12,
+                          right: 12,
+                          borders: { bottom: true, right: true },
+                        },
                       ];
                       const p = positions[i];
                       return (
@@ -934,10 +1274,18 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                             left: p.left,
                             right: p.right,
                             bottom: p.bottom,
-                            borderTop: p.borders.top ? `2px solid ${t.accent}` : "none",
-                            borderBottom: p.borders.bottom ? `2px solid ${t.accent}` : "none",
-                            borderLeft: p.borders.left ? `2px solid ${t.accent}` : "none",
-                            borderRight: p.borders.right ? `2px solid ${t.accent}` : "none",
+                            borderTop: p.borders.top
+                              ? `2px solid ${t.accent}`
+                              : "none",
+                            borderBottom: p.borders.bottom
+                              ? `2px solid ${t.accent}`
+                              : "none",
+                            borderLeft: p.borders.left
+                              ? `2px solid ${t.accent}`
+                              : "none",
+                            borderRight: p.borders.right
+                              ? `2px solid ${t.accent}`
+                              : "none",
                             boxShadow: `0 0 8px ${t.accent}88`,
                           }}
                         />
@@ -972,10 +1320,17 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       borderRadius: "50%",
                       background: checks.camera === true ? t.success : t.danger,
                       boxShadow: `0 0 6px ${checks.camera === true ? t.success : t.danger}`,
-                      animation: checks.camera === true ? "pulseDot 1.5s ease-in-out infinite" : "none",
+                      animation:
+                        checks.camera === true
+                          ? "pulseDot 1.5s ease-in-out infinite"
+                          : "none",
                     }}
                   />
-                  {checks.camera === true ? "Live" : checks.camera === false ? "Offline" : "Standby"}
+                  {checks.camera === true
+                    ? "Live"
+                    : checks.camera === false
+                      ? "Offline"
+                      : "Standby"}
                 </div>
 
                 {checks.camera !== true && (
@@ -994,12 +1349,22 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       padding: 20,
                     }}
                   >
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.7">
+                    <svg
+                      width="32"
+                      height="32"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      opacity="0.7"
+                    >
                       <path d="M23 7l-7 5 7 5V7z" />
                       <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                     </svg>
                     <div style={{ fontSize: 13, opacity: 0.9 }}>
-                      {checks.camera === null ? "Requesting camera access..." : "Camera unavailable"}
+                      {checks.camera === null
+                        ? "Requesting camera access..."
+                        : "Camera unavailable"}
                     </div>
                   </div>
                 )}
@@ -1025,7 +1390,14 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                   >
                     Diagnostic Checks
                   </span>
-                  <span style={{ fontSize: 12, color: t.textSecondary, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: t.textSecondary,
+                      fontWeight: 600,
+                      fontFamily: "'Space Grotesk', sans-serif",
+                    }}
+                  >
                     {completedChecks} / {totalChecks}
                   </span>
                 </div>
@@ -1051,10 +1423,30 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                 </div>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <CheckItem label="Camera & Microphone" status={checks.camera} iconKey="camera" theme={theme} index={0} />
-                <CheckItem label="Face Visible" status={checks.face} iconKey="face" theme={theme} index={1} />
-                <CheckItem label="Internet Connection" status={checks.internet} iconKey="internet" theme={theme} index={2} />
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                <CheckItem
+                  label="Camera & Microphone"
+                  status={checks.camera}
+                  iconKey="camera"
+                  theme={theme}
+                  index={0}
+                />
+                <CheckItem
+                  label="Face Visible"
+                  status={checks.face}
+                  iconKey="face"
+                  theme={theme}
+                  index={1}
+                />
+                <CheckItem
+                  label="Internet Connection"
+                  status={checks.internet}
+                  iconKey="internet"
+                  theme={theme}
+                  index={2}
+                />
               </div>
 
               {!running && hasAnyFailure && (
@@ -1072,12 +1464,23 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     alignItems: "flex-start",
                   }}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    style={{ flexShrink: 0, marginTop: 1 }}
+                  >
                     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                     <line x1="12" y1="9" x2="12" y2="13" />
                     <line x1="12" y1="17" x2="12.01" y2="17" />
                   </svg>
-                  <span>Some checks did not pass. You can retry, or continue if this is for review purposes only.</span>
+                  <span>
+                    Some checks did not pass. You can retry, or continue if this
+                    is for review purposes only.
+                  </span>
                 </div>
               )}
 
@@ -1102,7 +1505,16 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       gap: 8,
                     }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <polyline points="23 4 23 10 17 10" />
                       <polyline points="1 20 1 14 7 14" />
                       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -1135,9 +1547,26 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     overflow: "hidden",
                   }}
                 >
-                  <span style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      position: "relative",
+                      zIndex: 2,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
                     Continue to Instructions
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <line x1="5" y1="12" x2="19" y2="12" />
                       <polyline points="12 5 19 12 12 19" />
                     </svg>
@@ -1155,8 +1584,12 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                   border: `1px solid ${t.border}`,
                   borderRadius: 22,
                   padding: 24,
-                  boxShadow: t.name === "light" ? "0 8px 30px rgba(20,28,60,0.08)" : "0 4px 20px rgba(0,0,0,0.12)",
-                  transition: "background 0.55s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+                  boxShadow:
+                    t.name === "light"
+                      ? "0 8px 30px rgba(20,28,60,0.08)"
+                      : "0 4px 20px rgba(0,0,0,0.12)",
+                  transition:
+                    "background 0.55s ease, border-color 0.5s ease, box-shadow 0.5s ease",
                   position: "relative",
                   overflow: "hidden",
                 }}
@@ -1190,7 +1623,14 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       gap: 8,
                     }}
                   >
-                    <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 20,
+                        height: 1,
+                        background: t.accentGradient,
+                      }}
+                    />
                     Assessment
                   </div>
 
@@ -1209,9 +1649,25 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     {examView.name}
                   </h3>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <InfoRow label="Assessment ID" value={examView.assessmentid} mono t={t} />
-                    <InfoRow label="Exam ID" value={examView.examid} mono t={t} />
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                    }}
+                  >
+                    <InfoRow
+                      label="Assessment ID"
+                      value={examView.assessmentid}
+                      mono
+                      t={t}
+                    />
+                    <InfoRow
+                      label="Exam ID"
+                      value={examView.examid}
+                      mono
+                      t={t}
+                    />
                     <div style={{ height: 1, background: t.border }} />
                     <InfoRow label="Date" value={examView.date} t={t} />
                     <InfoRow
@@ -1222,18 +1678,37 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     <InfoRow
                       label="Duration"
                       value={
-                        <span style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        <span
+                          style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                        >
                           {examView.durationminutes}
-                          <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500, marginLeft: 4 }}>min</span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: t.textMuted,
+                              fontWeight: 500,
+                              marginLeft: 4,
+                            }}
+                          >
+                            min
+                          </span>
                         </span>
                       }
                       t={t}
                     />
                     <div style={{ height: 1, background: t.border }} />
                     <InfoRow
-                      label="Assessment"
+                      label="Assessment Status"
                       value={
-                        <span style={{ color: t.success, fontWeight: 700, letterSpacing: 0.3 }}>{examView.status}</span>
+                        <span
+                          style={{
+                            color: getStatusColor(examView.status, t),
+                            fontWeight: 700,
+                            letterSpacing: 0.2,
+                          }}
+                        >
+                          {formatStatus(examView.status)}
+                        </span>
                       }
                       t={t}
                     />
@@ -1245,11 +1720,12 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                             display: "inline-flex",
                             alignItems: "center",
                             gap: 6,
-                            color: examView.examstatus === "RUNNING" ? t.success : t.textPrimary,
+                            color: getStatusColor(examView.examstatus, t),
                             fontWeight: 700,
                           }}
                         >
-                          {examView.examstatus === "RUNNING" && (
+                          {normalizeStatusKey(examView.examstatus) ===
+                            "RUNNING" && (
                             <span
                               style={{
                                 width: 6,
@@ -1261,7 +1737,8 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                               }}
                             />
                           )}
-                          {examView.examstatus}
+
+                          {formatStatus(examView.examstatus)}
                         </span>
                       }
                       t={t}
@@ -1278,8 +1755,12 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                   border: `1px solid ${t.border}`,
                   borderRadius: 22,
                   padding: 22,
-                  boxShadow: t.name === "light" ? "0 8px 30px rgba(20,28,60,0.08)" : "0 4px 20px rgba(0,0,0,0.12)",
-                  transition: "background 0.55s ease, border-color 0.5s ease, box-shadow 0.5s ease",
+                  boxShadow:
+                    t.name === "light"
+                      ? "0 8px 30px rgba(20,28,60,0.08)"
+                      : "0 4px 20px rgba(0,0,0,0.12)",
+                  transition:
+                    "background 0.55s ease, border-color 0.5s ease, box-shadow 0.5s ease",
                 }}
               >
                 <div
@@ -1295,7 +1776,14 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     gap: 8,
                   }}
                 >
-                  <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 20,
+                      height: 1,
+                      background: t.accentGradient,
+                    }}
+                  />
                   Permitted Access
                 </div>
 
@@ -1313,7 +1801,14 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       gap: 6,
                     }}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                    >
                       <circle cx="12" cy="12" r="10" />
                       <line x1="2" y1="12" x2="22" y2="12" />
                       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
@@ -1341,7 +1836,15 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>None permitted</div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: t.textMuted,
+                        fontStyle: "italic",
+                      }}
+                    >
+                      None permitted
+                    </div>
                   )}
                 </div>
 
@@ -1359,7 +1862,14 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       gap: 6,
                     }}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                    >
                       <rect x="4" y="4" width="16" height="16" rx="2" />
                       <path d="M9 10h6M9 14h4" />
                     </svg>
@@ -1386,7 +1896,15 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>None permitted</div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: t.textMuted,
+                        fontStyle: "italic",
+                      }}
+                    >
+                      None permitted
+                    </div>
                   )}
                 </div>
               </div>
@@ -1402,7 +1920,15 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                   alignItems: "flex-start",
                 }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={t.accent} strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={t.accent}
+                  strokeWidth="2.2"
+                  style={{ flexShrink: 0, marginTop: 1 }}
+                >
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="16" x2="12" y2="12" />
                   <line x1="12" y1="8" x2="12.01" y2="8" />
@@ -1419,8 +1945,16 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                   >
                     Development mode
                   </div>
-                  <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.55 }}>
-                    Checks are visible for review but will not block the flow. Strict enforcement can be re-enabled once routing and exam flow are finalized.
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: t.textSecondary,
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    Checks are visible for review but will not block the flow.
+                    Strict enforcement can be re-enabled once routing and exam
+                    flow are finalized.
                   </div>
                 </div>
               </div>

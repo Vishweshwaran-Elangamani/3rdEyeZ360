@@ -949,7 +949,15 @@ if (
     return <CandidateDashboard onEnterExam={handleEnterExam} onLogout={handleLogout} />;
   }
   if (screen === "precheck") {
-    return <PreCheck exam={currentExam} assessment={currentAssessment} onPass={handlePreCheckPass} onLogout={handleLogout} />;
+    return (
+      <PreCheck
+        exam={currentExam}
+        assessment={currentAssessment}
+        onPass={handlePreCheckPass}
+        onBack={handleReturnToDashboard}
+        onLogout={handleLogout}
+      />
+    );
   }
   if (screen === "instructions") {
     return (

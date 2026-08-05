@@ -25,7 +25,7 @@ const FLOAT_SYMBOLS = [
 const VALUE_STRIP = [
   { label: "AI+",  caption: "Live behavior analysis" },
   { label: "360°", caption: "Audio, video & screen watch" },
-  { label: "E2E",  caption: "Encrypted by default" },
+  // { label: "E2E",  caption: "Encrypted by default" },
 ];
 
 function getFriendlyErrorMessage(err) {
@@ -645,31 +645,28 @@ export default function Login({ onLogin }) {
             padding: "56px 72px",
           }}
         >
+          {/* ===== LOGO — image is the badge, fills box, no double-frame ===== */}
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div
+            <img
+              src={appIcon}
+              alt="3rdEyeZ360"
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: 12,
-                background: "linear-gradient(135deg, #4f8ef7, #7c5ce7)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 8px 20px rgba(79,142,247,0.4)",
-                overflow: "hidden",
+                width: 52,
+                height: 52,
+                borderRadius: 14,
+                objectFit: "contain",
+                display: "block",
+                flexShrink: 0,
+                background: "#dcdcdc",
                 padding: 6,
+                boxSizing: "border-box",
+                boxShadow: "0 8px 20px rgba(79,142,247,0.35)",
               }}
-            >
-              <img
-                src={appIcon}
-                alt="3rdEyeZ360"
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
-              />
-            </div>
+            />
             <span
               style={{
                 color: "#e8eaf0",
-                fontSize: 18,
+                fontSize: 22,
                 fontWeight: 600,
                 letterSpacing: 0.3,
                 fontFamily: "'Poppins', sans-serif",
@@ -719,7 +716,7 @@ export default function Login({ onLogin }) {
             >
               We're 3rdEyeZ360 — an AI-powered proctoring platform built on
               trust. We bring clarity, fairness, and quiet confidence to every
-              exam you deliver.
+              assessment you deliver.
             </p>
 
             <div
@@ -768,7 +765,7 @@ export default function Login({ onLogin }) {
               letterSpacing: 0.3,
             }}
           >
-            <span>© {new Date().getFullYear()} 3rdEyeZ360 · All rights reserved</span>
+            {/* <span>© {new Date().getFullYear()} 3rdEyeZ360 · All rights reserved</span>
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span
                 style={{
@@ -780,7 +777,7 @@ export default function Login({ onLogin }) {
                 }}
               />
               All systems operational
-            </span>
+            </span> */}
           </div>
         </div>
       </div>
@@ -886,7 +883,7 @@ export default function Login({ onLogin }) {
                   onFocus={() => setFocusedField("email")}
                   onBlur={() => setFocusedField("")}
                   type="email"
-                  placeholder="you@example.com"
+                  placeholder="Enter your email"
                   autoComplete="username"
                   disabled={loading}
                   style={{
@@ -999,7 +996,7 @@ export default function Login({ onLogin }) {
             </button>
           </div>
 
-          <div
+          {/* <div 
             style={{
               marginTop: 28,
               paddingTop: 20,
@@ -1015,8 +1012,8 @@ export default function Login({ onLogin }) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             </svg>
-            Protected by enterprise-grade encryption
-          </div>
+            {/* Protected by enterprise-grade encryption */}
+          {/* </div> */} 
         </form>
       </div>
     </div>

@@ -817,25 +817,49 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
     }
   }, []);
 
-  // Back handler: releases the camera/mic first, then goes to the previous page.
-  // Uses parent-provided onBack when available, otherwise falls back to history.
+  // Back handler: release the camera/mic first, then navigate to the previous
+  // screen. This app routes by state (not browser history), so we prefer the
+  // parent-provided onBack. When it's missing we fall back to the app's
+  // localStorage "app-screen" convention so the user still lands on the
+  // candidate dashboard instead of doing nothing.
   const handleBack = useCallback(() => {
     try {
       stopMedia();
     } catch (e) {
       console.log("stopMedia failed during back", e);
     }
+
+    // 1) Preferred: parent controls navigation.
     if (typeof onBack === "function") {
       onBack();
-    } else if (
+      return;
+    }
+
+    // 2) Fallback for this Electron/SPA app: set the screen and reload so the
+    //    root App re-reads it and shows the candidate dashboard.
+    try {
+      localStorage.setItem("app-screen", "dashboard");
+      // Broadcast in case the App listens for screen changes without a reload.
+      window.dispatchEvent(
+        new CustomEvent("app-navigate", { detail: { screen: "dashboard" } }),
+      );
+      window.location.reload();
+      return;
+    } catch (e) {
+      console.log("app-screen fallback failed", e);
+    }
+
+    // 3) Last resort: browser history.
+    if (
       typeof window !== "undefined" &&
       window.history &&
       window.history.length > 1
     ) {
       window.history.back();
     } else {
-      console.log(
-        "Back pressed but no onBack handler and no history to go back to.",
+      console.warn(
+        "Back pressed but no onBack handler was provided by the parent. " +
+          "Pass an onBack prop to <PreCheck /> that returns to the dashboard.",
       );
     }
   }, [onBack, stopMedia]);
@@ -1039,7 +1063,7 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <BackButton theme={theme} onClick={handleBack} />
+          <BackButton theme={theme} onClick={handleBack} disabled={running} />
           <div style={{ width: 1, height: 24, background: t.border }} />
           <div
             style={{

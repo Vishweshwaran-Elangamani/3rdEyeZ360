@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
+import useExamStore from "../../store/examStore";
 import useSocket from "../../hooks/useSocket";
 
 const API = "http://localhost:3000";
@@ -688,8 +689,16 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const browserOpenedRef = useRef(false);
   const lastNavigatedUrlRef = useRef(null);
   const returningRef = useRef(false);
+  const sessionIdRef = useRef(null);
+  const entryGrantedRef = useRef(false);
+  const intentionalExitRef = useRef(false);
+  const entryRequestRef = useRef(null);
+  const heartbeatFailureRef = useRef(false);
+  const waitingRegistrationRef = useRef(null);
 
   const { accessToken, user } = useAuthStore();
+  const waitingSessionId = useExamStore((state) => state.waitingSessionId);
+  const clearWaitingSession = useExamStore((state) => state.clearWaitingSession);
   const socket = useSocket(accessToken);
 
   const normalizedExam = useMemo(() => normalizeExam(exam), [exam]);
@@ -706,6 +715,12 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const [pauseLocked, setPauseLocked] = useState(
     canonicalStatus(normalizedAssessment?.status) === "PAUSED"
   );
+
+  useEffect(() => {
+    if (waitingSessionId && !sessionIdRef.current) {
+      sessionIdRef.current = waitingSessionId;
+    }
+  }, [waitingSessionId]);
 
   useEffect(() => setLiveExam(normalizedExam), [normalizedExam]);
   useEffect(() => setLiveAssessment(normalizedAssessment), [normalizedAssessment]);
@@ -732,8 +747,37 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     normalizedAssessment?.candidateid,
     liveExam?.candidateid,
     normalizedExam?.candidateid,
-    user?.userid
+    user?.userid,
+    user?.user_id
   );
+
+  const cleanupExamShell = useCallback(async () => {
+    try { await window.electronAPI?.stopCapture?.(); } catch (error) { console.log("stopCapture failed", error); }
+    try { await window.electronAPI?.closeBrowser?.(); } catch (error) { console.log("closeBrowser failed", error); }
+    try { await window.electronAPI?.disableLockdown?.(); } catch (error) { console.log("disableLockdown failed", error); }
+    try { await window.electronAPI?.setClosable?.(true); } catch (error) { console.log("setClosable failed", error); }
+    browserOpenedRef.current = false;
+    lastNavigatedUrlRef.current = null;
+  }, []);
+
+  const reportInterruption = useCallback(async (reason, source) => {
+    if (!entryGrantedRef.current || completedRef.current || intentionalExitRef.current || !assessmentId || !accessToken) {
+      return;
+    }
+    intentionalExitRef.current = true;
+    try {
+      await axios.post(
+        `${API}/api/assessments/${assessmentId}/interrupt`,
+        { reason, source, sessionid: sessionIdRef.current },
+        { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 5000 }
+      );
+    } catch (error) {
+      console.warn("Failed to report assessment interruption", error);
+    } finally {
+      entryGrantedRef.current = false;
+      sessionIdRef.current = null;
+    }
+  }, [assessmentId, accessToken]);
 
   const allowedSites = useMemo(
     () =>
@@ -763,6 +807,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const activeUrl = allowedSites[activeTab] || allowedSites[0] || null;
   const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "—";
   const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "—";
+  const isExamRunning = canonicalStatus(examStatus) === "RUNNING";
   const isPaused = pauseLocked || canonicalStatus(assessmentStatus) === "PAUSED";
 
   const safeElectron = useCallback(async (runner, fallbackMessage, options = {}) => {
@@ -780,6 +825,88 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       return false;
     }
   }, []);
+
+
+
+  const obtainEntryPermission = useCallback(async () => {
+    if (!isExamRunning || completedRef.current || intentionalExitRef.current) {
+      return false;
+    }
+    if (entryGrantedRef.current && sessionIdRef.current) return true;
+    if (!assessmentId || !accessToken) return false;
+    if (entryRequestRef.current) return entryRequestRef.current;
+
+    const currentStatus = canonicalStatus(assessmentStatus);
+    const explicitlyApproved = [
+      "LATEENTRYAPPROVED",
+      "REENTRYAPPROVED",
+    ].includes(currentStatus);
+
+    if (!sessionIdRef.current && !explicitlyApproved) {
+      const message =
+        "The waiting session was not registered. Late-entry permission is required.";
+      setStatusMsg(message);
+      setBrowserError(message);
+      await cleanupExamShell();
+      await onReturnToDashboard?.();
+      return false;
+    }
+
+    const requestedSessionId =
+      sessionIdRef.current ||
+      globalThis.crypto?.randomUUID?.() ||
+      `SES-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const fromWaitingRoom = Boolean(sessionIdRef.current && waitingSessionId);
+
+    entryRequestRef.current = (async () => {
+      try {
+        const response = await axios.post(
+          `${API}/api/assessments/${assessmentId}/enter`,
+          { sessionid: requestedSessionId, fromwaitingroom: fromWaitingRoom },
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        const sessionId = response.data?.sessionid || response.data?.session_id;
+        if (!sessionId || response.data?.waiting === true) {
+          throw new Error("The server did not create an active assessment session.");
+        }
+        sessionIdRef.current = sessionId;
+        entryGrantedRef.current = true;
+        intentionalExitRef.current = false;
+        heartbeatFailureRef.current = false;
+        clearWaitingSession();
+        if (response.data?.assessment) {
+          setLiveAssessment(normalizeAssessment(response.data.assessment));
+        }
+        setStatusMsg("Secured assessment session created.");
+        setBrowserError("");
+        return true;
+      } catch (error) {
+        entryGrantedRef.current = false;
+        sessionIdRef.current = null;
+        const message =
+          error?.response?.data?.detail ||
+          error?.message ||
+          "Entry permission could not be verified.";
+        setStatusMsg(message);
+        setBrowserError(message);
+        await cleanupExamShell();
+        await onReturnToDashboard?.();
+        return false;
+      } finally {
+        entryRequestRef.current = null;
+      }
+    })();
+    return entryRequestRef.current;
+  }, [
+    isExamRunning,
+    assessmentId,
+    accessToken,
+    assessmentStatus,
+    waitingSessionId,
+    clearWaitingSession,
+    cleanupExamShell,
+    onReturnToDashboard,
+  ]);
 
   const resizeBrowserToArea = useCallback(async () => {
     if (!shellRef.current || !browserAreaRef.current || !window.electronAPI || completedRef.current) {
@@ -820,10 +947,22 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
 
   useEffect(() => {
     let cancelled = false;
+
     const ensureBrowserOpen = async () => {
-      if (!window.electronAPI || completedRef.current) return;
+      if (!window.electronAPI || completedRef.current || browserOpenedRef.current) return;
       if (!allowedSites.length) return;
-      if (browserOpenedRef.current) return;
+
+      if (!isExamRunning) {
+        setStatusMsg("Precheck complete. Waiting for the examiner to start the exam.");
+        setBrowserError("");
+        return;
+      }
+
+      const entryAllowed = await obtainEntryPermission();
+      if (!entryAllowed || cancelled || completedRef.current) {
+        await cleanupExamShell();
+        return;
+      }
 
       const ok = await safeElectron(
         () => window.electronAPI.openBrowser({ allowedWebsites: allowedSites }),
@@ -832,16 +971,23 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
       if (!cancelled && ok) {
         browserOpenedRef.current = true;
         setBrowserError("");
-        if (isPaused) {
-          await hideBrowserForPause();
-        } else {
-          await showBrowserForActiveState();
-        }
+        if (isPaused) await hideBrowserForPause();
+        else await showBrowserForActiveState();
       }
     };
+
     ensureBrowserOpen();
     return () => { cancelled = true; };
-  }, [allowedSites, isPaused, hideBrowserForPause, showBrowserForActiveState, safeElectron]);
+  }, [
+    allowedSites,
+    isExamRunning,
+    isPaused,
+    obtainEntryPermission,
+    hideBrowserForPause,
+    showBrowserForActiveState,
+    safeElectron,
+    cleanupExamShell,
+  ]);
 
   useEffect(() => {
     if (!browserOpenedRef.current || completedRef.current || !window.electronAPI) return;
@@ -887,19 +1033,14 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     };
   }, [isPaused, showBrowserForActiveState]);
 
-  const cleanupExamShell = useCallback(async () => {
-    try { await window.electronAPI?.stopCapture?.(); } catch (error) { console.log("stopCapture failed", error); }
-    try { await window.electronAPI?.closeBrowser?.(); } catch (error) { console.log("closeBrowser failed", error); }
-    try { await window.electronAPI?.disableLockdown?.(); } catch (error) { console.log("disableLockdown failed", error); }
-    try { await window.electronAPI?.setClosable?.(true); } catch (error) { console.log("setClosable failed", error); }
 
-    browserOpenedRef.current = false;
-    lastNavigatedUrlRef.current = null;
-  }, []);
 
   const finishExam = useCallback(async () => {
     if (completedRef.current) return;
     completedRef.current = true;
+    intentionalExitRef.current = true;
+    entryGrantedRef.current = false;
+    sessionIdRef.current = null;
     await cleanupExamShell();
     onComplete?.();
   }, [cleanupExamShell, onComplete]);
@@ -909,13 +1050,44 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     returningRef.current = true;
     setReturning(true);
     try {
+      await reportInterruption(
+        "Candidate returned to dashboard during the active assessment",
+        "RETURN_TO_DASHBOARD"
+      );
       await cleanupExamShell();
       await onReturnToDashboard?.();
     } finally {
       setReturning(false);
       returningRef.current = false;
     }
-  }, [cleanupExamShell, onReturnToDashboard, returning]);
+  }, [cleanupExamShell, onReturnToDashboard, reportInterruption, returning]);
+
+  useEffect(() => {
+    if (!entryGrantedRef.current || !sessionIdRef.current || !assessmentId || !accessToken) return;
+    let cancelled = false;
+    const sendHeartbeat = async () => {
+      if (cancelled || !entryGrantedRef.current || !sessionIdRef.current) return;
+      try {
+        await axios.post(
+          `${API}/api/assessments/${assessmentId}/heartbeat`,
+          { sessionid: sessionIdRef.current },
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+      } catch (error) {
+        if (cancelled) return;
+        if ([401, 403, 409].includes(error?.response?.status) && !heartbeatFailureRef.current) {
+          heartbeatFailureRef.current = true;
+          entryGrantedRef.current = false;
+          sessionIdRef.current = null;
+          await cleanupExamShell();
+          await onReturnToDashboard?.();
+        }
+      }
+    };
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, 10000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [assessmentId, accessToken, liveAssessment?.status, cleanupExamShell, onReturnToDashboard]);
 
   useEffect(() => {
     if (!socket || !examId) return;
@@ -994,6 +1166,11 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         await finishExam();
         return;
       }
+      if (examStatusValue !== "RUNNING" && !entryGrantedRef.current) {
+        setStatusMsg("Precheck complete. Waiting for the examiner to start the exam.");
+        setBrowserError("");
+        return;
+      }
       if (assessmentStatusValue === "PAUSED") {
         setPauseLocked(true);
         setBrowserError("");
@@ -1032,11 +1209,26 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
 
   useEffect(() => {
     return () => {
-      if (!completedRef.current && !returningRef.current) {
-        console.log("ActiveExam unmounted without explicit cleanup; browser close skipped.");
-      }
+      if (completedRef.current || intentionalExitRef.current || !entryGrantedRef.current || !assessmentId || !accessToken) return;
+      const sessionId = sessionIdRef.current;
+      fetch(`${API}/api/assessments/${assessmentId}/interrupt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ reason: "Assessment component closed unexpectedly", source: "COMPONENT_UNMOUNT", sessionid: sessionId }),
+        keepalive: true,
+      }).catch(() => {});
+      window.electronAPI?.stopCapture?.();
+      window.electronAPI?.closeBrowser?.();
+      window.electronAPI?.disableLockdown?.();
+      window.electronAPI?.setClosable?.(true);
     };
-  }, []);
+  }, [assessmentId, accessToken]);
+
+  const handleLogout = useCallback(async () => {
+    await reportInterruption("Candidate logged out during the active assessment", "LOGOUT");
+    await cleanupExamShell();
+    await onLogout?.();
+  }, [reportInterruption, cleanupExamShell, onLogout]);
 
   const examName = merged.name || normalizedExam?.name || "Exam";
 
@@ -1130,7 +1322,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
           <StatusChip status={examStatus} theme={theme} />
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
           {onLogout ? (
-            <IconButton theme={theme} onClick={onLogout} danger title="Sign out" ariaLabel="Sign out">
+            <IconButton theme={theme} onClick={handleLogout} danger title="Sign out" ariaLabel="Sign out">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                 <polyline points="16 17 21 12 16 7" />

@@ -50,6 +50,7 @@ const initialState = {
   warningCounts: {},
   violationCount: 0,
   isLocked: false,
+  waitingSessionId: null,
 };
 
 const useExamStore = create(
@@ -105,6 +106,14 @@ const useExamStore = create(
           set({
             isLocked: !!val,
           }),
+        setWaitingSessionId: (sessionId) =>
+          set({
+            waitingSessionId: sessionId || null,
+          }),
+        clearWaitingSession: () =>
+          set({
+            waitingSessionId: null,
+          }),
 
         clearExam: () => {
           try {
@@ -154,6 +163,7 @@ const useExamStore = create(
           warningCounts: state.warningCounts,
           violationCount: state.violationCount,
           isLocked: state.isLocked,
+          waitingSessionId: state.waitingSessionId,
         }),
       }
     ),

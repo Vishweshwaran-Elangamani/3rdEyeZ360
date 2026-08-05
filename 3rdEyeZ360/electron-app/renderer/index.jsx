@@ -266,6 +266,8 @@ function normalizeAssessment(raw) {
     assessmentstatus: assessmentStatus,
     examstatus: examStatus,
     finalstatus: finalStatus,
+    waitingsessionid: firstValue(raw.waitingsessionid, raw.waiting_session_id),
+    waitingregisteredat: firstValue(raw.waitingregisteredat, raw.waiting_registered_at),
   };
 }
 
@@ -370,7 +372,17 @@ function choosePrimaryAssessment(list) {
 
 function App() {
   const { user, accessToken, hasHydrated, clearAuth } = useAuthStore();
-  const { currentExam, currentAssessment, setExam, setAssessment, clearExam, reset } = useExamStore();
+  const {
+    currentExam,
+    currentAssessment,
+    setExam,
+    setAssessment,
+    clearExam,
+    reset,
+    waitingSessionId,
+    setWaitingSessionId,
+    clearWaitingSession,
+  } = useExamStore();
   const socket = useSocket(accessToken);
 
   const [screen, setScreen] = useState("login");
@@ -578,7 +590,11 @@ const handleLogout = useCallback(async () => {
       if (terminalAssessment || terminalExam) return "complete";
       if (REJECTED_ENTRY_STATUSES.has(assessmentStatus)) return "candidate-dashboard";
       if (assessmentStatus === "PAUSED") return "exam";
-      if (canGoDirectToExam(merged)) return "exam";
+      if (
+        canGoDirectToExam(merged) &&
+        (waitingSessionId ||
+          ["ACTIVE", "PAUSED", "LATEENTRYAPPROVED", "LATEENTRY_APPROVED", "REENTRYAPPROVED", "REENTRY_APPROVED"].includes(assessmentStatus))
+      ) return "exam";
       return "wait";
     }
 
@@ -595,7 +611,7 @@ const handleLogout = useCallback(async () => {
     if (canGoDirectToExam(merged)) return "exam";
     if (shouldWait(merged)) return "wait";
     return "candidate-dashboard";
-  }, []);
+  }, [waitingSessionId]);
 
   const handleLogin = useCallback(
   async (loggedUser) => {
@@ -834,34 +850,98 @@ const handleLogout = useCallback(async () => {
   const handleStartMonitoring = useCallback(async () => {
     if (isLoggingOutRef.current) return;
 
-    const merged = mergeExamAssessment(examRef.current, assessmentRef.current);
+    const merged = mergeExamAssessment(
+      examRef.current,
+      assessmentRef.current
+    );
+    const assessmentId = merged?.assessmentid;
+    const examStatus = getExamStatus(merged);
+    const assessmentStatus = getAssessmentStatus(merged);
+
+    if (!assessmentId || !accessToken) {
+      return;
+    }
 
     if (socket && merged && user) {
       socket.emit("join_exam", {
         examid: merged.examid,
-        assessmentid: merged.assessmentid,
-        candidateid: user?.userid,
+        assessmentid: assessmentId,
+        candidateid: user?.userid || user?.user_id,
         role: "Candidate",
       });
     }
 
-    const latest = await refreshCurrentCandidateState();
-    const live = latest.merged || merged;
+    if (examStatus !== "RUNNING") {
+      try {
+        const waitingId =
+          waitingSessionId ||
+          globalThis.crypto?.randomUUID?.() ||
+          `WAIT-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    if (isLoggingOutRef.current) return;
+        const response = await axios.post(
+          `${API}/api/assessments/${assessmentId}/enter`,
+          {
+            sessionid: waitingId,
+            fromwaitingroom: true,
+          },
+          { headers }
+        );
 
-    if (getAssessmentStatus(live) === "PAUSED") {
+        if (response.data?.waiting !== true) {
+          throw new Error("The backend did not register the waiting session.");
+        }
+
+        const registeredId =
+          response.data?.sessionid ||
+          response.data?.session_id ||
+          waitingId;
+
+        setWaitingSessionId(registeredId);
+
+        if (response.data?.assessment) {
+          const nextAssessment = normalizeAssessment(response.data.assessment);
+          setAssessment(nextAssessment);
+          setExam(mergeExamAssessment(examRef.current, nextAssessment));
+        }
+
+        setScreen("wait");
+        return;
+      } catch (error) {
+        console.error("Waiting-room registration failed", error);
+        clearWaitingSession();
+        await loadPrimaryCandidateState();
+        setScreen("candidate-dashboard");
+        return;
+      }
+    }
+
+    if (
+      [
+        "LATEENTRYAPPROVED",
+        "LATEENTRY_APPROVED",
+        "REENTRYAPPROVED",
+        "REENTRY_APPROVED",
+      ].includes(assessmentStatus)
+    ) {
+      clearWaitingSession();
       setScreen("exam");
       return;
     }
 
-    if (canGoDirectToExam(live)) {
-      setScreen("exam");
-      return;
-    }
-
-    setScreen("wait");
-  }, [socket, user, refreshCurrentCandidateState]);
+    await loadPrimaryCandidateState();
+    setScreen("candidate-dashboard");
+  }, [
+    accessToken,
+    clearWaitingSession,
+    headers,
+    loadPrimaryCandidateState,
+    setAssessment,
+    setExam,
+    setWaitingSessionId,
+    socket,
+    user,
+    waitingSessionId,
+  ]);
 
   const handleReturnToDashboard = useCallback(async () => {
     await cleanupElectron();
@@ -882,7 +962,11 @@ const handleLogout = useCallback(async () => {
 
       if (getAssessmentStatus(merged) === "PAUSED") {
         setScreen("exam");
-      } else if (canGoDirectToExam(merged)) {
+      } else if (
+        canGoDirectToExam(merged) &&
+        (useExamStore.getState().waitingSessionId ||
+          ["ACTIVE", "PAUSED", "LATEENTRYAPPROVED", "LATEENTRY_APPROVED", "REENTRYAPPROVED", "REENTRY_APPROVED"].includes(getAssessmentStatus(merged)))
+      ) {
         setScreen("exam");
       } else if (shouldWait(merged)) {
         setScreen("wait");

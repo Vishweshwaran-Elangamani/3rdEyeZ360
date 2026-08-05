@@ -5,6 +5,7 @@ class AssessmentStatus:
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
     INTERRUPTED = "INTERRUPTED"
+    REENTRY_REQUIRED = "REENTRY_REQUIRED"
     LOCKED = "LOCKED"
     COMPLETED = "COMPLETED"
     TERMINATED = "TERMINATED"
@@ -52,66 +53,21 @@ class UserRole:
 
 
 TOASTER_MESSAGES: dict[str, tuple[str, str]] = {
-    "face_missing": (
-        "Please face your camera - we need to see your face clearly",
-        "warning",
-    ),
-    "multiple_face": (
-        "Only you should be visible - ensure no one else is in view",
-        "warning",
-    ),
-    "multiple_faces": (
-        "Only you should be visible - ensure no one else is in view",
-        "warning",
-    ),
-    "looking_left": (
-        "Keep your eyes on the screen - looking away may be flagged",
-        "info",
-    ),
-    "looking_right": (
-        "Keep your eyes on the screen - looking away may be flagged",
-        "info",
-    ),
-    "looking_down": (
-        "Please look at your screen, not downward",
-        "info",
-    ),
-    "looking_away": (
-        "Keep your eyes on the screen - looking away may be flagged",
-        "info",
-    ),
-    "phone_detected": (
-        "A phone was detected - please keep your desk clear",
-        "warning",
-    ),
-    "background_speech": (
-        "Background voices detected - ensure you are in a quiet room",
-        "warning",
-    ),
-    "loud_noise": (
-        "Loud noise detected - please maintain a quiet environment",
-        "warning",
-    ),
-    "noise_violation": (
-        "Background noise detected - please maintain a quiet environment",
-        "warning",
-    ),
-    "mic_silent": (
-        "Your microphone seems off - please check it is connected",
-        "info",
-    ),
-    "restricted_app": (
-        "A restricted application was detected - please close it immediately",
-        "warning",
-    ),
-    "multiple_monitor": (
-        "Multiple monitors detected - disconnect any extra display",
-        "warning",
-    ),
-    "charger_removed": (
-        "Your charger was removed - reconnect it immediately",
-        "warning",
-    ),
+    "face_missing": ("Please face your camera - we need to see your face clearly", "warning"),
+    "multiple_face": ("Only you should be visible - ensure no one else is in view", "warning"),
+    "multiple_faces": ("Only you should be visible - ensure no one else is in view", "warning"),
+    "looking_left": ("Keep your eyes on the screen - looking away may be flagged", "info"),
+    "looking_right": ("Keep your eyes on the screen - looking away may be flagged", "info"),
+    "looking_down": ("Please look at your screen, not downward", "info"),
+    "looking_away": ("Keep your eyes on the screen - looking away may be flagged", "info"),
+    "phone_detected": ("A phone was detected - please keep your desk clear", "warning"),
+    "background_speech": ("Background voices detected - ensure you are in a quiet room", "warning"),
+    "loud_noise": ("Loud noise detected - please maintain a quiet environment", "warning"),
+    "noise_violation": ("Background noise detected - please maintain a quiet environment", "warning"),
+    "mic_silent": ("Your microphone seems off - please check it is connected", "info"),
+    "restricted_app": ("A restricted application was detected - please close it immediately", "warning"),
+    "multiple_monitor": ("Multiple monitors detected - disconnect any extra display", "warning"),
+    "charger_removed": ("Your charger was removed - reconnect it immediately", "warning"),
 }
 
 

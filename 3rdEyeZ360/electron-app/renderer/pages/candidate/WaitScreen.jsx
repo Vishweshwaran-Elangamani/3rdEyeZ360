@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
+import useExamStore from "../../store/examStore";
 
 const API = "http://localhost:3000";
 const POLL_INTERVAL = 3000;
@@ -686,6 +687,7 @@ export default function WaitScreen({
   const t = THEMES[theme];
 
   const { accessToken } = useAuthStore();
+  const waitingSessionId = useExamStore((state) => state.waitingSessionId);
 
   const [now, setNow] = useState(new Date());
   const [checking, setChecking] = useState(true);
@@ -845,18 +847,24 @@ export default function WaitScreen({
         await returnToDashboardSafe();
         return;
       }
-      if (examRunning && approvedToEnter && !launchedRef.current && !launchingRef.current) {
+      if (
+        examRunning &&
+        approvedToEnter &&
+        waitingSessionId &&
+        !launchedRef.current &&
+        !launchingRef.current
+      ) {
         launchingRef.current = true;
-        setActionMsg("Permission granted. Launching the exam workspace.");
-        const opened = await ensureBrowserVisible();
-        if (opened) {
-          launchedRef.current = true;
-          launchingRef.current = false;
-          onExamStart?.();
-          return;
-        }
+        setActionMsg("Exam started. Verifying your waiting session.");
+        launchedRef.current = true;
         launchingRef.current = false;
-        setActionMsg("Permission granted, but browser launch failed.");
+        onExamStart?.();
+        return;
+      }
+      if (examRunning && approvedToEnter && !waitingSessionId) {
+        setActionMsg(
+          "The waiting session is unavailable. Return to the dashboard and request late-entry permission."
+        );
         return;
       }
       if (examRunning && pendingApproval) {
@@ -886,6 +894,7 @@ export default function WaitScreen({
     returnToDashboardSafe,
     ensureBrowserVisible,
     onExamStart,
+    waitingSessionId,
   ]);
 
   useEffect(() => {

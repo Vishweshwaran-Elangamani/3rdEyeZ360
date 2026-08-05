@@ -217,52 +217,115 @@ function getCardState(exam, pendingRequest) {
   const assessmentStatus = toUpper(exam?.status);
   const examStatus = toUpper(exam?.examstatus);
   const examRunning = isExamRunningStatus(examStatus);
-  if (assessmentStatus === "COMPLETED") return { mode: "completed", cta: "Completed", disabled: true };
-  if (assessmentStatus === "TERMINATED") return { mode: "terminated", cta: "Terminated", disabled: true };
-  if (assessmentStatus === "LOCKED") return { mode: "locked", cta: "Locked", disabled: true };
-  if (isRejectedStatus(assessmentStatus))
-    return {
-      mode: "rejected",
-      cta: "Permission Declined",
-      disabled: true,
-      helper: "Your request was declined by the examiner.",
-    };
-  if (isApprovedStatus(assessmentStatus))
-    return {
-      mode: "enter",
-      cta: "Enter Assessment Page",
-      disabled: false,
-      helper: "Permission granted. Continue to precheck and enter the Assessment.",
-    };
-  if (pendingRequest || isPendingRequestStatus(assessmentStatus))
+  const hasEntered = Boolean(exam?.hasenteredexam);
+  const reentryStatus = assessmentStatus.includes("REENTRY");
+  const isReentryApproved = ["REENTRYAPPROVED", "REENTRY_APPROVED"].includes(assessmentStatus);
+  const isLateEntryApproved = ["LATEENTRYAPPROVED", "LATEENTRY_APPROVED"].includes(assessmentStatus);
+  const requiresReentry =
+    hasEntered &&
+    !isReentryApproved &&
+    (
+      exam?.requiresreentryapproval ||
+      [
+        "ACTIVE",
+        "PAUSED",
+        "INTERRUPTED",
+        "REENTRY_REQUIRED",
+        "REENTRYREQUESTED",
+        "REENTRY_REQUESTED",
+        "REENTRYREJECTED",
+        "REENTRY_REJECTED",
+      ].includes(assessmentStatus) ||
+      isLateEntryApproved
+    );
+
+  if (assessmentStatus === "COMPLETED") {
+    return { mode: "completed", cta: "Completed", disabled: true };
+  }
+  if (assessmentStatus === "TERMINATED") {
+    return { mode: "terminated", cta: "Terminated", disabled: true };
+  }
+  if (assessmentStatus === "LOCKED") {
+    return { mode: "locked", cta: "Locked", disabled: true };
+  }
+
+  if (pendingRequest || isPendingRequestStatus(assessmentStatus)) {
     return {
       mode: "pending-request",
-      cta: "Request Pending",
+      cta: reentryStatus || hasEntered ? "Re-entry Request Pending" : "Request Pending",
       disabled: true,
       helper: "Your request is pending examiner approval.",
     };
-  if (["ACTIVE", "PAUSED"].includes(assessmentStatus))
+  }
+
+  if (isRejectedStatus(assessmentStatus)) {
+    const rejectedReentry = reentryStatus || hasEntered;
+    return {
+      mode: "request",
+      cta: rejectedReentry ? "Request Re-entry Again" : "Request Permission Again",
+      disabled: false,
+      helper: rejectedReentry
+        ? "Your previous re-entry request was declined. You may submit a new request with an updated reason."
+        : "Your previous late-entry request was declined. You may submit a new request with an updated reason.",
+    };
+  }
+
+  if (requiresReentry) {
+    return {
+      mode: "request",
+      cta: "Request Re-entry",
+      disabled: false,
+      helper:
+        "A previous secured session existed for this assessment. Examiner approval is required before a new session can be created.",
+    };
+  }
+
+  if (isReentryApproved || isLateEntryApproved) {
     return {
       mode: "enter",
-      cta: examRunning ? "Resume Exam" : "Enter Exam Hall",
+      cta: isReentryApproved ? "Re-enter Assessment" : "Enter Assessment Page",
       disabled: false,
-      helper: "Your exam session is available.",
+      helper: isReentryApproved
+        ? "Re-entry approved. This approval can be used once to create a new secured session."
+        : "Permission granted. Continue to precheck and enter the assessment.",
     };
+  }
+
+  if (assessmentStatus === "ACTIVE") {
+    return {
+      mode: "enter",
+      cta: "Enter Assessment",
+      disabled: false,
+      helper: "Your approved assessment session is available.",
+    };
+  }
+
+  if (assessmentStatus === "PAUSED") {
+    return {
+      mode: "waiting",
+      cta: "Assessment Paused",
+      disabled: true,
+      helper: "The examiner has paused this assessment.",
+    };
+  }
+
   if (["ASSIGNED", "AVAILABLE", "READY"].includes(assessmentStatus)) {
-    if (examRunning)
+    if (examRunning) {
       return {
         mode: "request",
-        cta: "Request Permission",
+        cta: "Request Late Entry",
         disabled: false,
-        helper: "The exam is already running. You must request permission before entry.",
+        helper: "The exam is already running. You must request late-entry permission before entry.",
       };
+    }
     return {
       mode: "enter",
       cta: "Enter Assessment Waiting Window",
       disabled: false,
-      helper: "You may enter early, complete precheck, read instructions, and wait in the Waiting window.",
+      helper: "You may enter early, complete precheck, read instructions, and wait in the waiting window.",
     };
   }
+
   return {
     mode: "waiting",
     cta: "Not Available",
@@ -270,6 +333,7 @@ function getCardState(exam, pendingRequest) {
     helper: "This assessment is not available right now.",
   };
 }
+
 function getStatusMeta(status, examStatus, pendingRequest, t) {
   const s = toUpper(status);
   const e = toUpper(examStatus);
@@ -1600,6 +1664,28 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
     return () => clearInterval(id);
   }, []);
 
+  const reconcileAssessment = useCallback(
+    async (item) => {
+      if (!item?.assessmentid) return item;
+
+      try {
+        const response = await axios.get(
+          `${API}/api/assessments/${item.assessmentid}`,
+          { headers }
+        );
+        const latest = normalizeItem(response.data);
+        return latest ? { ...item, ...latest } : item;
+      } catch (reconcileError) {
+        console.warn(
+          `Could not reconcile assessment ${item.assessmentid}:`,
+          reconcileError
+        );
+        return item;
+      }
+    },
+    [headers]
+  );
+
   const fetchAssessments = useCallback(
     async (silent = false) => {
       if (!accessToken) {
@@ -1612,9 +1698,17 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
       setError("");
       try {
         const res = await axios.get(`${API}/api/exams/candidate/upcoming`, { headers });
-        const rows = Array.isArray(res.data)
-          ? res.data.map(normalizeItem).filter(Boolean).filter((item) => item.assessmentid || item.examid)
+        const baseRows = Array.isArray(res.data)
+          ? res.data
+              .map(normalizeItem)
+              .filter(Boolean)
+              .filter((item) => item.assessmentid || item.examid)
           : [];
+
+        const rows = await Promise.all(
+          baseRows.map((item) => reconcileAssessment(item))
+        );
+
         setAssessments(rows);
         setPendingRequestsByAssessment((prev) => {
           const next = {};
@@ -1657,7 +1751,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
         setRefreshing(false);
       }
     },
-    [accessToken, headers, user]
+    [accessToken, headers, user, reconcileAssessment]
   );
 
   useEffect(() => {

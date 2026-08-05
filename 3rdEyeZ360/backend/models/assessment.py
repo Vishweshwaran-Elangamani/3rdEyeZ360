@@ -21,6 +21,16 @@ class AssessmentModel(BaseModel):
     credibility_score: int = Field(default=100, ge=0, le=100)
     integrity_score: int = Field(default=100, ge=0, le=100)
     threshold_reached: bool = False
+
+    has_entered_exam: bool = False
+    requires_reentry_approval: bool = False
+    reentry_approval_consumed: bool = False
+    active_session_id: Optional[str] = None
+    last_heartbeat_at: Optional[datetime] = None
+    interrupted_at: Optional[datetime] = None
+    interruption_reason: Optional[str] = None
+    interruption_source: Optional[str] = None
+
     re_entry_count: int = Field(default=0, ge=0)
     final_status: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

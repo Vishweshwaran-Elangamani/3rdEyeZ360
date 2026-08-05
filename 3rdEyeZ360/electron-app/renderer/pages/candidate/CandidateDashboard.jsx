@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
+import useExamStore from "../../store/examStore";
 
 const API = "http://localhost:3000";
 const POLL_INTERVAL = 6000;
@@ -577,27 +578,119 @@ function LogoutButton({ onLogout, theme }) {
   const [loading, setLoading] = useState(false);
   const [hover, setHover] = useState(false);
   const t = THEMES[theme];
-  const handleLogout = async () => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      if (typeof onLogout === "function") {
-        await onLogout();
-        return;
+
+  const cleanupAssessmentSession = async () => {
+    const electronAPI = window.electronAPI;
+
+    if (!electronAPI) {
+      return;
+    }
+
+    const cleanupOperations = [
+      {
+        name: "stopCapture",
+        execute: () => electronAPI.stopCapture?.(),
+      },
+      {
+        name: "closeBrowser",
+        execute: () => electronAPI.closeBrowser?.(),
+      },
+      {
+        name: "disableLockdown",
+        execute: () => electronAPI.disableLockdown?.(),
+      },
+      {
+        name: "setClosable",
+        execute: () => electronAPI.setClosable?.(true),
+      },
+    ];
+
+    for (const operation of cleanupOperations) {
+      try {
+        const result = await operation.execute();
+
+        if (result && result.success === false) {
+          console.warn(
+            `${operation.name} returned an unsuccessful result:`,
+            result.error
+          );
+        }
+      } catch (error) {
+        console.warn(`${operation.name} cleanup failed:`, error);
       }
-      const { refreshToken, clearAuth } = useAuthStore.getState();
+    }
+  };
+
+const clearLocalSession = () => {
+  try {
+    /*
+     * Reset the in-memory stores before navigating to the login page.
+     * Removing localStorage alone does not clear the currently loaded
+     * Zustand state.
+     */
+    useExamStore.getState().reset?.();
+    useAuthStore.getState().clearAuth?.();
+
+    localStorage.removeItem("app-screen");
+    localStorage.removeItem("auth-storage");
+    localStorage.removeItem("exam-storage");
+
+    sessionStorage.removeItem("app-screen");
+    sessionStorage.removeItem("auth-storage");
+    sessionStorage.removeItem("exam-storage");
+  } catch (error) {
+    console.warn("Local session cleanup failed:", error);
+  }
+};
+
+  const handleLogout = async () => {
+    if (loading) {
+      return;
+    }
+
+    setLoading(true);
+
+    const { refreshToken } = useAuthStore.getState();
+
+    try {
+      /*
+       * This must happen before changing the React screen.
+       * BrowserView is an Electron-native layer and survives React navigation
+       * unless it is explicitly destroyed.
+       */
+      await cleanupAssessmentSession();
+
       if (refreshToken) {
         try {
-          await axios.post(`${API}/api/auth/logout`, { refreshtoken: refreshToken });
-        } catch (e) {
-          console.log("Logout API failed, clearing local session anyway", e);
+          await axios.post(`${API}/api/auth/logout`, {
+            refreshtoken: refreshToken,
+          });
+        } catch (error) {
+          console.warn(
+            "Logout API failed. The local session will still be cleared.",
+            error
+          );
         }
       }
-      clearAuth?.();
     } finally {
+      /*
+       * Clear the local session even when the backend logout request or an
+       * Electron cleanup operation fails.
+       */
+      clearLocalSession();
+
+      try {
+        if (typeof onLogout === "function") {
+          await onLogout();
+        }
+      } catch (error) {
+        console.error("Parent logout navigation failed:", error);
+      }
+
       setLoading(false);
     }
   };
+
   return (
     <button
       onClick={handleLogout}
@@ -618,26 +711,40 @@ function LogoutButton({ onLogout, theme }) {
         justifyContent: "center",
         color: hover ? t.danger : t.textSecondary,
         transition: "all 0.3s ease",
+        opacity: loading ? 0.65 : 1,
       }}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{
-          transform: hover ? "translateX(2px)" : "translateX(0)",
-          transition: "transform 0.3s ease",
-        }}
-      >
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-        <polyline points="16 17 21 12 16 7" />
-        <line x1="21" y1="12" x2="9" y2="12" />
-      </svg>
+      {loading ? (
+        <span
+          style={{
+            width: 15,
+            height: 15,
+            border: "2px solid currentColor",
+            borderTopColor: "transparent",
+            borderRadius: "50%",
+            animation: "spin 0.7s linear infinite",
+          }}
+        />
+      ) : (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            transform: hover ? "translateX(2px)" : "translateX(0)",
+            transition: "transform 0.3s ease",
+          }}
+        >
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+      )}
     </button>
   );
 }
@@ -1392,6 +1499,64 @@ function RequestModal({ open, exam, reason, onChangeReason, onClose, onSubmit, s
 
 export default function CandidateDashboard({ onEnterExam, onLogout }) {
   const { user, accessToken } = useAuthStore();
+  useEffect(() => {
+  let cancelled = false;
+
+  const cleanupOrphanedAssessmentSession = async () => {
+    const electronAPI = window.electronAPI;
+
+    if (!electronAPI || cancelled) {
+      return;
+    }
+
+    const cleanupOperations = [
+      {
+        name: "stopCapture",
+        execute: () => electronAPI.stopCapture?.(),
+      },
+      {
+        name: "closeBrowser",
+        execute: () => electronAPI.closeBrowser?.(),
+      },
+      {
+        name: "disableLockdown",
+        execute: () => electronAPI.disableLockdown?.(),
+      },
+      {
+        name: "setClosable",
+        execute: () => electronAPI.setClosable?.(true),
+      },
+    ];
+
+    for (const operation of cleanupOperations) {
+      if (cancelled) {
+        return;
+      }
+
+      try {
+        const result = await operation.execute();
+
+        if (result && result.success === false) {
+          console.warn(
+            `${operation.name} dashboard cleanup was unsuccessful:`,
+            result.error
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `${operation.name} dashboard safety cleanup failed:`,
+          error
+        );
+      }
+    }
+  };
+
+  cleanupOrphanedAssessmentSession();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
   const [theme, setTheme] = useState(() => {
     try {

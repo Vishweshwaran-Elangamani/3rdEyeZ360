@@ -432,13 +432,50 @@ function App() {
     }
   }, []);
 
-  const handleLogout = useCallback(async () => {
-    if (isLoggingOutRef.current) return;
-    isLoggingOutRef.current = true;
-    setIsLoggingOut(true);
-    await cleanupElectron();
-    resetToLogin();
-  }, [cleanupElectron, resetToLogin]);
+const handleLogout = useCallback(async () => {
+  if (isLoggingOutRef.current) return;
+
+  isLoggingOutRef.current = true;
+  bootstrapDoneRef.current = false;
+
+  /*
+   * Remove the assessment React page immediately.
+   */
+  setIsLoggingOut(true);
+  setScreen("login");
+  screenRef.current = "login";
+
+  /*
+   * Destroy the Electron assessment resources before clearing auth.
+   */
+  await cleanupElectron();
+
+  disconnectSocket();
+
+  useExamStore.getState().clearExam?.();
+  useExamStore.getState().reset?.();
+
+  examRef.current = null;
+  assessmentRef.current = null;
+
+  try {
+    localStorage.removeItem("app-screen");
+    localStorage.removeItem("auth-storage");
+    localStorage.removeItem("exam-storage");
+
+    sessionStorage.removeItem("app-screen");
+    sessionStorage.removeItem("auth-storage");
+    sessionStorage.removeItem("exam-storage");
+  } catch (error) {
+    console.warn("Unable to clear logout state:", error);
+  }
+
+  useAuthStore.getState().clearAuth?.();
+
+  setBootstrapping(false);
+  setIsLoggingOut(false);
+  isLoggingOutRef.current = false;
+}, [cleanupElectron]);
 
   const fetchCandidateUpcoming = useCallback(async () => {
     if (!accessToken) return [];
@@ -524,15 +561,6 @@ function App() {
     return { assessment: liveAssessment, exam: liveExam, merged };
   }, [fetchLiveAssessment, fetchLiveExam, setAssessment, setExam]);
 
-  const routeFromBootstrapState = useCallback((merged) => {
-    if (!merged) return "candidate-dashboard";
-    if (isTerminalAssessmentState(merged) || isTerminalExamState(merged)) return "candidate-dashboard";
-    if (REJECTED_ENTRY_STATUSES.has(getAssessmentStatus(merged))) return "candidate-dashboard";
-    if (getAssessmentStatus(merged) === "PAUSED") return "exam";
-    if (canGoDirectToExam(merged)) return "exam";
-    if (shouldWait(merged)) return "wait";
-    return "candidate-dashboard";
-  }, []);
 
   const routeFromLiveState = useCallback((merged, currentScreen) => {
     if (!merged) return "candidate-dashboard";
@@ -570,88 +598,194 @@ function App() {
   }, []);
 
   const handleLogin = useCallback(
-    async (loggedUser) => {
-      disconnectSocket();
-      clearExam?.();
-      reset?.();
-      bootstrapDoneRef.current = false;
+  async (loggedUser) => {
+    /*
+     * Block bootstrap routing while login routing is being performed.
+     */
+    bootstrapDoneRef.current = false;
+    isLoggingOutRef.current = false;
 
-      if (loggedUser.role === "Admin") {
-        setScreen("admin");
-        setBootstrapping(false);
-        return;
-      }
+    setBootstrapping(true);
 
-      if (loggedUser.role === "Examiner") {
-        setScreen("examiner");
-        setBootstrapping(false);
-        return;
-      }
+    /*
+     * Remove any old assessment browser and capture session before rendering
+     * the newly authenticated workspace.
+     */
+    await cleanupElectron();
 
-      const state = await loadPrimaryCandidateState();
-      if (isLoggingOutRef.current) return;
+    disconnectSocket();
 
-      setScreen(routeFromBootstrapState(state.merged));
+    useExamStore.getState().clearExam?.();
+    useExamStore.getState().reset?.();
+
+    examRef.current = null;
+    assessmentRef.current = null;
+
+    try {
+      localStorage.removeItem("app-screen");
+      localStorage.removeItem("exam-storage");
+
+      sessionStorage.removeItem("app-screen");
+      sessionStorage.removeItem("exam-storage");
+    } catch (error) {
+      console.warn("Unable to clear previous assessment state:", error);
+    }
+
+    const role = toUpper(loggedUser?.role);
+
+    if (role === "ADMIN") {
+      setScreen("admin");
+      screenRef.current = "admin";
       setBootstrapping(false);
       bootstrapDoneRef.current = true;
-    },
-    [clearExam, reset, loadPrimaryCandidateState, routeFromBootstrapState]
-  );
+      return;
+    }
 
-  useEffect(() => {
-    document.body.style.margin = 0;
-    document.body.style.background = "#0b1114";
-    document.documentElement.style.background = "#0b1114";
-  }, []);
+    if (role === "EXAMINER") {
+      setScreen("examiner");
+      screenRef.current = "examiner";
+      setBootstrapping(false);
+      bootstrapDoneRef.current = true;
+      return;
+    }
 
-  useEffect(() => {
-    if (!hasHydrated || isLoggingOut) return;
+    if (role === "CANDIDATE") {
+      /*
+       * A fresh candidate login must always open the dashboard.
+       * The candidate can explicitly resume an ongoing assessment from there.
+       */
+      setScreen("candidate-dashboard");
+      screenRef.current = "candidate-dashboard";
 
-    const bootstrap = async () => {
       try {
-        if (!user || !accessToken) {
+        localStorage.setItem("app-screen", "candidate-dashboard");
+      } catch (error) {
+        console.warn("Unable to persist dashboard screen:", error);
+      }
+
+      setBootstrapping(false);
+      bootstrapDoneRef.current = true;
+      return;
+    }
+
+    setScreen("login");
+    screenRef.current = "login";
+    setBootstrapping(false);
+  },
+  [cleanupElectron]
+);
+
+  useEffect(() => {
+  if (!hasHydrated || isLoggingOut) return;
+
+  let cancelled = false;
+
+  const bootstrap = async () => {
+    try {
+      if (!user || !accessToken) {
+        if (!cancelled) {
           setScreen("login");
+          screenRef.current = "login";
           setBootstrapping(false);
-          return;
+          bootstrapDoneRef.current = false;
         }
 
-        if (user.role === "Admin") {
+        return;
+      }
+
+      const role = toUpper(user.role);
+
+      if (role === "ADMIN") {
+        if (!cancelled) {
           setScreen("admin");
-          setBootstrapping(false);
-          return;
-        }
-
-        if (user.role === "Examiner") {
-          setScreen("examiner");
-          setBootstrapping(false);
-          return;
-        }
-
-        if (user.role === "Candidate") {
-          const state = await loadPrimaryCandidateState();
-          if (isLoggingOutRef.current) return;
-
-          setScreen((prev) => {
-            if (FLOW_SCREENS.has(prev) && prev !== "login") return prev;
-            return routeFromBootstrapState(state.merged);
-          });
-
+          screenRef.current = "admin";
           setBootstrapping(false);
           bootstrapDoneRef.current = true;
+        }
+
+        return;
+      }
+
+      if (role === "EXAMINER") {
+        if (!cancelled) {
+          setScreen("examiner");
+          screenRef.current = "examiner";
+          setBootstrapping(false);
+          bootstrapDoneRef.current = true;
+        }
+
+        return;
+      }
+
+      if (role === "CANDIDATE") {
+        /*
+         * Never automatically restore "wait" or "exam" when authentication is
+         * restored or after a candidate logs in.
+         */
+        await cleanupElectron();
+
+        if (cancelled || isLoggingOutRef.current) {
           return;
         }
 
-        setScreen("login");
+        useExamStore.getState().clearExam?.();
+        useExamStore.getState().reset?.();
+
+        examRef.current = null;
+        assessmentRef.current = null;
+
+        setScreen("candidate-dashboard");
+        screenRef.current = "candidate-dashboard";
+
+        try {
+          localStorage.setItem("app-screen", "candidate-dashboard");
+          localStorage.removeItem("exam-storage");
+
+          sessionStorage.setItem(
+            "app-screen",
+            "candidate-dashboard"
+          );
+          sessionStorage.removeItem("exam-storage");
+        } catch (error) {
+          console.warn(
+            "Unable to clear bootstrap assessment state:",
+            error
+          );
+        }
+
         setBootstrapping(false);
-      } catch (e) {
-        console.log("Bootstrap failed", e);
+        bootstrapDoneRef.current = true;
+        return;
+      }
+
+      if (!cancelled) {
+        setScreen("login");
+        screenRef.current = "login";
+        setBootstrapping(false);
+        bootstrapDoneRef.current = false;
+      }
+    } catch (error) {
+      console.log("Bootstrap failed", error);
+
+      if (!cancelled) {
         resetToLogin();
       }
-    };
+    }
+  };
 
-    bootstrap();
-  }, [hasHydrated, isLoggingOut, user, accessToken, loadPrimaryCandidateState, routeFromBootstrapState, resetToLogin]);
+  bootstrap();
 
+  return () => {
+    cancelled = true;
+  };
+}, [
+  hasHydrated,
+  isLoggingOut,
+  user,
+  accessToken,
+  cleanupElectron,
+  resetToLogin,
+]);
   useEffect(() => {
     if (!bootstrapDoneRef.current) return;
     if (!accessToken || !user || user.role !== "Candidate") return;
@@ -789,7 +923,25 @@ function App() {
   if (!hasHydrated) return <SplashScreen text="Restoring session..." />;
   if (isLoggingOut) return <SplashScreen text="Signing out..." />;
   if (bootstrapping) return <SplashScreen text="Preparing application..." />;
+/*
+ * Never render a candidate flow screen without both current assessment
+ * objects. This prevents one-frame rendering from stale screen state.
+ */
+if (
+  ["precheck", "instructions", "wait", "exam"].includes(screen) &&
+  (!currentExam || !currentAssessment)
+) {
+  if (user && accessToken && toUpper(user.role) === "CANDIDATE") {
+    return (
+      <CandidateDashboard
+        onEnterExam={handleEnterExam}
+        onLogout={handleLogout}
+      />
+    );
+  }
 
+  return <Login onLogin={handleLogin} />;
+}
   if (screen === "login") return <Login onLogin={handleLogin} />;
   if (screen === "admin") return <AdminPanel />;
   if (screen === "examiner") return <ExaminerDashboard />;

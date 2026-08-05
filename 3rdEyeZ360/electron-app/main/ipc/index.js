@@ -91,14 +91,28 @@ function registerIpcHandlers(mainWindow) {
     }
   });
 
-  ipcMain.handle("close-browser", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return { success: false, error: "Main window unavailable" };
-    }
-
+ ipcMain.handle("close-browser", () => {
+  try {
+    /*
+     * destroyBrowserView can still clear the stored view even when the
+     * renderer is navigating away.
+     */
     destroyBrowserView(mainWindow);
-    return { success: true };
-  });
+
+    return {
+      success: true,
+    };
+  } catch (error) {
+    console.log("[ipc] close-browser error:", error);
+
+    return {
+      success: false,
+      error:
+        error?.message ||
+        "Failed to destroy assessment BrowserView",
+    };
+  }
+});
 
   ipcMain.handle("navigate-browser", (_event, url) => {
     const ok = navigateTo(url);

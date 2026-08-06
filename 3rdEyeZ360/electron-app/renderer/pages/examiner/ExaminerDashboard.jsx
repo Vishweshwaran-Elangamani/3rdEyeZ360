@@ -5,6 +5,8 @@ import { useSocket } from "../../hooks/useSocket";
 import ChatWindow from "../../components/common/ChatWindow";
 import CreateExam from "./CreateExam";
 import AssignCandidates from "./AssignCandidates";
+import CandidateVideoTile from "../../components/CandidateVideoTile";
+import useExaminerWebRTC from "../../services/examinerWebRTC";
 
 const API = "http://localhost:3000";
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
@@ -680,56 +682,18 @@ function MonitorTabButton({ active, label, count, onClick, theme, icon }) {
   );
 }
 
-function CandidateTile({ c, live, isActive, onClick, theme }) {
-  const t = THEMES[theme];
-  const color = statusColor(c.status, t);
-  const isAlert = !!live?.latestViolation;
-  const risk = Number(c.riskscore) || 0;
-  const cred = Number(c.credibilityscore) || 0;
+function CandidateTile({ c, stream, connectionState, isActive, onClick, theme }) {
   return (
-    <div
+    <CandidateVideoTile
+      candidate={c}
+      stream={stream}
+      connectionState={connectionState}
+      selected={isActive}
       onClick={onClick}
-      style={{
-        background: isActive ? t.cardSurfaceHover : t.cardSurface, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-        border: `1.5px solid ${isAlert ? t.danger : isActive ? t.accent : t.border}`, borderRadius: 16, padding: 15, cursor: "pointer",
-        transition: "all 0.2s ease", display: "flex", flexDirection: "column", gap: 10, position: "relative", overflow: "hidden",
-        boxShadow: isActive ? `0 0 0 3px ${t.accent}22` : isAlert ? `0 0 0 3px ${t.danger}22` : "none",
-      }}
-    >
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: color, opacity: 0.8 }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: `${color}22`, border: `1px solid ${color}55`, color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif", flexShrink: 0 }}>
-          {String(c.candidatename || "C").charAt(0).toUpperCase()}
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: t.textPrimary }}>{c.candidatename}</div>
-          <div style={{ fontSize: 10.5, color, fontWeight: 700, letterSpacing: 0.2, marginTop: 1 }}>{formatStatus(c.status)}</div>
-        </div>
-        <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flexShrink: 0, boxShadow: `0 0 7px ${color}` }} />
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
-        {[
-          ["VIOL", c.violationcount, t.danger],
-          ["RISK", risk, t.warning],
-          ["CRED", `${cred}`, t.accent],
-        ].map(([k, v, col]) => (
-          <div key={k} style={{ background: t.surfaceGlass, border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 4px", textAlign: "center" }}>
-            <div style={{ fontSize: 8, color: t.textMuted, fontWeight: 800, letterSpacing: 0.4 }}>{k}</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: "'Space Grotesk', sans-serif", marginTop: 2 }}>{v}</div>
-          </div>
-        ))}
-      </div>
-      {isAlert && (
-        <div style={{ fontSize: 10, background: t.dangerBg, borderRadius: 7, padding: "5px 9px", color: t.danger, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: t.danger, animation: "pulseDot 1.2s ease-in-out infinite" }} />
-          {live.latestViolation?.type || "Violation alert"}
-        </div>
-      )}
-    </div>
+      theme={THEMES[theme]}
+    />
   );
 }
-
-/* ============= Global CSS ============= */
 
 function GlobalStyles({ theme }) {
   const t = THEMES[theme];
@@ -830,6 +794,12 @@ export default function ExaminerDashboard() {
   }, []);
 
   const selectedExamId = selectedExam?.examid ?? selectedExam?.exam_id ?? null;
+  const examinerId = user?.userid || user?.user_id;
+  const {
+    streams: candidateCameraStreams,
+    states: candidateCameraStates,
+    requestStream: requestCandidateCamera,
+  } = useExaminerWebRTC(socket, selectedExamId, examinerId);
   const normalizedExamStatus = String(selectedExam?.status || "").toUpperCase();
   const isExamRunning = normalizedExamStatus === "RUNNING";
   const isExamCompleted = normalizedExamStatus === "COMPLETED";
@@ -1003,6 +973,18 @@ export default function ExaminerDashboard() {
     const hasPending = Array.isArray(requests) && requests.some((r) => String(r.status).toUpperCase() === "PENDING");
     setMonitorTab(hasPending ? "requests" : "grid");
   };
+
+  useEffect(() => {
+    if (!socket || !selectedExamId || candidates.length === 0) return;
+    const timer = setTimeout(() => {
+      candidates.forEach((candidate) => {
+        if (candidate?.candidateid) {
+          requestCandidateCamera(candidate.candidateid, candidate.assessmentid);
+        }
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [socket, selectedExamId, candidates, requestCandidateCamera]);
 
   const startExam = async () => {
     if (!selectedExamId || startingExam || isExamRunning || isExamCompleted) return;
@@ -1518,9 +1500,14 @@ export default function ExaminerDashboard() {
                     <CandidateTile
                       key={c.candidateid}
                       c={c}
-                      live={liveData[c.candidateid]}
+                      stream={candidateCameraStreams[String(c.candidateid)]}
+                      connectionState={candidateCameraStates[String(c.candidateid)]}
                       isActive={c.candidateid === selectedCandidate?.candidateid}
-                      onClick={() => { setSelectedCandidate(c); loadViolations(c.candidateid, selectedExamId); }}
+                      onClick={() => {
+                        setSelectedCandidate(c);
+                        loadViolations(c.candidateid, selectedExamId);
+                        requestCandidateCamera(c.candidateid, c.assessmentid);
+                      }}
                       theme={theme}
                     />
                   ))

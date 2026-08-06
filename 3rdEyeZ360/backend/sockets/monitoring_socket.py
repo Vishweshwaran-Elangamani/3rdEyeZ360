@@ -282,3 +282,225 @@ async def emit_assessment_update(examid, payload=None):
         data.update(payload)
 
     await sio.emit("assessmentupdated", data, room=f"exam_{examid}_examiners")
+# ---------------- Compatibility aliases for renderer event names ----------------
+
+def _normalized_socket_payload(data):
+    payload = dict(data or {})
+    payload["examid"] = payload.get("examid") or payload.get("exam_id")
+    payload["assessmentid"] = payload.get("assessmentid") or payload.get("assessment_id")
+    payload["candidateid"] = payload.get("candidateid") or payload.get("candidate_id")
+    return payload
+
+
+@sio.on("join_exam")
+async def join_exam(sid, data):
+    await joinexam(sid, _normalized_socket_payload(data))
+
+
+@sio.on("start_exam")
+async def start_exam(sid, data):
+    await startexam(sid, _normalized_socket_payload(data))
+
+
+@sio.on("examiner_control")
+async def examiner_control(sid, data):
+    await examinercontrol(sid, _normalized_socket_payload(data))
+
+
+@sio.on("broadcast_message")
+async def broadcast_message(sid, data):
+    await broadcastmessage(sid, _normalized_socket_payload(data))
+
+
+@sio.on("reentry_decision")
+async def reentry_decision(sid, data):
+    await reentrydecision(sid, _normalized_socket_payload(data))
+
+# ---------------- WebRTC live-camera signaling ----------------
+
+def _socket_value(data, *keys):
+    for key in keys:
+        value = (data or {}).get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+async def _authorize_webrtc(sid, data):
+    user = connected_users.get(sid)
+    if not user:
+        return None, None, None
+
+    examid = _socket_value(data, "examid", "exam_id")
+    candidateid = _socket_value(data, "candidateid", "candidate_id")
+    if not examid or not candidateid:
+        return None, None, None
+
+    db = get_db()
+    exam = await db.exams.find_one({
+        "$or": [{"examid": examid}, {"exam_id": examid}]
+    })
+    assessment = await db.assessments.find_one({
+        "$and": [
+            {"$or": [{"examid": examid}, {"exam_id": examid}]},
+            {"$or": [
+                {"candidateid": candidateid},
+                {"candidate_id": candidateid},
+            ]},
+        ]
+    })
+    if not exam or not assessment:
+        return None, None, None
+
+    role = user.get("role")
+    userid = user.get("userid") or user.get("user_id")
+    examinerid = exam.get("examinerid") or exam.get("examiner_id")
+
+    if role == "Candidate" and str(userid) != str(candidateid):
+        return None, None, None
+    if role == "Examiner" and str(userid) != str(examinerid):
+        return None, None, None
+    if role not in ("Candidate", "Examiner", "Admin"):
+        return None, None, None
+
+    return user, examid, candidateid
+
+
+@sio.on("webrtc_camera_ready")
+async def webrtc_camera_ready(sid, data):
+    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    if not user or user.get("role") != "Candidate":
+        return
+
+    await sio.enter_room(sid, f"candidate_{candidateid}")
+    await sio.enter_room(sid, f"exam_{examid}_all")
+
+    payload = dict(data or {})
+    payload.update({
+        "examid": examid,
+        "candidateid": candidateid,
+        "status": "ready" if payload.get("camera") else "closed",
+        "timestamp": _utc_iso(),
+    })
+    await sio.emit(
+        "webrtc_camera_status",
+        payload,
+        room=f"exam_{examid}_examiners",
+    )
+
+
+@sio.on("webrtc_request_stream")
+async def webrtc_request_stream(sid, data):
+    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    if not user or user.get("role") not in ("Examiner", "Admin"):
+        return
+
+    await sio.enter_room(sid, f"exam_{examid}_examiners")
+    payload = dict(data or {})
+    payload.update({
+        "examid": examid,
+        "candidateid": candidateid,
+        "examinerid": user.get("userid") or user.get("user_id"),
+    })
+    await sio.emit(
+        "webrtc_request_stream",
+        payload,
+        room=f"candidate_{candidateid}",
+    )
+
+
+@sio.on("webrtc_offer")
+async def webrtc_offer(sid, data):
+    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    if not user or user.get("role") != "Candidate":
+        return
+
+    payload = dict(data or {})
+    payload.update({"examid": examid, "candidateid": candidateid})
+    await sio.emit(
+        "webrtc_offer",
+        payload,
+        room=f"exam_{examid}_examiners",
+    )
+
+
+@sio.on("webrtc_answer")
+async def webrtc_answer(sid, data):
+    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    if not user or user.get("role") not in ("Examiner", "Admin"):
+        return
+
+    payload = dict(data or {})
+    payload.update({
+        "examid": examid,
+        "candidateid": candidateid,
+        "examinerid": user.get("userid") or user.get("user_id"),
+    })
+    await sio.emit(
+        "webrtc_answer",
+        payload,
+        room=f"candidate_{candidateid}",
+    )
+
+
+@sio.on("webrtc_ice_candidate")
+async def webrtc_ice_candidate(sid, data):
+    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    if not user:
+        return
+
+    payload = dict(data or {})
+    payload.update({"examid": examid, "candidateid": candidateid})
+    target = payload.get("target")
+
+    if user.get("role") == "Candidate" and target == "examiner":
+        await sio.emit(
+            "webrtc_ice_candidate",
+            payload,
+            room=f"exam_{examid}_examiners",
+        )
+    elif user.get("role") in ("Examiner", "Admin") and target == "candidate":
+        payload["examinerid"] = user.get("userid") or user.get("user_id")
+        await sio.emit(
+            "webrtc_ice_candidate",
+            payload,
+            room=f"candidate_{candidateid}",
+        )
+
+
+@sio.on("webrtc_camera_status")
+async def webrtc_camera_status(sid, data):
+    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    if not user or user.get("role") != "Candidate":
+        return
+
+    payload = dict(data or {})
+    payload.update({
+        "examid": examid,
+        "candidateid": candidateid,
+        "timestamp": _utc_iso(),
+    })
+    await sio.emit(
+        "webrtc_camera_status",
+        payload,
+        room=f"exam_{examid}_examiners",
+    )
+
+
+@sio.on("webrtc_stop_stream")
+async def webrtc_stop_stream(sid, data):
+    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    if not user or user.get("role") not in ("Examiner", "Admin"):
+        return
+
+    payload = dict(data or {})
+    payload.update({
+        "examid": examid,
+        "candidateid": candidateid,
+        "examinerid": user.get("userid") or user.get("user_id"),
+    })
+    await sio.emit(
+        "webrtc_stop_stream",
+        payload,
+        room=f"candidate_{candidateid}",
+    )

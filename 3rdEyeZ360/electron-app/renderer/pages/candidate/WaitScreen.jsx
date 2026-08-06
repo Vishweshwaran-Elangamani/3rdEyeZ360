@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useExamStore from "../../store/examStore";
+import useSocket from "../../hooks/useSocket";
+import { startCandidateWebRTC } from "../../services/candidateWebRTC";
 
 const API = "http://localhost:3000";
 const POLL_INTERVAL = 3000;
@@ -686,7 +688,8 @@ export default function WaitScreen({
   const { theme, toggleTheme } = useTheme();
   const t = THEMES[theme];
 
-  const { accessToken } = useAuthStore();
+  const { accessToken, user } = useAuthStore();
+  const socket = useSocket(accessToken);
   const waitingSessionId = useExamStore((state) => state.waitingSessionId);
 
   const [now, setNow] = useState(new Date());
@@ -701,6 +704,32 @@ export default function WaitScreen({
   const launchedRef = useRef(false);
   const finishedRef = useRef(false);
   const returningRef = useRef(false);
+
+  useEffect(() => {
+    const candidateId = user?.userid || user?.user_id;
+    const examId = exam?.examid || exam?.exam_id || assessment?.examid || assessment?.exam_id;
+    const assessmentId = assessment?.assessmentid || assessment?.assessment_id;
+    if (!socket || !candidateId || !examId) return;
+
+    let cancelled = false;
+    startCandidateWebRTC({
+      socket,
+      examid: examId,
+      assessmentid: assessmentId,
+      candidateid: candidateId,
+    }).catch((error) => {
+      if (!cancelled) {
+        console.error("Unable to start live examiner camera stream", error);
+        setActionMsg(error?.message || "Camera live stream could not be started.");
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      // The WebRTC service is intentionally kept alive while WaitScreen
+      // transitions to ActiveExam. It stops on socket disconnect/logout.
+    };
+  }, [socket, user, exam, assessment]);
 
   useEffect(() => {
     setLiveExam(normalizeExam(exam));

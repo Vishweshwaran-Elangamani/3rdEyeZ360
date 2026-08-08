@@ -212,7 +212,8 @@ function normalizeCandidate(c) {
     ...c,
     assessmentid: c.assessmentid ?? c.assessment_id ?? null,
     candidateid: c.candidateid ?? c.candidate_id ?? null,
-    candidatename: c.candidatename ?? c.candidate_name ?? c.name ?? "Candidate",
+    // Do not use c.name here. Assessment socket payloads use name for the exam name.
+    candidatename: c.candidatename ?? c.candidate_name ?? null,
     candidateemail: c.candidateemail ?? c.candidate_email ?? "",
     status: c.status ?? "ASSIGNED",
     violationcount: c.violationcount ?? c.violation_count ?? 0,
@@ -815,7 +816,8 @@ export default function ExaminerDashboard() {
       const res = await axios.get(`${API}/api/exams`, { headers });
       const rows = Array.isArray(res.data) ? res.data.map(normalizeExam) : [];
       setExams(rows);
-      if (selectedExamId) {
+      // Keep the selected exam stable while Create/Assign screens are open.
+      if (view === "monitor" && selectedExamId) {
         const latest = rows.find((x) => x.examid === selectedExamId);
         if (latest) setSelectedExam(latest);
       }
@@ -824,7 +826,7 @@ export default function ExaminerDashboard() {
     } finally {
       setLoadingExams(false);
     }
-  }, [headers, selectedExamId]);
+  }, [headers, selectedExamId, view]);
 
   const loadExamById = useCallback(
     async (examId) => {
@@ -892,67 +894,135 @@ export default function ExaminerDashboard() {
   );
 
   useEffect(() => {
+    // Only the list view owns the exam-list refresh.
+    if (view !== "list") return;
     loadExams();
-  }, [loadExams, refreshTick]);
+  }, [view, loadExams, refreshTick]);
 
   useEffect(() => {
     if (view !== "monitor" || !selectedExamId) return;
+    // One initial snapshot only. All later changes arrive through Socket.IO.
     loadExamById(selectedExamId);
     loadCandidates(selectedExamId);
     loadReentryRequests(selectedExamId);
-    const poll = setInterval(() => {
-      loadExamById(selectedExamId);
-      loadCandidates(selectedExamId);
-      loadReentryRequests(selectedExamId);
-    }, 5000);
-    return () => clearInterval(poll);
   }, [view, selectedExamId, loadExamById, loadCandidates, loadReentryRequests]);
 
   useEffect(() => {
-    if (!socket || view !== "monitor" || !selectedExamId) return;
-    socket.emit("join_exam", { exam_id: selectedExamId, role: "Examiner" });
+    if (!socket) return;
 
-    const onCandidateUpdate = (data) => {
-      const candidateId = data?.candidate_id ?? data?.candidateid;
-      if (!candidateId) return;
-      setLiveData((prev) => ({ ...prev, [candidateId]: data }));
-      loadCandidates(selectedExamId);
+    const onExamCreated = (payload) => {
+      const next = normalizeExam(payload?.exam || payload);
+      if (!next?.examid) return;
+      setExams((previous) =>
+        previous.some((item) => item.examid === next.examid)
+          ? previous.map((item) => item.examid === next.examid ? { ...item, ...next } : item)
+          : [next, ...previous]
+      );
     };
+
+    const onExamUpdated = (payload) => {
+      const next = normalizeExam(payload?.exam || payload);
+      if (!next?.examid) return;
+      setExams((previous) =>
+        previous.map((item) => item.examid === next.examid ? { ...item, ...next } : item)
+      );
+      if (view === "monitor" && next.examid === selectedExamId) {
+        setSelectedExam((previous) => ({ ...(previous || {}), ...next }));
+      }
+    };
+
+    const onCandidateUpdate = (payload) => {
+      const candidateId = payload?.candidateid ?? payload?.candidate_id;
+      if (!candidateId) return;
+      setLiveData((previous) => ({
+        ...previous,
+        [candidateId]: { ...(previous[candidateId] || {}), ...payload },
+      }));
+    };
+
+    const onAssessmentUpdated = (payload) => {
+      const next = normalizeCandidate(payload?.assessment || payload);
+      const payloadExamId = payload?.examid ?? payload?.exam_id ?? next?.examid;
+      if (selectedExamId && payloadExamId && String(payloadExamId) !== String(selectedExamId)) return;
+      if (!next?.assessmentid) return;
+      setCandidates((previous) => {
+        const exists = previous.some((item) => item.assessmentid === next.assessmentid);
+        if (!exists) return [...previous, next];
+        return previous.map((item) =>
+          item.assessmentid === next.assessmentid
+            ? {
+                ...item,
+                ...next,
+                // Assessment events contain the exam name in `name`. Preserve the
+                // candidate identity obtained from the initial assessment list.
+                candidatename: next.candidatename || item.candidatename,
+                candidateemail: next.candidateemail || item.candidateemail,
+              }
+            : item
+        );
+      });
+    };
+
+    const onAssessmentRemoved = (payload) => {
+      const assessmentId = payload?.assessmentid ?? payload?.assessment_id;
+      setCandidates((previous) =>
+        previous.filter((item) => item.assessmentid !== assessmentId)
+      );
+    };
+
+    const onRequestCreated = (payload) => {
+      const next = normalizeRequest(payload?.request || payload);
+      if (!next?.requestid || (selectedExamId && next.examid !== selectedExamId)) return;
+      setReentryRequests((previous) =>
+        previous.some((item) => item.requestid === next.requestid)
+          ? previous
+          : [next, ...previous]
+      );
+    };
+
+    const onRequestReviewed = (payload) => {
+      const requestId = payload?.requestid ?? payload?.request_id;
+      setReentryRequests((previous) =>
+        previous.filter((item) => item.requestid !== requestId)
+      );
+      if (payload?.assessment) onAssessmentUpdated(payload.assessment);
+    };
+
     const onViolationAlert = ({ candidate_id, candidateid, violation }) => {
       const candidateId = candidate_id ?? candidateid;
       if (!candidateId) return;
-      setLiveData((prev) => ({
-        ...prev,
-        [candidateId]: { ...(prev[candidateId] || {}), latestViolation: violation },
+      setLiveData((previous) => ({
+        ...previous,
+        [candidateId]: { ...(previous[candidateId] || {}), latestViolation: violation },
       }));
     };
-    const onAssessmentUpdate = () => {
-      loadCandidates(selectedExamId);
-      loadReentryRequests(selectedExamId);
-    };
-    const onExamStarted = (payload) => {
-      const startedId = payload?.exam_id ?? payload?.examid;
-      if (startedId && startedId !== selectedExamId) return;
-      setActionMsg("Exam is now running");
-      setTimeout(() => setActionMsg(""), 4000);
-      loadExamById(selectedExamId);
-      loadCandidates(selectedExamId);
-      loadReentryRequests(selectedExamId);
-      setRefreshTick((v) => v + 1);
-    };
 
+    if (view === "monitor" && selectedExamId) {
+      socket.emit("join_exam", { examid: selectedExamId, role: "Examiner" });
+    }
+
+    socket.on("exam_created", onExamCreated);
+    socket.on("exam_updated", onExamUpdated);
     socket.on("candidate_update", onCandidateUpdate);
+    socket.on("assessment_created", onAssessmentUpdated);
+    socket.on("assessment_updated", onAssessmentUpdated);
+    socket.on("assessment_removed", onAssessmentRemoved);
+    socket.on("request_created", onRequestCreated);
+    socket.on("request_reviewed", onRequestReviewed);
     socket.on("violation_alert", onViolationAlert);
-    socket.on("assessment_updated", onAssessmentUpdate);
-    socket.on("exam_started", onExamStarted);
 
     return () => {
+      socket.off("exam_created", onExamCreated);
+      socket.off("exam_updated", onExamUpdated);
       socket.off("candidate_update", onCandidateUpdate);
+      socket.off("assessment_created", onAssessmentUpdated);
+      socket.off("assessment_updated", onAssessmentUpdated);
+      socket.off("assessment_removed", onAssessmentRemoved);
+      socket.off("request_created", onRequestCreated);
+      socket.off("request_reviewed", onRequestReviewed);
       socket.off("violation_alert", onViolationAlert);
-      socket.off("assessment_updated", onAssessmentUpdate);
-      socket.off("exam_started", onExamStarted);
     };
-  }, [socket, view, selectedExamId, loadCandidates, loadExamById, loadReentryRequests]);
+  }, [socket, view, selectedExamId]);
 
   const openMonitor = async (exam) => {
     const normalized = normalizeExam(exam);
@@ -974,17 +1044,66 @@ export default function ExaminerDashboard() {
     setMonitorTab(hasPending ? "requests" : "grid");
   };
 
+  const requestedCameraCandidatesRef = useRef(new Set());
+
+  useEffect(() => {
+    requestedCameraCandidatesRef.current.clear();
+  }, [selectedExamId]);
+
   useEffect(() => {
     if (!socket || !selectedExamId || candidates.length === 0) return;
-    const timer = setTimeout(() => {
+
+    const timer = window.setTimeout(() => {
       candidates.forEach((candidate) => {
-        if (candidate?.candidateid) {
-          requestCandidateCamera(candidate.candidateid, candidate.assessmentid);
+        const candidateId = candidate?.candidateid;
+        if (!candidateId) return;
+
+        const key = String(candidateId);
+        const stream = candidateCameraStreams[key];
+        const connectionState = candidateCameraStates[key];
+        const hasLiveVideo = Boolean(
+          stream
+            ?.getVideoTracks?.()
+            .some((track) => track.readyState === "live")
+        );
+        const connectionInProgress = [
+          "requesting",
+          "connecting",
+          "connected",
+          "completed",
+          "retrying",
+        ].includes(connectionState);
+
+        if (
+          hasLiveVideo ||
+          connectionInProgress ||
+          requestedCameraCandidatesRef.current.has(key)
+        ) {
+          return;
         }
+
+        requestedCameraCandidatesRef.current.add(key);
+        requestCandidateCamera(candidateId, candidate.assessmentid);
       });
     }, 300);
-    return () => clearTimeout(timer);
-  }, [socket, selectedExamId, candidates, requestCandidateCamera]);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    socket,
+    selectedExamId,
+    candidates,
+    candidateCameraStreams,
+    candidateCameraStates,
+    requestCandidateCamera,
+  ]);
+
+  useEffect(() => {
+    Object.entries(candidateCameraStates).forEach(([candidateId, state]) => {
+      if (["failed", "closed", "retrying"].includes(state)) {
+        requestedCameraCandidatesRef.current.delete(String(candidateId));
+      }
+    });
+  }, [candidateCameraStates]);
 
   const startExam = async () => {
     if (!selectedExamId || startingExam || isExamRunning || isExamCompleted) return;
@@ -1137,8 +1256,15 @@ export default function ExaminerDashboard() {
         onBack={() => setView("list")}
         onCreated={(newExam) => {
           const normalized = normalizeExam(newExam);
+          if (!normalized?.examid) return;
+          setExams((previous) =>
+            previous.some((item) => item.examid === normalized.examid)
+              ? previous.map((item) =>
+                  item.examid === normalized.examid ? normalized : item
+                )
+              : [normalized, ...previous]
+          );
           setSelectedExam(normalized);
-          loadExams();
           setView("assign");
         }}
       />
@@ -1150,8 +1276,7 @@ export default function ExaminerDashboard() {
       <AssignCandidates
         exam={selectedExam}
         onBack={() => {
-          loadExams();
-          if (selectedExamId) loadExamById(selectedExamId);
+          setSelectedExam(null);
           setView("list");
         }}
       />

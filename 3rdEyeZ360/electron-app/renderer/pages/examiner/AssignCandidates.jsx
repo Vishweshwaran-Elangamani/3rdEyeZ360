@@ -501,7 +501,7 @@ export default function AssignCandidates({ exam, onBack }) {
     setError("");
 
     try {
-      await axios.post(
+      const response = await axios.post(
         `${API}/api/exams/${examId}/assign`,
         {
           candidate_id: candidateId,
@@ -518,6 +518,13 @@ export default function AssignCandidates({ exam, onBack }) {
 
         return [...previous, candidateId];
       });
+
+      const assignment = response.data?.assessment || response.data;
+      if (assignment?.assessmentid || assignment?.assessment_id) {
+        window.dispatchEvent(
+          new CustomEvent("assessment-created", { detail: assignment })
+        );
+      }
 
       showResultModal("Candidate assigned successfully.", "success");
     } catch (requestError) {

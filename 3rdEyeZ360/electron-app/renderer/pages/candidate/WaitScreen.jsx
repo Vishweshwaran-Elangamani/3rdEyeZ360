@@ -6,7 +6,6 @@ import useSocket from "../../hooks/useSocket";
 import { startCandidateWebRTC } from "../../services/candidateWebRTC";
 
 const API = "http://localhost:3000";
-const POLL_INTERVAL = 3000;
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
 
 /* ============= Theme system ============= */
@@ -927,10 +926,54 @@ export default function WaitScreen({
   ]);
 
   useEffect(() => {
+    // Initial recovery snapshot only. Subsequent changes are pushed by Socket.IO.
     checkExamStatus();
-    const poll = setInterval(checkExamStatus, POLL_INTERVAL);
-    return () => clearInterval(poll);
   }, [checkExamStatus]);
+
+  useEffect(() => {
+    if (!socket || !examId) return;
+    socket.emit("join_exam", {
+      examid: examId,
+      assessmentid: assessmentId,
+      candidateid: user?.userid || user?.user_id,
+      role: "Candidate",
+    });
+
+    const applyExam = (payload) => {
+      const next = normalizeExam(payload?.exam || payload);
+      if (!next?.examid || String(next.examid) !== String(examId)) return;
+      setLiveExam((previous) => ({ ...(previous || {}), ...next }));
+      if (TERMINAL_EXAM_STATUSES.has(getExamStatus(next))) finishWaitingFlow();
+    };
+
+    const applyAssessment = async (payload) => {
+      const next = normalizeAssessment(payload?.assessment || payload);
+      if (!next?.assessmentid || String(next.assessmentid) !== String(assessmentId)) return;
+      setLiveAssessment((previous) => ({ ...(previous || {}), ...next }));
+      const status = getAssessmentStatus(next);
+      const finalStatus = getFinalStatus(next);
+      if (TERMINAL_ASSESSMENT_STATUSES.has(status) || TERMINAL_ASSESSMENT_STATUSES.has(finalStatus)) {
+        await finishWaitingFlow();
+      } else if (REJECTED_ENTRY_STATUSES.has(status)) {
+        setActionMsg("Your permission request was declined by the examiner.");
+        await returnToDashboardSafe();
+      } else if (getExamStatus(liveExam) === "RUNNING" && APPROVED_ENTRY_STATUSES.has(status) && waitingSessionId && !launchedRef.current) {
+        launchedRef.current = true;
+        onExamStart?.();
+      }
+    };
+
+    socket.on("exam_updated", applyExam);
+    socket.on("exam_started", applyExam);
+    socket.on("assessment_updated", applyAssessment);
+    socket.on("request_reviewed", applyAssessment);
+    return () => {
+      socket.off("exam_updated", applyExam);
+      socket.off("exam_started", applyExam);
+      socket.off("assessment_updated", applyAssessment);
+      socket.off("request_reviewed", applyAssessment);
+    };
+  }, [socket, examId, assessmentId, user, finishWaitingFlow, returnToDashboardSafe, onExamStart, waitingSessionId, liveExam]);
 
   useEffect(() => {
     return () => {

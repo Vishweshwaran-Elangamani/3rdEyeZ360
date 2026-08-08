@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useExamStore from "../../store/examStore";
+import useSocket from "../../hooks/useSocket";
 
 const API = "http://localhost:3000";
-const POLL_INTERVAL = 6000;
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
 
 const THEMES = {
@@ -157,6 +157,48 @@ function normalizeItem(raw) {
     allowedwebsites: normalizeList(raw.allowedwebsites, raw.allowed_websites),
     allowedapplications: normalizeList(raw.allowedapplications, raw.allowed_applications),
   };
+}
+function hasCompleteExamDetails(item) {
+  return Boolean(
+    item &&
+      item.name &&
+      item.name !== "Upcoming Exam" &&
+      item.date &&
+      item.starttime &&
+      item.endtime &&
+      Number(item.durationminutes) > 0
+  );
+}
+function mergeAssessmentUpdate(current, incoming) {
+  if (!current) return incoming;
+  if (!incoming) return current;
+  const merged = { ...current, ...incoming };
+  const preserve = [
+    "name",
+    "description",
+    "date",
+    "starttime",
+    "endtime",
+    "durationminutes",
+    "examstatus",
+  ];
+  for (const key of preserve) {
+    const value = incoming[key];
+    const missing =
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      (key === "name" && value === "Upcoming Exam") ||
+      (key === "durationminutes" && Number(value) === 0);
+    if (missing && current[key] !== undefined) merged[key] = current[key];
+  }
+  if (!incoming.allowedwebsites?.length && current.allowedwebsites?.length) {
+    merged.allowedwebsites = current.allowedwebsites;
+  }
+  if (!incoming.allowedapplications?.length && current.allowedapplications?.length) {
+    merged.allowedapplications = current.allowedapplications;
+  }
+  return merged;
 }
 function normalizeRequest(raw) {
   if (!raw) return null;
@@ -1563,6 +1605,7 @@ function RequestModal({ open, exam, reason, onChangeReason, onClose, onSubmit, s
 
 export default function CandidateDashboard({ onEnterExam, onLogout }) {
   const { user, accessToken } = useAuthStore();
+  const socket = useSocket(accessToken);
   useEffect(() => {
   let cancelled = false;
 
@@ -1758,9 +1801,107 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
     fetchAssessments(false);
   }, [fetchAssessments]);
   useEffect(() => {
-    const poll = setInterval(() => fetchAssessments(true), POLL_INTERVAL);
-    return () => clearInterval(poll);
-  }, [fetchAssessments]);
+    if (!socket) return;
+
+    const matchesCandidate = (payload) => {
+      const payloadCandidateId = firstValue(payload?.candidateid, payload?.candidate_id);
+      const currentCandidateId = firstValue(user?.userid, user?.user_id);
+      return !payloadCandidateId || String(payloadCandidateId) === String(currentCandidateId);
+    };
+
+    const upsertAssessment = async (payload) => {
+      if (!matchesCandidate(payload)) return;
+      const incoming = normalizeItem(payload?.assessment || payload);
+      if (!incoming?.assessmentid) return;
+
+      // Reconcile legacy/partial events before inserting a new card.
+      const next = hasCompleteExamDetails(incoming)
+        ? incoming
+        : await reconcileAssessment(incoming);
+
+      setAssessments((previous) => {
+        const index = previous.findIndex(
+          (item) => item.assessmentid === next.assessmentid
+        );
+        if (index < 0) return [next, ...previous];
+        return previous.map((item, itemIndex) =>
+          itemIndex === index ? mergeAssessmentUpdate(item, next) : item
+        );
+      });
+      if (!isPendingRequestStatus(next.status)) {
+        setPendingRequestsByAssessment((previous) => {
+          const copy = { ...previous };
+          delete copy[next.assessmentid];
+          return copy;
+        });
+      }
+      lastUpdatedRef.current = new Date();
+    };
+
+    const upsertExam = (payload) => {
+      const next = normalizeItem(payload?.exam || payload);
+      if (!next?.examid) return;
+      setAssessments((previous) =>
+        previous.map((item) =>
+          item.examid === next.examid
+            ? { ...item, ...next, status: item.status, assessmentstatus: item.assessmentstatus }
+            : item
+        )
+      );
+      lastUpdatedRef.current = new Date();
+    };
+
+    const onAssignmentRemoved = (payload) => {
+      if (!matchesCandidate(payload)) return;
+      const assessmentId = firstValue(payload?.assessmentid, payload?.assessment_id);
+      setAssessments((previous) =>
+        previous.filter((item) => item.assessmentid !== assessmentId)
+      );
+    };
+
+    const onRequestCreated = (payload) => {
+      if (!matchesCandidate(payload)) return;
+      const request = normalizeRequest(payload?.request || payload);
+      if (!request?.assessmentid) return;
+      setPendingRequestsByAssessment((previous) => ({
+        ...previous,
+        [request.assessmentid]: request,
+      }));
+    };
+
+    const onRequestReviewed = (payload) => {
+      if (!matchesCandidate(payload)) return;
+      const assessmentId = firstValue(payload?.assessmentid, payload?.assessment_id);
+      if (assessmentId) {
+        setPendingRequestsByAssessment((previous) => {
+          const copy = { ...previous };
+          delete copy[assessmentId];
+          return copy;
+        });
+      }
+      if (payload?.assessment) upsertAssessment(payload.assessment);
+    };
+
+    socket.on("assessment_created", upsertAssessment);
+    socket.on("assessment_updated", upsertAssessment);
+    socket.on("assessment_removed", onAssignmentRemoved);
+    socket.on("exam_created", upsertExam);
+    socket.on("exam_updated", upsertExam);
+    socket.on("request_created", onRequestCreated);
+    socket.on("request_reviewed", onRequestReviewed);
+    socket.on("connect", fetchAssessments);
+
+    return () => {
+      socket.off("assessment_created", upsertAssessment);
+      socket.off("assessment_updated", upsertAssessment);
+      socket.off("assessment_removed", onAssignmentRemoved);
+      socket.off("exam_created", upsertExam);
+      socket.off("exam_updated", upsertExam);
+      socket.off("request_created", onRequestCreated);
+      socket.off("request_reviewed", onRequestReviewed);
+      socket.off("connect", fetchAssessments);
+    };
+  }, [socket, user, fetchAssessments, reconcileAssessment]);
 
   const allottedCount = assessments.length;
   const completedCount = assessments.filter((a) => toUpper(a.status) === "COMPLETED").length;
@@ -1885,11 +2026,6 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
           )
         );
         resetRequestModalState();
-        try {
-          await fetchAssessments(true);
-        } catch (refreshError) {
-          console.error("Request created, but refresh failed", refreshError);
-        }
         return;
       }
       const detail = res?.data?.detail;
@@ -1919,11 +2055,6 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
           )
         );
         resetRequestModalState();
-        try {
-          await fetchAssessments(true);
-        } catch (refreshError) {
-          console.error("Existing request confirmed, but refresh failed", refreshError);
-        }
         return;
       }
       setSubmitRequestError(serverMessage);
@@ -1953,11 +2084,6 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
           )
         );
         resetRequestModalState();
-        try {
-          await fetchAssessments(true);
-        } catch (refreshError) {
-          console.error("Recovered from duplicate request state, but refresh failed", refreshError);
-        }
         return;
       }
       setSubmitRequestError(apiMessage);
@@ -2489,7 +2615,7 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
                 </span>
               </h3>
               <p style={{ fontSize: 12.5, color: t.textMuted, margin: "4px 0 0", letterSpacing: 0.2 }}>
-                Live updates every few seconds. Press refresh anytime for the latest.
+                Live updates are pushed instantly. Press refresh only if you need to recover after a connection issue.
               </p>
             </div>
           </div>

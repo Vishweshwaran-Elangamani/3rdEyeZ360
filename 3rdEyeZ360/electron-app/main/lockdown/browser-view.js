@@ -1,565 +1,565 @@
-const { BrowserView } = require("electron");
+const { WebContentsView } = require("electron");
 
 let browserView = null;
 let allowedDomains = [];
-
-let currentLayout = {
-  top: 132,
-  bottom: 34,
-  left: 0,
-  right: 0,
-};
-
-let resizeHandler = null;
 let attachedWindow = null;
 let browserVisible = false;
+let currentBounds = null;
+let windowHandlers = null;
 
-function normalizeUrl(url) {
-  if (!url) {
-    return null;
-  }
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+  "AppleWebKit/537.36 (KHTML, like Gecko) " +
+  "Chrome/124.0.0.0 Safari/537.36";
 
-  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+function normalizeUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 }
 
-function extractHostname(url) {
+function extractHostname(value) {
   try {
-    return new URL(normalizeUrl(url))
-      .hostname
-      .replace(/^www\./, "")
+    return new URL(normalizeUrl(value))
+      .hostname.replace(/^www\./i, "")
       .toLowerCase();
   } catch {
     return null;
   }
 }
 
-function isAllowed(url) {
-  const hostname = extractHostname(url);
+function normalizeWebsiteList(websites) {
+  const values = Array.isArray(websites) ? websites : [];
 
-  if (!hostname) {
-    return false;
-  }
+  return values
+    .map((item) => {
+      if (typeof item === "string") return item;
+      return item?.url || item?.value || item?.href || null;
+    })
+    .map(normalizeUrl)
+    .filter(Boolean);
+}
+
+function isAllowed(value) {
+  const hostname = extractHostname(value);
+  if (!hostname) return false;
 
   return allowedDomains.some(
-    (domain) =>
-      hostname === domain ||
-      hostname.endsWith(`.${domain}`)
+    (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
   );
 }
 
-function isWindowAlive(mainWindow) {
-  return (
-    !!mainWindow &&
-    !mainWindow.isDestroyed() &&
-    !!mainWindow.webContents &&
-    !mainWindow.webContents.isDestroyed()
+function isWindowAlive(window) {
+  return Boolean(
+    window &&
+      !window.isDestroyed() &&
+      window.webContents &&
+      !window.webContents.isDestroyed(),
   );
 }
 
 function hasLiveView() {
-  return (
-    !!browserView &&
-    !!browserView.webContents &&
-    !browserView.webContents.isDestroyed()
+  return Boolean(
+    browserView?.webContents && !browserView.webContents.isDestroyed(),
   );
 }
 
-function getBounds(mainWindow) {
+function sanitizeBounds(bounds) {
+  if (!bounds || typeof bounds !== "object") return null;
+
+  const x = Math.max(0, Math.round(Number(bounds.x) || 0));
+  const y = Math.max(0, Math.round(Number(bounds.y) || 0));
+  const width = Math.max(1, Math.round(Number(bounds.width) || 0));
+  const height = Math.max(1, Math.round(Number(bounds.height) || 0));
+
+  return { x, y, width, height };
+}
+
+function boundsFromLayout(mainWindow, layout = {}) {
+  if (!isWindowAlive(mainWindow)) return null;
+
+  if (
+    Number.isFinite(layout.x) &&
+    Number.isFinite(layout.y) &&
+    Number.isFinite(layout.width) &&
+    Number.isFinite(layout.height)
+  ) {
+    return sanitizeBounds(layout);
+  }
+
   const content = mainWindow.getContentBounds();
+  const left = Math.max(0, Number(layout.left) || 0);
+  const right = Math.max(0, Number(layout.right) || 0);
+  const top = Math.max(0, Number(layout.top) || 0);
+  const bottom = Math.max(0, Number(layout.bottom) || 0);
 
-  const x = currentLayout.left || 0;
-  const y = currentLayout.top || 0;
-
-  const width = Math.max(
-    content.width -
-      (currentLayout.left || 0) -
-      (currentLayout.right || 0),
-    200
-  );
-
-  const height = Math.max(
-    content.height -
-      (currentLayout.top || 0) -
-      (currentLayout.bottom || 0),
-    200
-  );
-
-  return {
-    x,
-    y,
-    width,
-    height,
-  };
+  return sanitizeBounds({
+    x: left,
+    y: top,
+    width: content.width - left - right,
+    height: content.height - top - bottom,
+  });
 }
 
 function applyBounds(mainWindow) {
-  if (!isWindowAlive(mainWindow)) {
-    return false;
-  }
-
-  if (!hasLiveView()) {
-    return false;
-  }
-
-  if (!browserVisible) {
+  if (
+    !isWindowAlive(mainWindow) ||
+    !hasLiveView() ||
+    !browserVisible ||
+    !currentBounds
+  ) {
     return false;
   }
 
   try {
-    const bounds = getBounds(mainWindow);
-
-    browserView.setBounds(bounds);
-    browserView.setAutoResize({
-      width: true,
-      height: true,
-    });
-
+    browserView.setBounds(currentBounds);
     return true;
   } catch (error) {
-    console.log("applyBounds failed:", error.message);
+    console.log("Assessment browser bounds failed:", error.message);
     return false;
   }
+}
+
+function isAttachedTo(mainWindow) {
+  return attachedWindow === mainWindow && browserVisible && hasLiveView();
 }
 
 function ensureAttached(mainWindow) {
-  if (!isWindowAlive(mainWindow)) {
-    return false;
-  }
-
-  if (!hasLiveView()) {
-    return false;
-  }
+  if (!isWindowAlive(mainWindow) || !hasLiveView()) return false;
 
   try {
-    if (
-      attachedWindow &&
-      attachedWindow !== mainWindow &&
-      !attachedWindow.isDestroyed()
-    ) {
+    if (!isAttachedTo(mainWindow)) {
+      if (
+        attachedWindow &&
+        attachedWindow !== mainWindow &&
+        isWindowAlive(attachedWindow)
+      ) {
+        try {
+          attachedWindow.contentView.removeChildView(browserView);
+        } catch {
+          // The view may already be detached.
+        }
+      }
+
       try {
-        attachedWindow.setBrowserView(null);
+        mainWindow.contentView.addChildView(browserView);
       } catch (error) {
-        console.log(
-          "Detach from previous window failed:",
-          error.message
-        );
+        if (!String(error?.message || "").toLowerCase().includes("already")) {
+          throw error;
+        }
+      }
+
+      attachedWindow = mainWindow;
+    }
+
+    browserVisible = true;
+    browserView.setVisible(true);
+    browserView.webContents.setBackgroundThrottling(false);
+    applyBounds(mainWindow);
+    return true;
+  } catch (error) {
+    console.log("Assessment browser attach failed:", error.message);
+    return false;
+  }
+}
+
+function detachFromWindow(mainWindow = attachedWindow) {
+  if (!browserView) return false;
+
+  try {
+    if (isWindowAlive(mainWindow)) {
+      mainWindow.contentView.removeChildView(browserView);
+    }
+  } catch {
+    // The view may already be detached.
+  }
+
+  browserVisible = false;
+  attachedWindow = null;
+  return true;
+}
+
+function removeWindowHandlers() {
+  if (!windowHandlers) return;
+
+  const { window, handler } = windowHandlers;
+  if (isWindowAlive(window)) {
+    for (const eventName of ["resize", "maximize", "unmaximize", "restore"]) {
+      try {
+        window.removeListener(eventName, handler);
+      } catch {
+        // Ignore cleanup failures.
       }
     }
-
-    mainWindow.setBrowserView(browserView);
-
-    attachedWindow = mainWindow;
-    browserVisible = true;
-
-    applyBounds(mainWindow);
-
-    return true;
-  } catch (error) {
-    console.log("ensureAttached failed:", error.message);
-    return false;
   }
+
+  windowHandlers = null;
 }
 
-function detachFromWindow(mainWindow) {
-  const targetWindow = mainWindow || attachedWindow;
+function addWindowHandlers(mainWindow) {
+  removeWindowHandlers();
 
-  if (!isWindowAlive(targetWindow)) {
-    browserVisible = false;
-    attachedWindow = null;
-    return false;
-  }
-
-  try {
-    targetWindow.setBrowserView(null);
-
-    browserVisible = false;
-
-    if (attachedWindow === targetWindow) {
-      attachedWindow = null;
+  const handler = () => {
+    if (attachedWindow === mainWindow) {
+      applyBounds(mainWindow);
     }
+  };
 
-    return true;
-  } catch (error) {
-    console.log("detachFromWindow failed:", error.message);
-    return false;
+  for (const eventName of ["resize", "maximize", "unmaximize", "restore"]) {
+    mainWindow.on(eventName, handler);
   }
+
+  windowHandlers = { window: mainWindow, handler };
 }
 
-function removeResizeHandler(mainWindow) {
-  const targetWindow = mainWindow || attachedWindow;
+function cleanup(mainWindow = attachedWindow) {
+  const oldView = browserView;
 
-  if (!resizeHandler) {
-    return;
-  }
-
-  try {
-    if (targetWindow && !targetWindow.isDestroyed()) {
-      targetWindow.removeListener("resize", resizeHandler);
-    }
-  } catch (error) {
-    console.log("Remove resize handler failed:", error.message);
-  } finally {
-    resizeHandler = null;
-  }
-}
-
-function cleanup(mainWindow) {
-  const targetWindow = mainWindow || attachedWindow;
-
-  /*
-   * Save the view locally before clearing the shared reference. This prevents
-   * asynchronous destroyed events from acting on a later BrowserView.
-   */
-  const viewToDestroy = browserView;
+  removeWindowHandlers();
+  detachFromWindow(mainWindow);
 
   browserView = null;
-  browserVisible = false;
-
-  removeResizeHandler(targetWindow);
-
-  try {
-    if (targetWindow && !targetWindow.isDestroyed()) {
-      targetWindow.setBrowserView(null);
-    }
-  } catch (error) {
-    console.log("Detach during cleanup failed:", error.message);
-  }
-
   attachedWindow = null;
+  browserVisible = false;
+  currentBounds = null;
+
+  if (oldView?.webContents && !oldView.webContents.isDestroyed()) {
+    try {
+      oldView.webContents.stop();
+    } catch {
+      // Ignore.
+    }
+
+    try {
+      oldView.webContents.close();
+    } catch {
+      // Ignore.
+    }
+  }
+}
+
+function sendBrowserState(mainWindow, payload) {
+  if (!isWindowAlive(mainWindow)) return;
 
   try {
-    if (
-      viewToDestroy &&
-      viewToDestroy.webContents &&
-      !viewToDestroy.webContents.isDestroyed()
-    ) {
-      viewToDestroy.webContents.stop();
-
-      /*
-       * close() destroys the WebContents belonging to this BrowserView.
-       */
-      viewToDestroy.webContents.close();
-    }
+    mainWindow.webContents.send("assessment-browser-state", payload);
   } catch (error) {
-    console.log("BrowserView destruction failed:", error.message);
+    console.log("Assessment browser state send failed:", error.message);
+  }
+}
+
+function buildErrorPage(title, message, url = "") {
+  const safeTitle = String(title || "Website unavailable").replace(/[<>]/g, "");
+  const safeMessage = String(message || "The allowed website could not be loaded.")
+    .replace(/[<>]/g, "");
+  const safeUrl = String(url || "").replace(/[<>]/g, "");
+
+  return (
+    "data:text/html;charset=utf-8," +
+    encodeURIComponent(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${safeTitle}</title>
+        </head>
+        <body style="margin:0;background:#0b0e16;color:#eef2ff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;">
+          <main style="max-width:620px;padding:32px;text-align:center;">
+            <h1 style="font-size:22px;margin:0 0 12px;">${safeTitle}</h1>
+            <p style="color:#aeb7d0;line-height:1.6;margin:0 0 14px;">${safeMessage}</p>
+            <p style="color:#7280a3;font-size:12px;word-break:break-all;margin:0;">${safeUrl}</p>
+          </main>
+        </body>
+      </html>
+    `)
+  );
+}
+
+async function showErrorPage(view, title, message, url) {
+  if (view !== browserView || !hasLiveView()) return;
+
+  try {
+    await view.webContents.loadURL(buildErrorPage(title, message, url));
+  } catch (error) {
+    console.log("Assessment browser error page failed:", error.message);
   }
 }
 
 function wireViewEvents(mainWindow, view) {
-  if (
-    !view ||
-    !view.webContents ||
-    view.webContents.isDestroyed()
-  ) {
-    return;
-  }
+  const contents = view.webContents;
 
-  view.webContents.on("will-navigate", (event, url) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isAllowed(url)) {
+      void loadUrl(view, url, mainWindow);
+    } else {
+      console.log("Blocked assessment popup:", url);
+    }
+    return { action: "deny" };
+  });
+
+  contents.on("will-navigate", (event, url) => {
+    if (!isAllowed(url) && !url.startsWith("data:text/html")) {
+      event.preventDefault();
+      console.log("Blocked assessment navigation:", url);
+    }
+  });
+
+  contents.on("will-redirect", (event, url) => {
     if (!isAllowed(url)) {
       event.preventDefault();
-      console.log("Blocked navigation to", url);
+      console.log("Blocked assessment redirect:", url);
+      sendBrowserState(mainWindow, {
+        status: "blocked",
+        url,
+        error: "The website redirected to a domain that is not allowed.",
+      });
     }
   });
 
-  view.webContents.setWindowOpenHandler(({ url }) => {
-    if (!isAllowed(url)) {
-      console.log("Blocked popup to", url);
-
-      return {
-        action: "deny",
-      };
-    }
-
-    if (
-      view.webContents &&
-      !view.webContents.isDestroyed()
-    ) {
-      view.webContents
-        .loadURL(normalizeUrl(url))
-        .catch((error) => {
-          console.log(
-            "Popup redirect load failed:",
-            error.message
-          );
-        });
-    }
-
-    return {
-      action: "deny",
-    };
+  contents.on("did-start-loading", () => {
+    sendBrowserState(mainWindow, {
+      status: "loading",
+      url: contents.getURL(),
+    });
   });
 
-  view.webContents.on("context-menu", (event) => {
-    event.preventDefault();
-  });
+  contents.on("did-finish-load", () => {
+    const url = contents.getURL();
+    console.log("Assessment browser loaded:", url);
 
-  view.webContents.on(
-    "did-fail-load",
-    (_event, code, description, url) => {
-      console.log(
-        "BrowserView failed:",
-        code,
-        description,
-        url
-      );
-    }
-  );
-
-  view.webContents.on("dom-ready", () => {
-    /*
-     * Apply bounds only if this is still the active BrowserView.
-     */
     if (browserView === view) {
+      ensureAttached(mainWindow);
       applyBounds(mainWindow);
     }
+
+    sendBrowserState(mainWindow, {
+      status: "loaded",
+      url,
+      title: contents.getTitle(),
+    });
   });
 
-  view.webContents.on("destroyed", () => {
-    /*
-     * Do not clear a newly created BrowserView when the destroyed callback
-     * belongs to an older view.
-     */
-    if (browserView === view) {
-      browserView = null;
-      attachedWindow = null;
-      browserVisible = false;
-    }
+  contents.on(
+    "did-fail-load",
+    (_event, code, description, url, isMainFrame) => {
+      if (!isMainFrame || code === -3) return;
+
+      console.log("Assessment browser failed:", code, description, url);
+      sendBrowserState(mainWindow, {
+        status: "failed",
+        url,
+        code,
+        error: description || "The allowed website could not be loaded.",
+      });
+
+      void showErrorPage(
+        view,
+        "Website could not be loaded",
+        `${description || "Unknown load error"} (${code})`,
+        url,
+      );
+    },
+  );
+
+  contents.on("render-process-gone", (_event, details) => {
+    console.log(
+      "Assessment browser renderer exited:",
+      details?.reason,
+      details?.exitCode,
+    );
+
+    sendBrowserState(mainWindow, {
+      status: "failed",
+      error: `Website renderer exited: ${details?.reason || "unknown"}`,
+    });
   });
+
+  contents.on("context-menu", (event) => event.preventDefault());
 }
 
-function createBrowserView(mainWindow, websites = []) {
-  if (!isWindowAlive(mainWindow)) {
-    return null;
+async function loadUrl(view, value, mainWindow = attachedWindow) {
+  const url = normalizeUrl(value);
+
+  if (!url || !isAllowed(url) || view !== browserView || !hasLiveView()) {
+    return false;
   }
-
-  allowedDomains = (websites || [])
-    .map(normalizeUrl)
-    .map(extractHostname)
-    .filter(Boolean);
-
-  if (hasLiveView()) {
-    console.log("Reusing existing BrowserView");
-
-    ensureAttached(mainWindow);
-    applyBounds(mainWindow);
-
-    return browserView;
-  }
-
-  cleanup(mainWindow);
 
   try {
-    browserView = new BrowserView({
+    view.webContents.setUserAgent(USER_AGENT);
+    sendBrowserState(mainWindow, { status: "loading", url });
+    await view.webContents.loadURL(url, { userAgent: USER_AGENT });
+    ensureAttached(mainWindow);
+    applyBounds(mainWindow);
+    return true;
+  } catch (error) {
+    if (
+      Number(error?.errno) === -3 ||
+      String(error?.message || "").includes("ERR_ABORTED")
+    ) {
+      return true;
+    }
+
+    console.log("Assessment browser load error:", error?.message || error);
+    sendBrowserState(mainWindow, {
+      status: "failed",
+      url,
+      error: error?.message || "The allowed website could not be loaded.",
+    });
+
+    await showErrorPage(
+      view,
+      "Website could not be loaded",
+      error?.message || "Unknown load error",
+      url,
+    );
+    return false;
+  }
+}
+
+async function createBrowserView(mainWindow, websites = [], initialBounds = null) {
+  if (!isWindowAlive(mainWindow)) return null;
+
+  const normalizedWebsites = normalizeWebsiteList(websites);
+  allowedDomains = [
+    ...new Set(normalizedWebsites.map(extractHostname).filter(Boolean)),
+  ];
+
+  if (hasLiveView()) {
+    cleanup(mainWindow);
+  }
+
+  currentBounds = boundsFromLayout(mainWindow, initialBounds || {}) || {
+    x: 0,
+    y: 64,
+    width: Math.max(mainWindow.getContentBounds().width - 340, 1),
+    height: Math.max(mainWindow.getContentBounds().height - 64, 1),
+  };
+
+  try {
+    browserView = new WebContentsView({
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
+        partition: "persist:assessment-browser",
+        webSecurity: true,
+        backgroundThrottling: false,
       },
     });
-  } catch (error) {
-    console.log(
-      "BrowserView creation failed:",
-      error.message
-    );
 
-    browserView = null;
-    return null;
-  }
+    browserView.setBackgroundColor("#ffffff");
+    browserView.webContents.setUserAgent(USER_AGENT);
+    wireViewEvents(mainWindow, browserView);
 
-  const createdView = browserView;
-
-  wireViewEvents(mainWindow, createdView);
-
-  const attached = ensureAttached(mainWindow);
-
-  if (!attached) {
-    console.log("BrowserView created but attach failed");
-
-    cleanup(mainWindow);
-    return null;
-  }
-
-  resizeHandler = () => {
-    if (browserView === createdView) {
-      applyBounds(mainWindow);
-    }
-  };
-
-  mainWindow.on("resize", resizeHandler);
-
-  applyBounds(mainWindow);
-
-  if (websites.length > 0) {
-    const firstUrl = normalizeUrl(websites[0]);
-
-    if (isAllowed(firstUrl)) {
-      createdView.webContents
-        .loadURL(firstUrl)
-        .catch((error) => {
-          console.log("Initial load failed:", error.message);
-        });
-    } else {
-      console.log("Initial URL blocked:", firstUrl);
-    }
-  } else {
-    createdView.webContents
-      .loadURL(
-        "data:text/html;charset=utf-8," +
-          encodeURIComponent(`
-            <html>
-              <body style="margin:0;background:#0f1117;color:#fff;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
-                <div>No allowed website configured</div>
-              </body>
-            </html>
-          `)
-      )
-      .catch((error) => {
-        console.log(
-          "Empty state load failed:",
-          error.message
-        );
-      });
-  }
-
-  console.log("BrowserView created successfully");
-
-  return createdView;
-}
-
-function navigateTo(url) {
-  if (!hasLiveView()) {
-    return false;
-  }
-
-  const normalized = normalizeUrl(url);
-
-  if (!isAllowed(normalized)) {
-    console.log(
-      "Blocked manual navigation to",
-      normalized
-    );
-
-    return false;
-  }
-
-  try {
-    browserView.webContents
-      .loadURL(normalized)
-      .catch((error) => {
-        console.log("Navigation failed:", error.message);
-      });
-
-    return true;
-  } catch (error) {
-    console.log("navigateTo failed:", error.message);
-    return false;
-  }
-}
-
-function updateBrowserBounds(mainWindow, layout = {}) {
-  currentLayout = {
-    top: Number.isFinite(layout.top)
-      ? layout.top
-      : currentLayout.top,
-
-    bottom: Number.isFinite(layout.bottom)
-      ? layout.bottom
-      : currentLayout.bottom,
-
-    left: Number.isFinite(layout.left)
-      ? layout.left
-      : currentLayout.left,
-
-    right: Number.isFinite(layout.right)
-      ? layout.right
-      : currentLayout.right,
-  };
-
-  return applyBounds(mainWindow);
-}
-
-function showBrowser(mainWindow) {
-  if (!hasLiveView()) {
-    return false;
-  }
-
-  return ensureAttached(mainWindow);
-}
-
-function hideBrowser(mainWindow) {
-  if (!hasLiveView()) {
-    return false;
-  }
-
-  return detachFromWindow(mainWindow);
-}
-
-function focusBrowser(mainWindow) {
-  if (!hasLiveView() || !browserVisible) {
-    return false;
-  }
-
-  try {
-    if (isWindowAlive(mainWindow)) {
-      mainWindow.focus();
+    if (!ensureAttached(mainWindow)) {
+      throw new Error("Unable to attach WebContentsView");
     }
 
-    browserView.webContents.focus();
-
-    return true;
-  } catch (error) {
-    console.log(
-      "focusBrowser failed:",
-      error.message
-    );
-
-    return false;
-  }
-}
-
-function restoreBrowser(mainWindow) {
-  if (!isWindowAlive(mainWindow)) {
-    return false;
-  }
-
-  try {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-
-    mainWindow.show();
-    mainWindow.focus();
-
-    if (!browserVisible) {
-      return true;
-    }
-
+    addWindowHandlers(mainWindow);
     applyBounds(mainWindow);
 
-    return true;
-  } catch (error) {
-    console.log(
-      "restoreBrowser failed:",
-      error.message
-    );
+    if (normalizedWebsites[0]) {
+      await loadUrl(browserView, normalizedWebsites[0], mainWindow);
+    } else {
+      await showErrorPage(
+        browserView,
+        "No allowed website configured",
+        "The assessment does not contain an allowed website.",
+        "",
+      );
+    }
 
-    return false;
+    console.log("Assessment WebContentsView created", {
+      websites: normalizedWebsites,
+      bounds: currentBounds,
+    });
+
+    return browserView;
+  } catch (error) {
+    console.log("Assessment browser creation failed:", error.message);
+    sendBrowserState(mainWindow, {
+      status: "failed",
+      error: error.message || "Failed to create assessment browser.",
+    });
+    cleanup(mainWindow);
+    return null;
   }
 }
 
 function destroyBrowserView(mainWindow) {
   cleanup(mainWindow);
-
   allowedDomains = [];
-
-  currentLayout = {
-    top: 132,
-    bottom: 34,
-    left: 0,
-    right: 0,
-  };
-
   return true;
+}
+
+async function navigateTo(url) {
+  if (!hasLiveView() || !isAllowed(url)) return false;
+  return loadUrl(browserView, url, attachedWindow);
+}
+
+function updateBrowserBounds(mainWindow, layout = {}) {
+  const nextBounds = boundsFromLayout(mainWindow, layout);
+  if (!nextBounds) return false;
+
+  currentBounds = nextBounds;
+  return applyBounds(mainWindow);
+}
+
+function showBrowser(mainWindow) {
+  if (!hasLiveView()) return false;
+
+  const attached = ensureAttached(mainWindow);
+  if (attached) {
+    browserView.setVisible(true);
+    browserVisible = true;
+    applyBounds(mainWindow);
+  }
+  return attached;
+}
+
+function hideBrowser(mainWindow) {
+  if (!hasLiveView()) return false;
+
+  try {
+    browserView.setVisible(false);
+  } catch {
+    // Ignore.
+  }
+
+  browserVisible = false;
+  return detachFromWindow(mainWindow);
+}
+
+function focusBrowser(mainWindow) {
+  if (!hasLiveView() || !browserVisible) return false;
+
+  try {
+    mainWindow?.focus?.();
+    browserView.webContents.focus();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function restoreBrowser(mainWindow) {
+  if (!isWindowAlive(mainWindow)) return false;
+
+  try {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+
+    if (hasLiveView()) {
+      showBrowser(mainWindow);
+      applyBounds(mainWindow);
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 module.exports = {

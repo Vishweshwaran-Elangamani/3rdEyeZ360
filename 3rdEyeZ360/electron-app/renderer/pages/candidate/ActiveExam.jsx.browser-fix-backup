@@ -1,9 +1,9 @@
-﻿import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useExamStore from "../../store/examStore";
 import useSocket from "../../hooks/useSocket";
-import { startCandidateWebRTC, stopCandidateWebRTC } from "../../services/candidateWebRTC";
+import { stopCandidateWebRTC } from "../../services/candidateWebRTC";
 import { stopCameraStream } from "../../services/cameraStream";
 
 const API = "http://localhost:3000";
@@ -56,7 +56,7 @@ const THEMES = {
     infoBg: "rgba(109,165,255,0.12)",
     glowAccent: "0 8px 32px rgba(91,140,255,0.28), 0 0 60px rgba(160,101,255,0.15)",
     overlay: "rgba(3, 5, 10, 0.88)",
-    // Timer palette â€” soft, non-glaring
+    // Timer palette — soft, non-glaring
     timerPillBg: "rgba(20, 24, 38, 0.55)",
     timerPillBorder: "rgba(255, 255, 255, 0.08)",
     timerConsumed: "rgba(255, 255, 255, 0.09)",
@@ -105,7 +105,7 @@ const THEMES = {
     infoBg: "rgba(37,99,235,0.12)",
     glowAccent: "0 12px 40px rgba(75,96,232,0.25), 0 0 60px rgba(124,58,237,0.15)",
     overlay: "rgba(15, 20, 36, 0.85)",
-    // Timer palette â€” soft, print-friendly
+    // Timer palette — soft, print-friendly
     timerPillBg: "rgba(255, 255, 255, 0.75)",
     timerPillBorder: "rgba(20, 28, 60, 0.10)",
     timerConsumed: "rgba(20, 28, 60, 0.10)",
@@ -169,7 +169,7 @@ function computeTicks(W, H, R, N) {
       nx = 0,
       ny = 0;
 
-    // Segments, clockwise, starting at (R, 0) â€” top-left corner point
+    // Segments, clockwise, starting at (R, 0) — top-left corner point
     if (d < straightTop) {
       x = R + d;
       y = 0;
@@ -225,7 +225,7 @@ function computeTicks(W, H, R, N) {
 function TimerPill({ remainingMs, totalMs, theme }) {
   const t = THEMES[theme];
 
-  // Pill geometry â€” bigger, since it now lives in the sidebar as a focal element
+  // Pill geometry — bigger, since it now lives in the sidebar as a focal element
   const W = 130;
   const H = 160;
   const R = 34;
@@ -246,9 +246,9 @@ function TimerPill({ remainingMs, totalMs, theme }) {
   const consumed = N - remainingTicks;
 
   // Color band for the currently-remaining ticks (soft, non-glaring)
-  //   0..60% elapsed  â†’ soft green
-  //  60..90% elapsed  â†’ soft warm yellow
-  //  90..100% elapsed â†’ soft red
+  //   0..60% elapsed  → soft green
+  //  60..90% elapsed  → soft warm yellow
+  //  90..100% elapsed → soft red
   let liveColor;
   if (pctElapsed < 0.6) liveColor = t.timerGreen;
   else if (pctElapsed < 0.9) liveColor = t.timerYellow;
@@ -260,8 +260,8 @@ function TimerPill({ remainingMs, totalMs, theme }) {
   const m = Math.floor((totalSecs % 3600) / 60);
   const s = totalSecs % 60;
 
-  const mainText = totalMs > 0 ? `${h}:${String(m).padStart(2, "0")}` : "â€”:â€”";
-  const secText = totalMs > 0 ? String(s).padStart(2, "0") : "â€”";
+  const mainText = totalMs > 0 ? `${h}:${String(m).padStart(2, "0")}` : "—:—";
+  const secText = totalMs > 0 ? String(s).padStart(2, "0") : "—";
 
   return (
     <div
@@ -323,7 +323,7 @@ function TimerPill({ remainingMs, totalMs, theme }) {
         })}
       </svg>
 
-      {/* Text stack â€” main H:MM on top (elongated), seconds below (small) */}
+      {/* Text stack — main H:MM on top (elongated), seconds below (small) */}
       <div
         style={{
           position: "relative",
@@ -494,9 +494,9 @@ function formatStatus(status) {
     status === undefined ||
     status === null ||
     String(status).trim() === "" ||
-    String(status).trim() === "â€”"
+    String(status).trim() === "—"
   ) {
-    return "â€”";
+    return "—";
   }
 
   const labels = {
@@ -564,9 +564,9 @@ function normalizeExam(raw) {
     candidateid: pick(raw.candidateid, raw.candidate_id),
     name: pick(raw.name, raw.examname, raw.exam_name, "Exam"),
     description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
-    date: pick(raw.date, raw.examdate, raw.exam_date, "â€”"),
-    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "â€”"),
-    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "â€”"),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "—"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "—"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "—"),
     durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0) || 0),
     instructions: pick(raw.instructions, ""),
     allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
@@ -590,9 +590,9 @@ function normalizeAssessment(raw) {
     examinerid: pick(raw.examinerid, raw.examiner_id),
     name: pick(raw.name, raw.examname, raw.exam_name, "Upcoming Exam"),
     description: pick(raw.description, raw.examdescription, raw.exam_description, ""),
-    date: pick(raw.date, raw.examdate, raw.exam_date, "â€”"),
-    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "â€”"),
-    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "â€”"),
+    date: pick(raw.date, raw.examdate, raw.exam_date, "—"),
+    starttime: pick(raw.starttime, raw.start_time, raw.examstarttime, raw.exam_start_time, "—"),
+    endtime: pick(raw.endtime, raw.end_time, raw.examendtime, raw.exam_end_time, "—"),
     durationminutes: Number(pick(raw.durationminutes, raw.duration_minutes, 0) || 0),
     instructions: pick(raw.instructions, ""),
     allowedwebsites: normalizeSites(raw.allowedwebsites, raw.allowed_websites),
@@ -752,32 +752,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     user?.user_id
   );
 
-  useEffect(() => {
-    if (!socket || !examId || !candidateId) return undefined;
-
-    let cancelled = false;
-
-    startCandidateWebRTC({
-      socket,
-      examid: examId,
-      assessmentid: assessmentId,
-      candidateid: candidateId,
-    }).catch((error) => {
-      if (!cancelled) {
-        console.error(
-          "Unable to continue live examiner camera stream",
-          error
-        );
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      // Keep the shared camera alive during internal React page transitions.
-      // Explicit exit flows call cleanupExamShell() for the real shutdown.
-    };
-  }, [socket, examId, assessmentId, candidateId]);
-
   const cleanupExamShell = useCallback(async () => {
     try {
   stopCandidateWebRTC();
@@ -832,13 +806,15 @@ try {
   useEffect(() => {
     if (activeTab > allowedSites.length - 1) setActiveTab(0);
   }, [allowedSites, activeTab]);
-  useEffect(() => {
-    return () => {
-      // Do not stop camera/WebRTC from this generic component cleanup.
-      // cleanupExamShell() handles genuine assessment exits.
-      window.electronAPI?.closeBrowser?.().catch?.(() => {});
-    };
-  }, []);
+useEffect(() => {
+  return () => {
+    stopCandidateWebRTC();
+    stopCameraStream();
+
+    window.electronAPI?.stopCapture?.().catch?.(() => {});
+    window.electronAPI?.closeBrowser?.().catch?.(() => {});
+  };
+}, []);
   const merged = useMemo(
     () => ({
       ...(normalizedExam || {}),
@@ -850,8 +826,8 @@ try {
   );
 
   const activeUrl = allowedSites[activeTab] || allowedSites[0] || null;
-  const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "â€”";
-  const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "â€”";
+  const assessmentStatus = liveAssessment?.status || normalizedAssessment?.status || merged.status || "—";
+  const examStatus = liveExam?.examstatus || liveExam?.status || merged.examstatus || "—";
   const isExamRunning = canonicalStatus(examStatus) === "RUNNING";
   const isPaused = pauseLocked || canonicalStatus(assessmentStatus) === "PAUSED";
 
@@ -954,31 +930,22 @@ try {
   ]);
 
   const resizeBrowserToArea = useCallback(async () => {
-    if (
-      !browserAreaRef.current ||
-      !window.electronAPI ||
-      completedRef.current
-    ) {
+    if (!shellRef.current || !browserAreaRef.current || !window.electronAPI || completedRef.current) {
       return false;
     }
-
+    const shellRect = shellRef.current.getBoundingClientRect();
     const browserRect = browserAreaRef.current.getBoundingClientRect();
-    const bounds = {
-      x: Math.max(0, Math.round(browserRect.left)),
-      y: Math.max(0, Math.round(browserRect.top)),
-      width: Math.max(1, Math.round(browserRect.width)),
-      height: Math.max(1, Math.round(browserRect.height)),
-    };
 
-    if (bounds.width <= 1 || bounds.height <= 1) {
-      return false;
-    }
+    const top = Math.max(0, Math.round(browserRect.top - shellRect.top));
+    const left = Math.max(0, Math.round(browserRect.left - shellRect.left));
+    const right = Math.max(0, Math.round(shellRect.right - browserRect.right));
+    const bottom = Math.max(0, Math.round(shellRect.bottom - browserRect.bottom));
 
     try {
-      const result = await window.electronAPI.resizeBrowser(bounds);
+      const result = await window.electronAPI.resizeBrowser({ top, left, right, bottom });
       return !result || result.success !== false;
     } catch (error) {
-      console.log("Failed to resize WebContentsView", error);
+      console.log("Failed to resize BrowserView", error);
       return false;
     }
   }, []);
@@ -1013,41 +980,13 @@ try {
       }
 
       const entryAllowed = await obtainEntryPermission();
-
-      /*
-       * A cancelled React effect only means this particular effect instance
-       * became stale. It does not mean that the assessment is ending.
-       * Never shut down the shared camera/WebRTC connection for cancellation.
-       */
-      if (cancelled || completedRef.current) {
-        return;
-      }
-
-      if (!entryAllowed) {
+      if (!entryAllowed || cancelled || completedRef.current) {
         await cleanupExamShell();
         return;
       }
 
-      await new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve))
-      );
-
-      const browserRect = browserAreaRef.current?.getBoundingClientRect();
-      const initialBounds = browserRect
-        ? {
-            x: Math.max(0, Math.round(browserRect.left)),
-            y: Math.max(0, Math.round(browserRect.top)),
-            width: Math.max(1, Math.round(browserRect.width)),
-            height: Math.max(1, Math.round(browserRect.height)),
-          }
-        : null;
-
       const ok = await safeElectron(
-        () =>
-          window.electronAPI.openBrowser({
-            allowedWebsites: allowedSites,
-            bounds: initialBounds,
-          }),
+        () => window.electronAPI.openBrowser({ allowedWebsites: allowedSites }),
         "Failed to open secured browser."
       );
       if (!cancelled && ok) {
@@ -1102,48 +1041,18 @@ try {
   }, [activeUrl, isPaused, safeElectron, showBrowserForActiveState]);
 
   useEffect(() => {
-    if (!browserAreaRef.current || typeof ResizeObserver === "undefined") {
-      return undefined;
-    }
-
-    let frameId = null;
-    const observer = new ResizeObserver(() => {
-      if (
-        !browserOpenedRef.current ||
-        completedRef.current ||
-        isPaused
-      ) {
-        return;
-      }
-
-      if (frameId) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        resizeBrowserToArea();
-      });
-    });
-
-    observer.observe(browserAreaRef.current);
-
-    return () => {
-      if (frameId) cancelAnimationFrame(frameId);
-      observer.disconnect();
-    };
-  }, [isPaused, resizeBrowserToArea]);
-
-  useEffect(() => {
     const onResize = async () => {
-      if (!browserOpenedRef.current || completedRef.current || isPaused) return;
-      await resizeBrowserToArea();
+      if (!browserOpenedRef.current || completedRef.current) return;
+      if (isPaused) return;
+      await showBrowserForActiveState();
     };
-
-    const id = setTimeout(onResize, 150);
+    const id = setTimeout(onResize, 300);
     window.addEventListener("resize", onResize);
-
     return () => {
       clearTimeout(id);
       window.removeEventListener("resize", onResize);
     };
-  }, [isPaused, resizeBrowserToArea]);
+  }, [isPaused, showBrowserForActiveState]);
 
 
 
@@ -1348,7 +1257,7 @@ try {
   const durationMinutes = Number(merged.durationminutes || normalizedExam?.durationminutes || 0);
 
   const startMs =
-    startDate && startClock && startDate !== "â€”" && startClock !== "â€”"
+    startDate && startClock && startDate !== "—" && startClock !== "—"
       ? new Date(`${startDate}T${startClock}:00`).getTime()
       : null;
   const endMs = startMs && durationMinutes > 0 ? startMs + durationMinutes * 60 * 1000 : null;
@@ -1760,7 +1669,7 @@ try {
                 fontWeight: 500,
               }}
             >
-              hours &nbsp;Â·&nbsp; minutes
+              hours &nbsp;·&nbsp; minutes
             </span>
           </div>
 
@@ -1787,7 +1696,7 @@ try {
               {[
                 { label: "Assessment", value: formatStatus(assessmentStatus), color: canonicalStatus(assessmentStatus) === "PAUSED" ? t.warning : t.success },
                 { label: "Exam", value: formatStatus(examStatus), color: canonicalStatus(examStatus) === "RUNNING" ? t.success : t.textPrimary },
-                { label: "Start", value: merged.starttime || "â€”", color: t.textPrimary, mono: true },
+                { label: "Start", value: merged.starttime || "—", color: t.textPrimary, mono: true },
                 { label: "Duration", value: `${durationMinutes} min`, color: t.textPrimary, mono: true },
               ].map((row, i) => (
                 <div
@@ -2070,6 +1979,3 @@ try {
     </div>
   );
 }
-
-
-

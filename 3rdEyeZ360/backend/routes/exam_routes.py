@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from config.database import get_db
 from middleware.auth import require_role
 from utils.id_generator import generate_assessment_id
+from sockets.monitoring_socket import emit_exam_event, emit_assessment_event
 
 
 router = APIRouter(
@@ -550,7 +551,9 @@ async def create_exam(
         }
     )
 
-    return _exam_payload(exam_doc)
+    payload = _exam_payload(exam_doc)
+    await emit_exam_event("exam_created", payload, examiner_id)
+    return payload
 
 
 @router.get("")
@@ -771,11 +774,11 @@ async def start_exam(
         }
     )
 
-    return {
-        "message": "Exam started",
-        "exam_id": exam_id,
-        "examstatus": "RUNNING",
-    }
+    updated_exam = await db.exams.find_one(_get_exam_query(exam_id))
+    payload = _exam_payload(updated_exam)
+    await emit_exam_event("exam_started", payload)
+    await emit_exam_event("exam_updated", payload)
+    return {"message": "Exam started", "exam": payload, **payload}
 
 
 @router.patch("/{exam_id}/end")
@@ -883,11 +886,13 @@ async def end_exam(
         }
     )
 
-    return {
-        "message": "Exam ended",
-        "exam_id": exam_id,
-        "examstatus": "COMPLETED",
-    }
+    updated_exam = await db.exams.find_one(_get_exam_query(exam_id))
+    payload = _exam_payload(updated_exam)
+    await emit_exam_event("exam_updated", payload)
+    updated_assessments = await db.assessments.find({"$or": [{"exam_id": exam_id}, {"examid": exam_id}]}).to_list(None)
+    for item in updated_assessments:
+        await emit_assessment_event("assessment_updated", _assessment_payload(item))
+    return {"message": "Exam ended", "exam": payload, **payload}
 
 
 @router.get("/{exam_id}/assessments")
@@ -1121,6 +1126,8 @@ async def unassign_candidate(
         }
     )
 
+    removed_payload = _assessment_payload(assessment)
+    await emit_assessment_event("assessment_removed", removed_payload)
     return {
         "message": (
             "Candidate removed successfully."
@@ -1268,12 +1275,18 @@ async def assign_candidate(
         }
     )
 
+    # Send the candidate the same fully hydrated assessment shape returned by
+    # /candidate/upcoming, so the live card never renders placeholder values.
+    exam = await db.exams.find_one(_get_exam_query(exam_id))
+    assessment_payload = _merge_exam_assessment(
+        exam or {},
+        assessment_document,
+    )
+    assessment_payload["candidate_name"] = user.get("name", candidate_id)
+    assessment_payload["candidate_email"] = user.get("email", "")
+    await emit_assessment_event("assessment_created", assessment_payload)
     return {
         "message": "Candidate assigned",
-        "exam_id": exam_id,
-        "examid": exam_id,
-        "candidate_id": candidate_id,
-        "candidateid": candidate_id,
-        "assessment_id": assessment_id,
-        "assessmentid": assessment_id,
+        "assessment": assessment_payload,
+        **assessment_payload,
     }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export default function CandidateVideoTile({
   candidate,
@@ -9,10 +9,26 @@ export default function CandidateVideoTile({
   theme,
 }) {
   const videoRef = useRef(null);
+  const attachedStreamRef = useRef(null);
+  const playAttemptRef = useRef(0);
+  const retryTimerRef = useRef(null);
+  const [videoPlaying, setVideoPlaying] = useState(false);
 
-  const isLive = Boolean(
-    stream && ["connected", "completed"].includes(connectionState),
+  const hasLiveVideoTrack = useMemo(
+    () =>
+      Boolean(
+        stream
+          ?.getVideoTracks?.()
+          .some((track) => track.readyState === "live"),
+      ),
+    [stream],
   );
+
+  const isLive =
+    hasLiveVideoTrack &&
+    videoPlaying &&
+    connectionState !== "failed" &&
+    connectionState !== "closed";
 
   const borderColor = selected
     ? theme.accent
@@ -22,22 +38,116 @@ export default function CandidateVideoTile({
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video) return undefined;
 
-    video.srcObject = stream || null;
+    let disposed = false;
+    const attemptId = ++playAttemptRef.current;
 
-    if (stream) {
-      video.play().catch((error) => {
-        console.log("Candidate video autoplay failed", error);
-      });
+    const clearRetry = () => {
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+
+    const tryPlay = async () => {
+      if (
+        disposed ||
+        attemptId !== playAttemptRef.current ||
+        !video.srcObject ||
+        !hasLiveVideoTrack
+      ) {
+        return;
+      }
+
+      try {
+        await video.play();
+        if (!disposed && attemptId === playAttemptRef.current) {
+          setVideoPlaying(true);
+        }
+      } catch (error) {
+        if (disposed || attemptId !== playAttemptRef.current) return;
+
+        if (error?.name === "AbortError") {
+          clearRetry();
+          retryTimerRef.current = window.setTimeout(tryPlay, 150);
+          return;
+        }
+
+        if (error?.name !== "NotAllowedError") {
+          console.log("Candidate video playback failed", error);
+        }
+        setVideoPlaying(false);
+      }
+    };
+
+    const handlePlaying = () => {
+      if (!disposed && attemptId === playAttemptRef.current) {
+        setVideoPlaying(true);
+      }
+    };
+
+    const handlePause = () => {
+      if (!disposed && attemptId === playAttemptRef.current) {
+        setVideoPlaying(false);
+      }
+    };
+
+    const handleEnded = () => {
+      if (!disposed && attemptId === playAttemptRef.current) {
+        setVideoPlaying(false);
+      }
+    };
+
+    const handleLoadedMetadata = () => {
+      void tryPlay();
+    };
+
+    video.addEventListener("playing", handlePlaying);
+    video.addEventListener("pause", handlePause);
+    video.addEventListener("ended", handleEnded);
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
+
+    if (stream && attachedStreamRef.current !== stream) {
+      attachedStreamRef.current = stream;
+      video.srcObject = stream;
+      setVideoPlaying(false);
+    } else if (!stream && attachedStreamRef.current !== null) {
+      attachedStreamRef.current = null;
+      video.srcObject = null;
+      setVideoPlaying(false);
+    }
+
+    if (stream && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      void tryPlay();
     }
 
     return () => {
-      if (video.srcObject === stream) {
+      disposed = true;
+      clearRetry();
+      video.removeEventListener("playing", handlePlaying);
+      video.removeEventListener("pause", handlePause);
+      video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+    };
+  }, [stream, hasLiveVideoTrack]);
+
+  useEffect(() => {
+    return () => {
+      playAttemptRef.current += 1;
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
         video.srcObject = null;
       }
+      attachedStreamRef.current = null;
     };
-  }, [stream]);
+  }, []);
 
   const candidateName = candidate?.candidatename || "Candidate";
   const candidateInitial = String(candidateName)
@@ -47,10 +157,17 @@ export default function CandidateVideoTile({
 
   const statusText = (() => {
     if (isLive) return "Live";
-    if (connectionState === "requesting") return "Connecting camera...";
-    if (connectionState === "connecting") return "Connecting camera...";
+    if (hasLiveVideoTrack) return "Starting video...";
+    if (
+      connectionState === "requesting" ||
+      connectionState === "connecting" ||
+      connectionState === "retrying" ||
+      connectionState === "new"
+    ) {
+      return "Connecting camera...";
+    }
     if (connectionState === "failed") return "Camera connection failed";
-    if (connectionState === "disconnected") return "Camera disconnected";
+    if (connectionState === "disconnected") return "Camera reconnecting...";
     return "No camera signal";
   })();
 
@@ -68,11 +185,9 @@ export default function CandidateVideoTile({
         overflow: "hidden",
         borderRadius: 16,
         border: `2px solid ${borderColor}`,
-        background: "#080a12",
+        backgroundColor: "#080a12",
         cursor: "pointer",
-        boxShadow: selected
-          ? `0 0 0 3px ${theme.accent}25`
-          : "none",
+        boxShadow: selected ? `0 0 0 3px ${theme.accent}25` : "none",
         fontFamily:
           "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         transition:
@@ -84,18 +199,19 @@ export default function CandidateVideoTile({
         autoPlay
         playsInline
         muted
+        disablePictureInPicture
         style={{
           position: "absolute",
           inset: 0,
           width: "100%",
           height: "100%",
           objectFit: "cover",
-          display: stream ? "block" : "none",
-          background: "#080a12",
+          display: hasLiveVideoTrack ? "block" : "none",
+          backgroundColor: "#080a12",
         }}
       />
 
-      {!stream ? (
+      {!isLive ? (
         <div
           style={{
             position: "absolute",
@@ -171,7 +287,7 @@ export default function CandidateVideoTile({
               height: 8,
               borderRadius: "50%",
               flexShrink: 0,
-              background: isLive ? "#3ecf8e" : "#74809b",
+              backgroundColor: isLive ? "#3ecf8e" : "#74809b",
               boxShadow: isLive ? "0 0 8px #3ecf8e" : "none",
             }}
           />

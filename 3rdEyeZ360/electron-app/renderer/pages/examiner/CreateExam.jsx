@@ -1029,8 +1029,18 @@ export default function CreateExam({ onBack, onCreated }) {
   const [focusField, setFocusField] = useState("");
   const [websitePreviews, setWebsitePreviews] = useState({});
   const [previewLoading, setPreviewLoading] = useState({});
+  const redirectTimerRef = useRef(null);
+  const saveInFlightRef = useRef(false);
 
   const headers = { Authorization: `Bearer ${accessToken}` };
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        window.clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
 

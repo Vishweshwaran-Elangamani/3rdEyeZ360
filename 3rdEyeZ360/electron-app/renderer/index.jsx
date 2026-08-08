@@ -11,6 +11,8 @@ import ExaminerDashboard from "./pages/examiner/ExaminerDashboard";
 import AdminPanel from "./pages/admin/AdminPanel";
 import useAuthStore from "./store/authStore";
 import useExamStore from "./store/examStore";
+import { stopCandidateWebRTC } from "./services/candidateWebRTC";
+import { stopCameraStream } from "./services/cameraStream";
 import { useSocket, disconnectSocket } from "./hooks/useSocket";
 import axios from "axios";
 
@@ -421,28 +423,43 @@ function App() {
     bootstrapDoneRef.current = false;
   }, [clearAuth, clearExam, reset]);
 
-  const cleanupElectron = useCallback(async () => {
-    try {
-      await window.electronAPI?.stopCapture?.();
-    } catch (e) {
-      console.log("stopCapture cleanup failed", e);
-    }
-    try {
-      await window.electronAPI?.closeBrowser?.();
-    } catch (e) {
-      console.log("closeBrowser cleanup failed", e);
-    }
-    try {
-      await window.electronAPI?.disableLockdown?.();
-    } catch (e) {
-      console.log("disableLockdown cleanup failed", e);
-    }
-    try {
-      await window.electronAPI?.setClosable?.(true);
-    } catch (e) {
-      console.log("setClosable cleanup failed", e);
-    }
-  }, []);
+const cleanupElectron = useCallback(async () => {
+  try {
+    stopCandidateWebRTC();
+  } catch (error) {
+    console.log("stopCandidateWebRTC cleanup failed", error);
+  }
+
+  try {
+    stopCameraStream();
+  } catch (error) {
+    console.log("stopCameraStream cleanup failed", error);
+  }
+
+  try {
+    await window.electronAPI?.stopCapture?.();
+  } catch (error) {
+    console.log("stopCapture cleanup failed", error);
+  }
+
+  try {
+    await window.electronAPI?.closeBrowser?.();
+  } catch (error) {
+    console.log("closeBrowser cleanup failed", error);
+  }
+
+  try {
+    await window.electronAPI?.disableLockdown?.();
+  } catch (error) {
+    console.log("disableLockdown cleanup failed", error);
+  }
+
+  try {
+    await window.electronAPI?.setClosable?.(true);
+  } catch (error) {
+    console.log("setClosable cleanup failed", error);
+  }
+}, []);
 
 const handleLogout = useCallback(async () => {
   if (isLoggingOutRef.current) return;
@@ -802,25 +819,9 @@ const handleLogout = useCallback(async () => {
   cleanupElectron,
   resetToLogin,
 ]);
-  useEffect(() => {
-    if (!bootstrapDoneRef.current) return;
-    if (!accessToken || !user || user.role !== "Candidate") return;
-    if (!["wait", "exam"].includes(screen)) return;
-    if (isLoggingOut) return;
+  // Candidate flow pages receive state changes through Socket.IO.
+  // REST is retained only for bootstrap, explicit navigation and recovery.
 
-    const timer = setInterval(async () => {
-      if (isLoggingOutRef.current) return;
-      const latest = await refreshCurrentCandidateState();
-      const next = routeFromLiveState(latest.merged, screenRef.current);
-
-      setScreen((prev) => {
-        if (isLoggingOutRef.current) return prev;
-        return next || prev;
-      });
-    }, 4000);
-
-    return () => clearInterval(timer);
-  }, [accessToken, user, screen, isLoggingOut, refreshCurrentCandidateState, routeFromLiveState]);
 
   const handleEnterExam = useCallback(
     async (examLike) => {

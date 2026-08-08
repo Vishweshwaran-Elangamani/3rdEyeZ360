@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from config.database import getdb
 from middleware.auth import requirerole
+from sockets.monitoring_socket import emit_assessment_event
 
 router = APIRouter(prefix="/api/assessments", tags=["Assessments"])
 
@@ -501,12 +502,14 @@ async def enter_assessment(
             {"$set": waiting_update},
         )
         updated = await _get_assessment_doc(db, assessment_id)
+        payload = _merge_exam_into_assessment(updated, exam)
+        await emit_assessment_event("assessment_updated", payload)
         return {
             "success": True,
             "waiting": True,
             "sessionid": session_id,
             "session_id": session_id,
-            "assessment": _merge_exam_into_assessment(updated, exam),
+            "assessment": payload,
         }
 
     waiting_session_id = _waiting_session_id(assessment)
@@ -608,12 +611,14 @@ async def enter_assessment(
         {"$set": update},
     )
     updated = await _get_assessment_doc(db, assessment_id)
+    payload = _merge_exam_into_assessment(updated, exam)
+    await emit_assessment_event("assessment_updated", payload)
     return {
         "success": True,
         "waiting": False,
         "sessionid": session_id,
         "session_id": session_id,
-        "assessment": _merge_exam_into_assessment(updated, exam),
+        "assessment": payload,
     }
 
 
@@ -700,7 +705,11 @@ async def interrupt(
         body.reason or "Candidate left the secured assessment session",
         body.source or "CLIENT_EXIT",
     )
-    return {"success": True, "status": "REENTRY_REQUIRED"}
+    updated = await _get_assessment_doc(db, assessment_id)
+    exam = await _get_exam_doc(db, updated.get("examid") or updated.get("exam_id"))
+    payload = _merge_exam_into_assessment(updated, exam)
+    await emit_assessment_event("assessment_updated", payload)
+    return {"success": True, "status": "REENTRY_REQUIRED", "assessment": payload}
 
 
 @router.patch("/{assessment_id}/status")
@@ -786,7 +795,9 @@ async def update_assessment_status(
         {"$set": update},
     )
     updated = await _get_assessment_doc(db, assessment_id)
-    return _merge_exam_into_assessment(updated, exam)
+    payload = _merge_exam_into_assessment(updated, exam)
+    await emit_assessment_event("assessment_updated", payload)
+    return payload
 
 
 @router.post("/{assessment_id}/action")
@@ -893,7 +904,9 @@ async def assessment_action(
         {"$set": update},
     )
     updated = await _get_assessment_doc(db, assessment_id)
+    payload = _merge_exam_into_assessment(updated, exam)
+    await emit_assessment_event("assessment_updated", payload)
     return {
         "message": f"Assessment action '{action}' applied",
-        "assessment": _merge_exam_into_assessment(updated, exam),
+        "assessment": payload,
     }

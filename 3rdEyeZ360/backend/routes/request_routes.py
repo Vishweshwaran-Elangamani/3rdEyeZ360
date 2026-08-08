@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from config.database import getdb
 from middleware.auth import requirerole
+from sockets.monitoring_socket import emit_request_event, emit_assessment_event
 
 router = APIRouter(prefix="/api/requests", tags=["Requests"])
 
@@ -140,7 +141,12 @@ async def submit(req: CreateRequestBody, current_user=Depends(requirerole("Candi
             "assessmentid": req.assessmentid, "assessment_id": req.assessmentid,
             "action": "CreateRequest", "reason": f"{request_type} request submitted", "timestamp": now,
         })
-    return _serialize(request_doc)
+    updated_assessment = await db.assessments.find_one(_assessment_query(req.assessmentid))
+    request_payload = _serialize(request_doc)
+    assessment_payload = _serialize(updated_assessment)
+    await emit_request_event("request_created", request_payload, assessment_payload)
+    await emit_assessment_event("assessment_updated", assessment_payload)
+    return request_payload
 
 
 @router.patch("/{requestid}/review")
@@ -203,7 +209,20 @@ async def review(requestid: str, req: ReviewBody, current_user=Depends(requirero
             "assessmentid": assessment_id, "assessment_id": assessment_id,
             "action": "ReviewRequest", "reason": reason or f"{request_type} {decision}", "timestamp": now,
         })
-    return {"message": f"Request {decision.lower()}", "requestid": requestid, "status": decision, "reviewreason": reason or None, "assessmentstatus": status}
+    updated_request = await db.requests.find_one({"$or": [{"requestid": requestid}, {"request_id": requestid}]})
+    updated_assessment = await db.assessments.find_one(_assessment_query(assessment_id))
+    request_payload = _serialize(updated_request)
+    assessment_payload = _serialize(updated_assessment)
+    await emit_request_event("request_reviewed", request_payload, assessment_payload)
+    await emit_assessment_event("assessment_updated", assessment_payload)
+    return {
+        "message": f"Request {decision.lower()}",
+        "requestid": requestid,
+        "status": decision,
+        "reviewreason": reason or None,
+        "assessmentstatus": status,
+        "assessment": assessment_payload,
+    }
 
 
 @router.get("/exam/{examid}/pending")

@@ -1013,17 +1013,7 @@ try {
       }
 
       const entryAllowed = await obtainEntryPermission();
-
-      /*
-       * A cancelled React effect only means this particular effect instance
-       * became stale. It does not mean that the assessment is ending.
-       * Never shut down the shared camera/WebRTC connection for cancellation.
-       */
-      if (cancelled || completedRef.current) {
-        return;
-      }
-
-      if (!entryAllowed) {
+      if (!entryAllowed || cancelled || completedRef.current) {
         await cleanupExamShell();
         return;
       }
@@ -2070,6 +2060,5 @@ try {
     </div>
   );
 }
-
 
 

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 import socketio
 
 from config.database import get_db
@@ -29,6 +29,15 @@ async def connect(sid, environ, auth):
     try:
         user = await decode_token(token)
         connected_users[sid] = user
+        user_id = user.get("userid") or user.get("user_id")
+        if user_id:
+            await sio.enter_room(sid, f"user_{user_id}")
+            if user.get("role") == "Candidate":
+                await sio.enter_room(sid, f"candidate_{user_id}")
+            elif user.get("role") == "Examiner":
+                await sio.enter_room(sid, f"examiner_{user_id}")
+            elif user.get("role") == "Admin":
+                await sio.enter_room(sid, "admins")
         print(f"[Socket] Connected: {user.get('email')} ({user.get('role')})")
     except Exception as e:
         print(f"[Socket] Auth failed: {e}")
@@ -282,10 +291,59 @@ async def emit_assessment_update(examid, payload=None):
         data.update(payload)
 
     await sio.emit("assessmentupdated", data, room=f"exam_{examid}_examiners")
+async def emit_exam_event(event, exam, examiner_id=None):
+    payload = _normalized_socket_payload(exam)
+    target_examiner = examiner_id or payload.get("examinerid") or payload.get("examiner_id")
+    if target_examiner:
+        await sio.emit(event, payload, room=f"examiner_{target_examiner}")
+    await sio.emit(event, payload, room="admins")
+    exam_id = payload.get("examid")
+    if exam_id:
+        await sio.emit(event, payload, room=f"exam_{exam_id}_all")
+
+async def emit_assessment_event(event, assessment):
+    payload = _normalized_socket_payload(assessment)
+    exam_id = payload.get("examid")
+    candidate_id = payload.get("candidateid")
+    examiner_id = payload.get("examinerid") or payload.get("examiner_id")
+    if exam_id:
+        await sio.emit(event, payload, room=f"exam_{exam_id}_all")
+        await sio.emit(event, payload, room=f"exam_{exam_id}_examiners")
+    if candidate_id:
+        await sio.emit(event, payload, room=f"candidate_{candidate_id}")
+    if examiner_id:
+        await sio.emit(event, payload, room=f"examiner_{examiner_id}")
+    await sio.emit(event, payload, room="admins")
+
+async def emit_request_event(event, request_payload, assessment=None):
+    payload = _normalized_socket_payload(request_payload)
+    if assessment:
+        payload["assessment"] = _normalized_socket_payload(assessment)
+    exam_id = payload.get("examid")
+    candidate_id = payload.get("candidateid")
+    if exam_id:
+        await sio.emit(event, payload, room=f"exam_{exam_id}_examiners")
+    if candidate_id:
+        await sio.emit(event, payload, room=f"candidate_{candidate_id}")
+    await sio.emit(event, payload, room="admins")
+
 # ---------------- Compatibility aliases for renderer event names ----------------
 
+def _json_safe(value):
+    """Recursively convert database values into Socket.IO JSON-safe values."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    return str(value)
+
+
 def _normalized_socket_payload(data):
-    payload = dict(data or {})
+    payload = _json_safe(dict(data or {}))
     payload["examid"] = payload.get("examid") or payload.get("exam_id")
     payload["assessmentid"] = payload.get("assessmentid") or payload.get("assessment_id")
     payload["candidateid"] = payload.get("candidateid") or payload.get("candidate_id")
@@ -367,21 +425,47 @@ async def _authorize_webrtc(sid, data):
 
 
 @sio.on("webrtc_camera_ready")
+@sio.on("webrtc_camera_ready")
 async def webrtc_camera_ready(sid, data):
-    user, examid, candidateid = await _authorize_webrtc(sid, data)
+    user, examid, candidateid = await _authorize_webrtc(
+        sid,
+        data,
+    )
+
     if not user or user.get("role") != "Candidate":
         return
 
-    await sio.enter_room(sid, f"candidate_{candidateid}")
-    await sio.enter_room(sid, f"exam_{examid}_all")
+    await sio.enter_room(
+        sid,
+        f"candidate_{candidateid}",
+    )
+
+    await sio.enter_room(
+        sid,
+        f"exam_{examid}_all",
+    )
 
     payload = dict(data or {})
-    payload.update({
-        "examid": examid,
-        "candidateid": candidateid,
-        "status": "ready" if payload.get("camera") else "closed",
-        "timestamp": _utc_iso(),
-    })
+
+    payload.update(
+        {
+            "examid": examid,
+            "candidateid": candidateid,
+            "status": (
+                "ready"
+                if payload.get("camera")
+                else "closed"
+            ),
+            "timestamp": _utc_iso(),
+        }
+    )
+
+    await sio.emit(
+        "webrtc_camera_ready",
+        payload,
+        room=f"exam_{examid}_examiners",
+    )
+
     await sio.emit(
         "webrtc_camera_status",
         payload,

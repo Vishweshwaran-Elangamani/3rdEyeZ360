@@ -3,7 +3,7 @@ import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useExamStore from "../../store/examStore";
 import useSocket from "../../hooks/useSocket";
-import { startCandidateWebRTC, stopCandidateWebRTC } from "../../services/candidateWebRTC";
+import { stopCandidateWebRTC } from "../../services/candidateWebRTC";
 import { stopCameraStream } from "../../services/cameraStream";
 
 const API = "http://localhost:3000";
@@ -752,32 +752,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     user?.user_id
   );
 
-  useEffect(() => {
-    if (!socket || !examId || !candidateId) return undefined;
-
-    let cancelled = false;
-
-    startCandidateWebRTC({
-      socket,
-      examid: examId,
-      assessmentid: assessmentId,
-      candidateid: candidateId,
-    }).catch((error) => {
-      if (!cancelled) {
-        console.error(
-          "Unable to continue live examiner camera stream",
-          error
-        );
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      // Keep the shared camera alive during internal React page transitions.
-      // Explicit exit flows call cleanupExamShell() for the real shutdown.
-    };
-  }, [socket, examId, assessmentId, candidateId]);
-
   const cleanupExamShell = useCallback(async () => {
     try {
   stopCandidateWebRTC();
@@ -832,13 +806,15 @@ try {
   useEffect(() => {
     if (activeTab > allowedSites.length - 1) setActiveTab(0);
   }, [allowedSites, activeTab]);
-  useEffect(() => {
-    return () => {
-      // Do not stop camera/WebRTC from this generic component cleanup.
-      // cleanupExamShell() handles genuine assessment exits.
-      window.electronAPI?.closeBrowser?.().catch?.(() => {});
-    };
-  }, []);
+useEffect(() => {
+  return () => {
+    stopCandidateWebRTC();
+    stopCameraStream();
+
+    window.electronAPI?.stopCapture?.().catch?.(() => {});
+    window.electronAPI?.closeBrowser?.().catch?.(() => {});
+  };
+}, []);
   const merged = useMemo(
     () => ({
       ...(normalizedExam || {}),
@@ -1013,17 +989,7 @@ try {
       }
 
       const entryAllowed = await obtainEntryPermission();
-
-      /*
-       * A cancelled React effect only means this particular effect instance
-       * became stale. It does not mean that the assessment is ending.
-       * Never shut down the shared camera/WebRTC connection for cancellation.
-       */
-      if (cancelled || completedRef.current) {
-        return;
-      }
-
-      if (!entryAllowed) {
+      if (!entryAllowed || cancelled || completedRef.current) {
         await cleanupExamShell();
         return;
       }
@@ -2070,6 +2036,4 @@ try {
     </div>
   );
 }
-
-
 

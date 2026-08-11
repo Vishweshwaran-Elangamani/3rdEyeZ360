@@ -12,6 +12,10 @@ const THEME_STORAGE_KEY = "3rdeyez360.theme";
 const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "LOCKED", "COMPLETED"]);
 const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
 
+function getAssessmentTimerStorageKey(assessmentId) {
+  return assessmentId ? `3rdeyez360.assessment-timer.${assessmentId}` : null;
+}
+
 /* ============= Theme system ============= */
 
 const THEMES = {
@@ -697,6 +701,8 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const heartbeatFailureRef = useRef(false);
   const waitingRegistrationRef = useRef(null);
 
+  // Stopwatch countdown starts when secured candidate entry is granted.
+  const timerStartedAtRef = useRef(null);
   const { accessToken, user } = useAuthStore();
   const waitingSessionId = useExamStore((state) => state.waitingSessionId);
   const clearWaitingSession = useExamStore((state) => state.clearWaitingSession);
@@ -751,6 +757,24 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     user?.userid,
     user?.user_id
   );
+
+  useEffect(() => {
+    // Restore the original candidate entry time after refresh or remount.
+    if (!assessmentId || timerStartedAtRef.current) return;
+
+    const storageKey = getAssessmentTimerStorageKey(assessmentId);
+    if (!storageKey) return;
+
+    try {
+      const storedStartedAt = Number(localStorage.getItem(storageKey));
+      if (Number.isFinite(storedStartedAt) && storedStartedAt > 0) {
+        timerStartedAtRef.current = storedStartedAt;
+        setNow(Date.now());
+      }
+    } catch (error) {
+      console.warn("Unable to restore assessment timer", error);
+    }
+  }, [assessmentId]);
 
   useEffect(() => {
     if (!socket || !examId || !candidateId) return undefined;
@@ -918,7 +942,30 @@ try {
         entryGrantedRef.current = true;
         intentionalExitRef.current = false;
         heartbeatFailureRef.current = false;
-        clearWaitingSession();
+        // Persist the first successful candidate-entry time. Never overwrite it
+        // during refresh, remount, pause, resume, or repeated /enter calls.
+        if (!timerStartedAtRef.current) {
+          const storageKey = getAssessmentTimerStorageKey(assessmentId);
+          let startedAt = Date.now();
+
+          try {
+            const storedStartedAt = storageKey
+              ? Number(localStorage.getItem(storageKey))
+              : 0;
+
+            if (Number.isFinite(storedStartedAt) && storedStartedAt > 0) {
+              startedAt = storedStartedAt;
+            } else if (storageKey) {
+              localStorage.setItem(storageKey, String(startedAt));
+            }
+          } catch (error) {
+            console.warn("Unable to persist assessment timer", error);
+          }
+
+          timerStartedAtRef.current = startedAt;
+          setNow(Date.now());
+        }
+clearWaitingSession();
         if (response.data?.assessment) {
           setLiveAssessment(normalizeAssessment(response.data.assessment));
         }
@@ -1149,6 +1196,14 @@ try {
 
   const finishExam = useCallback(async () => {
     if (completedRef.current) return;
+    // Remove the persisted timer only when the assessment genuinely finishes.
+    try {
+      const storageKey = getAssessmentTimerStorageKey(assessmentId);
+      if (storageKey) localStorage.removeItem(storageKey);
+    } catch (error) {
+      console.warn("Unable to clear assessment timer", error);
+    }
+    timerStartedAtRef.current = null;
     completedRef.current = true;
     intentionalExitRef.current = true;
     entryGrantedRef.current = false;
@@ -1231,7 +1286,7 @@ try {
         return;
       }
       if (action === "PAUSE") {
-        setPauseLocked(true);
+setPauseLocked(true);
         setLiveAssessment((prev) => ({ ...(prev || {}), status: "PAUSED", assessmentstatus: "PAUSED" }));
         setStatusMsg("Your assessment has been paused by the examiner.");
         setBrowserError("");
@@ -1239,7 +1294,7 @@ try {
         return;
       }
       if (action === "RESUME") {
-        setPauseLocked(false);
+setPauseLocked(false);
         setLiveAssessment((prev) => ({ ...(prev || {}), status: "ACTIVE", assessmentstatus: "ACTIVE" }));
         setStatusMsg("Your assessment has been resumed.");
         setBrowserError("");
@@ -1342,18 +1397,20 @@ try {
       socket.off("request_reviewed", onAssessmentUpdated);
     };
   }, [socket, examId, assessmentId, finishExam, hideBrowserForPause, showBrowserForActiveState]);
-
-  const startDate = merged.date || normalizedExam?.date;
-  const startClock = merged.starttime || normalizedExam?.starttime;
-  const durationMinutes = Number(merged.durationminutes || normalizedExam?.durationminutes || 0);
-
-  const startMs =
-    startDate && startClock && startDate !== "â€”" && startClock !== "â€”"
-      ? new Date(`${startDate}T${startClock}:00`).getTime()
-      : null;
-  const endMs = startMs && durationMinutes > 0 ? startMs + durationMinutes * 60 * 1000 : null;
-  const remainingMs = endMs ? Math.max(0, endMs - now) : 0;
+  const durationMinutes = Number(
+    merged.durationminutes || normalizedExam?.durationminutes || 0
+  );
   const totalMs = durationMinutes > 0 ? durationMinutes * 60 * 1000 : 0;
+  // Continuous countdown from the original candidate-entry timestamp.
+  // Refresh, pause, resume, and component remount do not stop or reset time.
+  const elapsedMs = timerStartedAtRef.current
+    ? Math.max(0, now - timerStartedAtRef.current)
+    : 0;
+  const remainingMs = totalMs > 0
+    ? timerStartedAtRef.current
+      ? Math.max(0, totalMs - elapsedMs)
+      : totalMs
+    : 0;
 
   useEffect(() => {
     return () => {
@@ -2070,6 +2127,8 @@ try {
     </div>
   );
 }
+
+
 
 
 

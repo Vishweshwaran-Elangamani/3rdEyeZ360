@@ -3,3 +3,8 @@ docker exec -it samp_keycloak /opt/keycloak/bin/kc.sh export --realm 3rdEyeZ360 
 
 docker cp samp_keycloak:/tmp/full-export.json D:\3rdEyeZ360V2\full-export.json
 Successfully copied 73.8kB (transferred 75.8kB) to D:\3rdEyeZ360V2\full-export.json
+
+
+//run this 
+
+docker exec -it thirdeye_keycloak /opt/keycloak/bin/kc.sh export --realm 3rdEyeZ360 --users same_file --file /tmp/full-export.json ; docker cp thirdeye_keycloak:/tmp/full-export.json D:\3rdEyeZ360V2\full-export.json

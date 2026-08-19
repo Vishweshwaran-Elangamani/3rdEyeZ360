@@ -7,10 +7,33 @@ let browserVisible = false;
 let currentBounds = null;
 let windowHandlers = null;
 
+let lastBrowserInputAt = 0;
+let lastInputAt = 0;
+
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
   "AppleWebKit/537.36 (KHTML, like Gecko) " +
   "Chrome/124.0.0.0 Safari/537.36";
+
+function markBrowserInput(source = "browser") {
+  const now = Date.now();
+
+  lastBrowserInputAt = now;
+  lastInputAt = now;
+
+  console.log("[BROWSER INPUT] activity captured", {
+    source,
+    at: new Date(now).toISOString(),
+  });
+}
+
+function getLastBrowserInputAt() {
+  return lastBrowserInputAt;
+}
+
+function getLastInputAt() {
+  return lastInputAt;
+}
 
 function normalizeUrl(value) {
   const raw = String(value || "").trim();
@@ -183,6 +206,7 @@ function removeWindowHandlers() {
   if (!windowHandlers) return;
 
   const { window, handler } = windowHandlers;
+
   if (isWindowAlive(window)) {
     for (const eventName of ["resize", "maximize", "unmaximize", "restore"]) {
       try {
@@ -222,6 +246,8 @@ function cleanup(mainWindow = attachedWindow) {
   attachedWindow = null;
   browserVisible = false;
   currentBounds = null;
+  lastBrowserInputAt = 0;
+  lastInputAt = 0;
 
   if (oldView?.webContents && !oldView.webContents.isDestroyed()) {
     try {
@@ -286,8 +312,59 @@ async function showErrorPage(view, title, message, url) {
   }
 }
 
+async function injectInputTrackingScript(contents) {
+  if (!contents || contents.isDestroyed()) return;
+
+  const script = `
+    (() => {
+      if (window.__thirdEyeInputTrackingInstalled) return;
+      window.__thirdEyeInputTrackingInstalled = true;
+
+      const notify = (source) => {
+        try {
+          console.debug("[3rdEyeZ360] browser input activity", source);
+        } catch (_) {}
+      };
+
+      const mark = (source) => {
+        notify(source);
+      };
+
+      window.addEventListener("keydown", () => mark("keydown"), true);
+      window.addEventListener("keyup", () => mark("keyup"), true);
+      window.addEventListener("input", () => mark("input"), true);
+      window.addEventListener("beforeinput", () => mark("beforeinput"), true);
+      window.addEventListener("paste", () => mark("paste"), true);
+      window.addEventListener("compositionstart", () => mark("compositionstart"), true);
+      window.addEventListener("compositionupdate", () => mark("compositionupdate"), true);
+
+      document.addEventListener("keydown", () => mark("document-keydown"), true);
+      document.addEventListener("input", () => mark("document-input"), true);
+    })();
+  `;
+
+  try {
+    await contents.executeJavaScript(script, true);
+    console.log("[BROWSER INPUT] tracking script injected");
+  } catch (error) {
+    console.log("[BROWSER INPUT] tracking script injection failed:", error.message);
+  }
+}
+
 function wireViewEvents(mainWindow, view) {
   const contents = view.webContents;
+
+  contents.on("before-input-event", (_event, input) => {
+    const inputType = String(input?.type || "").toLowerCase();
+
+    if (
+      inputType === "keydown" ||
+      inputType === "keyup" ||
+      inputType === "char"
+    ) {
+      markBrowserInput(`before-input-event:${inputType}`);
+    }
+  });
 
   contents.setWindowOpenHandler(({ url }) => {
     if (isAllowed(url)) {
@@ -295,6 +372,7 @@ function wireViewEvents(mainWindow, view) {
     } else {
       console.log("Blocked assessment popup:", url);
     }
+
     return { action: "deny" };
   });
 
@@ -331,6 +409,7 @@ function wireViewEvents(mainWindow, view) {
     if (browserView === view) {
       ensureAttached(mainWindow);
       applyBounds(mainWindow);
+      void injectInputTrackingScript(contents);
     }
 
     sendBrowserState(mainWindow, {
@@ -346,6 +425,7 @@ function wireViewEvents(mainWindow, view) {
       if (!isMainFrame || code === -3) return;
 
       console.log("Assessment browser failed:", code, description, url);
+
       sendBrowserState(mainWindow, {
         status: "failed",
         url,
@@ -401,6 +481,7 @@ async function loadUrl(view, value, mainWindow = attachedWindow) {
     }
 
     console.log("Assessment browser load error:", error?.message || error);
+
     sendBrowserState(mainWindow, {
       status: "failed",
       url,
@@ -413,6 +494,7 @@ async function loadUrl(view, value, mainWindow = attachedWindow) {
       error?.message || "Unknown load error",
       url,
     );
+
     return false;
   }
 }
@@ -421,6 +503,7 @@ async function createBrowserView(mainWindow, websites = [], initialBounds = null
   if (!isWindowAlive(mainWindow)) return null;
 
   const normalizedWebsites = normalizeWebsiteList(websites);
+
   allowedDomains = [
     ...new Set(normalizedWebsites.map(extractHostname).filter(Boolean)),
   ];
@@ -450,6 +533,7 @@ async function createBrowserView(mainWindow, websites = [], initialBounds = null
 
     browserView.setBackgroundColor("#ffffff");
     browserView.webContents.setUserAgent(USER_AGENT);
+
     wireViewEvents(mainWindow, browserView);
 
     if (!ensureAttached(mainWindow)) {
@@ -478,10 +562,12 @@ async function createBrowserView(mainWindow, websites = [], initialBounds = null
     return browserView;
   } catch (error) {
     console.log("Assessment browser creation failed:", error.message);
+
     sendBrowserState(mainWindow, {
       status: "failed",
       error: error.message || "Failed to create assessment browser.",
     });
+
     cleanup(mainWindow);
     return null;
   }
@@ -510,11 +596,13 @@ function showBrowser(mainWindow) {
   if (!hasLiveView()) return false;
 
   const attached = ensureAttached(mainWindow);
+
   if (attached) {
     browserView.setVisible(true);
     browserVisible = true;
     applyBounds(mainWindow);
   }
+
   return attached;
 }
 
@@ -548,6 +636,7 @@ function restoreBrowser(mainWindow) {
 
   try {
     if (mainWindow.isMinimized()) mainWindow.restore();
+
     mainWindow.show();
     mainWindow.focus();
 
@@ -571,4 +660,6 @@ module.exports = {
   hideBrowser,
   focusBrowser,
   restoreBrowser,
+  getLastBrowserInputAt,
+  getLastInputAt,
 };

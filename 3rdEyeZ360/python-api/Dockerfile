@@ -1,11 +1,10 @@
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    libglib2.0-0 \
+    libxcb1 \
     libgl1 \
-    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

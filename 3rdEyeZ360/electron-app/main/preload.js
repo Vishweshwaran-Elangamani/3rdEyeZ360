@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   sendFrame: (data) => ipcRenderer.send("webcam-frame", data),
+  sendAudio: (data) => ipcRenderer.send("webcam-audio", data),
 
   startWebcamCapture: (callback) => {
     const handler = (_event, data) => callback(data);
@@ -67,3 +68,4 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   setClosable: (val) => ipcRenderer.invoke("set-closable", val),
 });
+ 

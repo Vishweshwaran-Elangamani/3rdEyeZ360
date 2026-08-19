@@ -1,4 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+﻿===== FILE: D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\pages\candidate\ActiveExam.jsx =====
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useExamStore from "../../store/examStore";
@@ -700,7 +701,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const entryRequestRef = useRef(null);
   const heartbeatFailureRef = useRef(false);
   const waitingRegistrationRef = useRef(null);
-  const monitoringStartedRef = useRef(false);
 
   // Stopwatch countdown starts when secured candidate entry is granted.
   const timerStartedAtRef = useRef(null);
@@ -759,79 +759,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
     user?.user_id
   );
 
-  const startAiMonitoring = useCallback(async (reason = "EXAM_ENTRY") => {
-    if (!window.electronAPI?.startCapture) {
-      console.warn("[MONITORING] startCapture API is not available.");
-      return false;
-    }
-
-    if (!assessmentId || !candidateId || !examId) {
-      console.warn("[MONITORING] Cannot start AI monitoring because identifiers are missing.", {
-        assessmentId,
-        candidateId,
-        examId,
-        reason,
-      });
-      return false;
-    }
-
-    if (monitoringStartedRef.current) {
-      console.log("[MONITORING] AI monitoring already started. Skipping duplicate start.", {
-        assessmentId,
-        candidateId,
-        examId,
-        reason,
-      });
-      return true;
-    }
-
-    monitoringStartedRef.current = true;
-
-    console.log("================================");
-    console.log("AI MONITORING STARTED");
-    console.log("Assessment:", assessmentId);
-    console.log("Candidate :", candidateId);
-    console.log("Exam      :", examId);
-    console.log("Session   :", sessionIdRef.current);
-    console.log("Reason    :", reason);
-    console.log("================================");
-
-    try {
-      await window.electronAPI.startCapture({
-        assessmentId,
-        candidateId,
-        examId,
-        token: accessToken,
-        sessionId: sessionIdRef.current,
-        reason,
-      });
-      return true;
-    } catch (error) {
-      monitoringStartedRef.current = false;
-      console.error("[MONITORING] Failed to start capture", error);
-      return false;
-    }
-  }, [assessmentId, candidateId, examId, accessToken]);
-
-  useEffect(() => {
-    if (!window.electronAPI?.onDetectionResult) return undefined;
-
-    const unsubscribe = window.electronAPI.onDetectionResult((result) => {
-      console.log("[DETECTION RESULT]", result);
-    });
-
-    return () => {
-      try {
-        if (typeof unsubscribe === "function") {
-          unsubscribe();
-        }
-        window.electronAPI.removeDetectionListener?.();
-      } catch (error) {
-        console.error(error);
-      }
-    };
-  }, []);
-
   useEffect(() => {
     // Restore the original candidate entry time after refresh or remount.
     if (!assessmentId || timerStartedAtRef.current) return;
@@ -877,7 +804,6 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   }, [socket, examId, assessmentId, candidateId]);
 
   const cleanupExamShell = useCallback(async () => {
-    monitoringStartedRef.current = false;
     try {
   stopCandidateWebRTC();
 } catch (error) {
@@ -976,10 +902,7 @@ try {
     if (!isExamRunning || completedRef.current || intentionalExitRef.current) {
       return false;
     }
-    if (entryGrantedRef.current && sessionIdRef.current) {
-      await startAiMonitoring("ENTRY_ALREADY_GRANTED");
-      return true;
-    }
+    if (entryGrantedRef.current && sessionIdRef.current) return true;
     if (!assessmentId || !accessToken) return false;
     if (entryRequestRef.current) return entryRequestRef.current;
 
@@ -1049,7 +972,6 @@ clearWaitingSession();
         }
         setStatusMsg("Secured assessment session created.");
         setBrowserError("");
-        await startAiMonitoring("ENTRY_GRANTED");
         return true;
       } catch (error) {
         entryGrantedRef.current = false;
@@ -1077,7 +999,6 @@ clearWaitingSession();
     clearWaitingSession,
     cleanupExamShell,
     onReturnToDashboard,
-    startAiMonitoring,
   ]);
 
   const resizeBrowserToArea = useCallback(async () => {
@@ -1288,7 +1209,6 @@ clearWaitingSession();
     intentionalExitRef.current = true;
     entryGrantedRef.current = false;
     sessionIdRef.current = null;
-    monitoringStartedRef.current = false;
     await cleanupExamShell();
     onComplete?.();
   }, [cleanupExamShell, onComplete]);
@@ -2212,4 +2132,279 @@ setPauseLocked(false);
 
 
 
+
+
+
+===== FILE: D:\3rdEyeZ360V2\3rdEyeZ360\electron-app\renderer\services\cameraStream.js =====
+let stream = null,
+  promise = null;
+export async function getCameraStream() {
+  if (stream?.active) return stream;
+  if (promise) return promise;
+  if (!navigator.mediaDevices?.getUserMedia)
+    throw new Error("Camera access is unavailable.");
+  promise = navigator.mediaDevices
+    .getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 360 },
+        frameRate: { ideal: 15, max: 20 },
+        facingMode: "user",
+      },
+      audio: false,
+    })
+    .then((s) => ((stream = s), s))
+    .finally(() => (promise = null));
+  return promise;
+}
+export function stopCameraStream() {
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+  promise = null;
+}
+
+
+===== FILE: D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\violation.py =====
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class ViolationModel(BaseModel):
+    violation_id: str
+    assessment_id: str
+    candidate_id: str
+    exam_id: str
+    type: str
+    detail: Optional[str] = None
+    confidence: float = Field(ge=0.0, le=1.0)
+    risk_score: int = Field(ge=0)
+    screenshot_b64: Optional[str] = None
+    status: str = "Open"
+    reviewed: bool = False
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+
+===== FILE: D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\warning.py =====
+from pydantic import BaseModel
+from datetime import datetime
+
+class WarningModel(BaseModel):
+    warning_id: str
+    assessment_id: str
+    candidate_id: str
+    exam_id: str
+    type: str
+    detail: str
+    count: int = 1
+    timestamp: datetime = None
+
+===== FILE: D:\3rdEyeZ360V2\3rdEyeZ360\backend\models\assessment.py =====
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from utils.constants import AssessmentStatus
+
+
+class AssessmentModel(BaseModel):
+    assessment_id: str
+    exam_id: str
+    candidate_id: str
+    status: str = Field(default=AssessmentStatus.ASSIGNED)
+    attendance_status: Optional[str] = None
+    join_time: Optional[datetime] = None
+    active_time: Optional[datetime] = None
+    exit_time: Optional[datetime] = None
+    violation_count: int = Field(default=0, ge=0)
+    warning_count: int = Field(default=0, ge=0)
+    risk_score: int = Field(default=0, ge=0)
+    credibility_score: int = Field(default=100, ge=0, le=100)
+    integrity_score: int = Field(default=100, ge=0, le=100)
+    threshold_reached: bool = False
+
+    has_entered_exam: bool = False
+    requires_reentry_approval: bool = False
+    reentry_approval_consumed: bool = False
+    active_session_id: Optional[str] = None
+    last_heartbeat_at: Optional[datetime] = None
+    interrupted_at: Optional[datetime] = None
+    interruption_reason: Optional[str] = None
+    interruption_source: Optional[str] = None
+
+    re_entry_count: int = Field(default=0, ge=0)
+    final_status: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+
+
+===== FILE: D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\violation_service.py =====
+from datetime import datetime
+import uuid
+
+from config.database import get_db
+
+VIOLATION_SCORES = {
+    "phone_detected": 5,
+    "multiple_face": 8,
+    "multiple_faces": 8,
+    "face_missing": 2,
+    "looking_away": 2,
+    "looking_left": 2,
+    "looking_right": 2,
+    "looking_down": 2,
+    "noise_violation": 2,
+    "background_speech": 2,
+    "loud_noise": 2,
+    "restricted_app": 6,
+    "multiple_monitor": 4,
+    "charger_removed": 1,
+    "mic_silent": 1,
+}
+
+
+async def log_warning(assessment_id: str, candidate_id: str, exam_id: str, detail: str):
+    db = get_db()
+    existing = await db.warnings.find_one({
+        "assessment_id": assessment_id,
+        "detail": detail
+    })
+    if existing:
+        await db.warnings.update_one(
+            {"_id": existing["_id"]},
+            {"$inc": {"count": 1}, "$set": {"timestamp": datetime.utcnow()}}
+        )
+        return existing["count"] + 1
+
+    warning = {
+        "warning_id": f"WRN-{uuid.uuid4().hex[:8].upper()}",
+        "assessment_id": assessment_id,
+        "candidate_id": candidate_id,
+        "exam_id": exam_id,
+        "type": detail,
+        "detail": detail,
+        "count": 1,
+        "timestamp": datetime.utcnow()
+    }
+    await db.warnings.insert_one(warning)
+    return 1
+
+
+async def log_violation(
+    assessment_id: str,
+    candidate_id: str,
+    exam_id: str,
+    vtype: str,
+    detail: str,
+    confidence: float,
+    screenshot_path: str = None,
+    clip_path: str = None
+):
+    db = get_db()
+    risk = VIOLATION_SCORES.get(vtype, 5)
+
+    violation = {
+        "violation_id": f"VIO-{uuid.uuid4().hex[:8].upper()}",
+        "assessment_id": assessment_id,
+        "candidate_id": candidate_id,
+        "exam_id": exam_id,
+        "type": vtype,
+        "detail": detail,
+        "confidence": confidence,
+        "risk_score": risk,
+        "screenshot_path": screenshot_path,
+        "clip_path": clip_path,
+        "timestamp": datetime.utcnow(),
+        "reviewed": False
+    }
+    await db.violations.insert_one(violation)
+
+    await db.assessments.update_one(
+        {"assessment_id": assessment_id},
+        {
+            "$inc": {
+                "violation_count": 1,
+                "risk_score": risk,
+                "credibility_score": -risk
+            },
+            "$set": {"updated_at": datetime.utcnow()}
+        }
+    )
+
+    assessment = await db.assessments.find_one({"assessment_id": assessment_id})
+    exam = await db.exams.find_one({"exam_id": exam_id})
+
+    if exam and assessment and assessment.get("risk_score", 0) >= exam.get("violation_threshold", 10):
+        await db.assessments.update_one(
+            {"assessment_id": assessment_id},
+            {"$set": {"status": "LOCKED", "threshold_reached": True, "updated_at": datetime.utcnow()}}
+        )
+        return {"locked": True, "violation": violation}
+
+    return {"locked": False, "violation": violation}
+
+
+async def get_warning_count(assessment_id: str, detail: str) -> int:
+    db = get_db()
+    result = await db.warnings.find_one({"assessment_id": assessment_id, "detail": detail})
+    return result["count"] if result else 0
+
+===== FILE: D:\3rdEyeZ360V2\3rdEyeZ360\backend\services\evidence_service.py =====
+from config.minio_client import get_minio
+from dotenv import load_dotenv
+import os
+import io
+import base64
+from datetime import datetime, timedelta
+
+load_dotenv(override=True)
+
+BUCKET = os.getenv("MINIO_BUCKET", "assessment-evidence")
+
+
+def upload_screenshot(exam_id: str, candidate_id: str, violation_type: str, image_b64: str) -> str:
+    minio = get_minio()
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"{violation_type}_{timestamp}.jpg"
+    path = f"{exam_id}/{candidate_id}/screenshots/{filename}"
+    image_bytes = base64.b64decode(image_b64)
+    minio.put_object(
+        BUCKET,
+        path,
+        io.BytesIO(image_bytes),
+        len(image_bytes),
+        content_type="image/jpeg",
+    )
+    return path
+
+
+def upload_clip(exam_id: str, candidate_id: str, violation_type: str, video_bytes: bytes) -> str:
+    minio = get_minio()
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"{violation_type}_{timestamp}.mp4"
+    path = f"{exam_id}/{candidate_id}/clips/{filename}"
+    minio.put_object(
+        BUCKET,
+        path,
+        io.BytesIO(video_bytes),
+        len(video_bytes),
+        content_type="video/mp4",
+    )
+    return path
+
+
+def get_presigned_url(path: str, expires_seconds: int = 3600) -> str:
+    minio = get_minio()
+    return minio.presigned_get_object(BUCKET, path, expires=timedelta(seconds=expires_seconds))
 

@@ -10,6 +10,7 @@ let mediaStream = null;
 
 const peers = new Map();
 const pendingIce = new Map();
+let cameraReadyTimer = null;
 
 const log = (...args) => console.log("[Candidate WebRTC]", ...args);
 const logError = (...args) => console.error("[Candidate WebRTC]", ...args);
@@ -185,12 +186,30 @@ function announceCameraReady() {
   });
 }
 
+function stopCameraReadyAnnouncements() {
+  if (cameraReadyTimer) {
+    window.clearInterval(cameraReadyTimer);
+    cameraReadyTimer = null;
+  }
+}
+
+function startCameraReadyAnnouncements() {
+  stopCameraReadyAnnouncements();
+  announceCameraReady();
+
+  cameraReadyTimer = window.setInterval(() => {
+    if (socket?.connected && identity && cameraIsLive()) {
+      announceCameraReady();
+    }
+  }, 3000);
+}
+
 function handleSocketConnect() {
   log("socket connected/reconnected", {
     socketId: socket?.id,
     identity,
   });
-  announceCameraReady();
+  startCameraReadyAnnouncements();
 }
 
 function handleSocketDisconnect(reason) {
@@ -451,7 +470,7 @@ export async function startCandidateWebRTC(options = {}) {
       identity,
       camera: cameraSnapshot(),
     });
-    announceCameraReady();
+    startCameraReadyAnnouncements();
     return mediaStream;
   } catch (error) {
     logError("start/rebind failed", error);
@@ -460,6 +479,7 @@ export async function startCandidateWebRTC(options = {}) {
 }
 
 export function stopCandidateWebRTC() {
+  stopCameraReadyAnnouncements();
   log("full shutdown requested", {
     identity,
     peerCount: peers.size,

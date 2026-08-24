@@ -376,23 +376,101 @@ function getCardState(exam, pendingRequest) {
   };
 }
 
-function getStatusMeta(status, examStatus, pendingRequest, t) {
+function getStatusMeta(status, examStatus, pendingRequest, t, exam = null) {
   const s = toUpper(status);
   const e = toUpper(examStatus);
-  if (s === "COMPLETED") return { label: "Completed", color: t.success, gradient: t.successGradient, bucket: "completed" };
-  if (s === "TERMINATED") return { label: "Terminated", color: t.danger, gradient: t.dangerGradient, bucket: "terminated" };
-  if (s === "LOCKED") return { label: "Locked", color: t.danger, gradient: t.dangerGradient, bucket: "locked" };
-  if (isApprovedStatus(s)) return { label: "Approved", color: t.success, gradient: t.successGradient, bucket: "ready" };
-  if (pendingRequest || isPendingRequestStatus(s))
-    return { label: "Awaiting Review", color: t.warning, gradient: t.warningGradient, bucket: "pending" };
-  if (isRejectedStatus(s)) return { label: "Declined", color: t.danger, gradient: t.dangerGradient, bucket: "rejected" };
-  if (e === "RUNNING" && ["ASSIGNED", "AVAILABLE", "READY"].includes(s))
-    return { label: "Late Entry Needed", color: t.info, gradient: `linear-gradient(135deg, ${t.info}, ${t.accent2})`, bucket: "late" };
-  if (["ASSIGNED", "AVAILABLE", "READY"].includes(s))
-    return { label: "Ready", color: t.accent, gradient: t.accentGradient, bucket: "ready" };
-  if (s === "ACTIVE") return { label: "Live", color: t.success, gradient: t.successGradient, bucket: "ready" };
-  if (s === "PAUSED") return { label: "Paused", color: t.warning, gradient: t.warningGradient, bucket: "pending" };
-  return { label: status || "Unknown", color: t.textMuted, gradient: `linear-gradient(135deg, ${t.textMuted}, ${t.textFaint})`, bucket: "other" };
+  const cardState = getCardState(
+    exam || { status: s, examstatus: e },
+    pendingRequest
+  );
+
+  if (s === "TERMINATED") {
+    return {
+      label: "Terminated",
+      color: t.danger,
+      gradient: t.dangerGradient,
+      bucket: "terminated",
+    };
+  }
+
+  if (pendingRequest || isPendingRequestStatus(s) || cardState.mode === "pending-request") {
+    return {
+      label: "Awaiting Review",
+      color: t.warning,
+      gradient: t.warningGradient,
+      bucket: "awaiting-review",
+    };
+  }
+
+  if (isApprovedStatus(s)) {
+    return {
+      label: "Approved",
+      color: t.success,
+      gradient: t.successGradient,
+      bucket: "approved",
+    };
+  }
+
+  if (cardState.mode === "request") {
+    return {
+      label: "Re-entry Required",
+      color: t.info,
+      gradient: `linear-gradient(135deg, ${t.info}, ${t.accent2})`,
+      bucket: "reentry-required",
+    };
+  }
+
+  if (["ASSIGNED", "AVAILABLE", "READY", "ACTIVE"].includes(s)) {
+    return {
+      label: "Ready",
+      color: t.accent,
+      gradient: t.accentGradient,
+      bucket: "ready",
+    };
+  }
+
+  if (s === "COMPLETED") {
+    return {
+      label: "Completed",
+      color: t.success,
+      gradient: t.successGradient,
+      bucket: "other",
+    };
+  }
+
+  if (s === "LOCKED") {
+    return {
+      label: "Locked",
+      color: t.danger,
+      gradient: t.dangerGradient,
+      bucket: "other",
+    };
+  }
+
+  if (isRejectedStatus(s)) {
+    return {
+      label: "Declined",
+      color: t.danger,
+      gradient: t.dangerGradient,
+      bucket: "reentry-required",
+    };
+  }
+
+  if (s === "PAUSED") {
+    return {
+      label: "Paused",
+      color: t.warning,
+      gradient: t.warningGradient,
+      bucket: "other",
+    };
+  }
+
+  return {
+    label: status || "Unknown",
+    color: t.textMuted,
+    gradient: `linear-gradient(135deg, ${t.textMuted}, ${t.textFaint})`,
+    bucket: "other",
+  };
 }
 
 function ThemeToggle({ theme, onToggle }) {
@@ -861,11 +939,26 @@ function SearchAndFilter({ theme, query, onQuery, filter, onFilter, counts }) {
 
   const chips = [
     { key: "all", label: "All", count: counts.all, color: t.accent },
-    { key: "ready", label: "Ready", count: counts.ready, color: t.success },
-  //  { key: "pending", label: "Pending", count: counts.pending, color: t.warning },
-    { key: "late", label: "Late Entry", count: counts.late, color: t.info },
-    { key: "completed", label: "Completed", count: counts.completed, color: t.textSecondary },
-    { key: "rejected", label: "Declined", count: counts.rejected, color: t.danger },
+    { key: "ready", label: "Ready", count: counts.ready, color: t.accent },
+    { key: "approved", label: "Approved", count: counts.approved, color: t.success },
+    {
+      key: "awaiting-review",
+      label: "Awaiting Review",
+      count: counts["awaiting-review"],
+      color: t.warning,
+    },
+    {
+      key: "reentry-required",
+      label: "Re-entry Required",
+      count: counts["reentry-required"],
+      color: t.info,
+    },
+    {
+      key: "terminated",
+      label: "Terminated",
+      count: counts.terminated,
+      color: t.danger,
+    },
   ];
 
   return (
@@ -918,7 +1011,7 @@ function SearchAndFilter({ theme, query, onQuery, filter, onFilter, counts }) {
           onChange={(e) => onQuery(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="Search by name, description, ID or date..."
+          placeholder="Search by name, description, or date"
           style={{
             width: "100%",
             padding: "11px 14px 11px 40px",
@@ -1040,7 +1133,7 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
   const [hover, setHover] = useState(false);
   const [mouse, setMouse] = useState({ x: 0.5, y: 0.5 });
   const cardRef = useRef(null);
-  const meta = getStatusMeta(exam.status, exam.examstatus, pendingRequest, t);
+  const meta = getStatusMeta(exam.status, exam.examstatus, pendingRequest, t, exam);
   const cardState = getCardState(exam, pendingRequest);
   const enterable = cardState.mode === "enter";
   const runningNow = isExamRunningStatus(exam.examstatus);
@@ -1328,7 +1421,7 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
             <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 500 }}>sites</span>
           </div>
         </div>
-        <div style={{ flex: 1, background: t.surfaceGlass, border: `1px solid ${t.border}`, borderRadius: 12, padding: "10px 12px" }}>
+        {/* <div style={{ flex: 1, background: t.surfaceGlass, border: `1px solid ${t.border}`, borderRadius: 12, padding: "10px 12px" }}>
           <div
             style={{
               fontSize: 10,
@@ -1372,7 +1465,7 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
             )}
             {exam.examstatus || "—"}
           </div>
-        </div>
+        </div> */}
       </div>
 
       {cardState.helper ? (
@@ -1915,52 +2008,79 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
   }).length;
 
   const bucketCounts = useMemo(() => {
-    const counts = { all: assessments.length, ready: 0, pending: 0, late: 0, completed: 0, rejected: 0 };
-    for (const a of assessments) {
-      const pending = pendingRequestsByAssessment[a.assessmentid] ?? null;
-      const meta = getStatusMeta(a.status, a.examstatus, pending, t);
-      if (meta.bucket === "ready") counts.ready += 1;
-      else if (meta.bucket === "pending") counts.pending += 1;
-      else if (meta.bucket === "late") counts.late += 1;
-      else if (meta.bucket === "completed") counts.completed += 1;
-      else if (meta.bucket === "rejected" || meta.bucket === "terminated" || meta.bucket === "locked") counts.rejected += 1;
+    const counts = {
+      all: assessments.length,
+      ready: 0,
+      approved: 0,
+      "awaiting-review": 0,
+      "reentry-required": 0,
+      terminated: 0,
+    };
+
+    for (const assessment of assessments) {
+      const pending =
+        pendingRequestsByAssessment[assessment.assessmentid] ?? null;
+      const meta = getStatusMeta(
+        assessment.status,
+        assessment.examstatus,
+        pending,
+        t,
+        assessment
+      );
+
+      if (Object.prototype.hasOwnProperty.call(counts, meta.bucket)) {
+        counts[meta.bucket] += 1;
+      }
     }
+
     return counts;
   }, [assessments, pendingRequestsByAssessment, t]);
 
   const filteredAssessments = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return assessments.filter((a) => {
-      if (q) {
-        const haystack = [
-          a.name,
-          a.description,
-          a.assessmentid,
-          a.examid,
-          a.date,
-          a.starttime,
-          a.endtime,
-          a.status,
-          a.examstatus,
-        ]
-          .filter(Boolean)
-          .map((v) => String(v).toLowerCase())
-          .join(" ");
-        if (!haystack.includes(q)) return false;
+
+    return assessments.filter((assessment) => {
+      const pending =
+        pendingRequestsByAssessment[assessment.assessmentid] ?? null;
+      const meta = getStatusMeta(
+        assessment.status,
+        assessment.examstatus,
+        pending,
+        t,
+        assessment
+      );
+
+      if (filter !== "all" && meta.bucket !== filter) {
+        return false;
       }
 
-      if (filter !== "all") {
-        const pending = pendingRequestsByAssessment[a.assessmentid] ?? null;
-        const meta = getStatusMeta(a.status, a.examstatus, pending, t);
-        if (filter === "rejected") {
-          if (!["rejected", "terminated", "locked"].includes(meta.bucket)) return false;
-        } else if (meta.bucket !== filter) {
-          return false;
-        }
-      }
-      return true;
+      if (!q) return true;
+
+      const haystack = [
+        assessment.name,
+        assessment.description,
+        assessment.assessmentid,
+        assessment.examid,
+        assessment.date,
+        assessment.starttime,
+        assessment.endtime,
+        assessment.status,
+        assessment.examstatus,
+        meta.label,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase())
+        .join(" ");
+
+      return haystack.includes(q);
     });
-  }, [assessments, searchQuery, filter, pendingRequestsByAssessment, t]);
+  }, [
+    assessments,
+    searchQuery,
+    filter,
+    pendingRequestsByAssessment,
+    t,
+  ]);
 
   const openRequestModal = (exam) => {
     setSelectedExamForRequest(exam);

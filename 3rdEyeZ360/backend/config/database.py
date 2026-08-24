@@ -1,8 +1,8 @@
-from motor.motor_asyncio import AsyncIOMotorClient
+﻿from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import os
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 _client = None
 _db = None

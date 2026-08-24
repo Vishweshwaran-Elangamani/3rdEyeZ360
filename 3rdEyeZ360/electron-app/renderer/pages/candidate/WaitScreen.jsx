@@ -3,6 +3,7 @@ import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useExamStore from "../../store/examStore";
 import useSocket from "../../hooks/useSocket";
+import ChatWindow from "../../components/common/ChatWindow";
 import { startCandidateWebRTC } from "../../services/candidateWebRTC";
 
 const API = "http://localhost:3000";
@@ -750,6 +751,14 @@ export default function WaitScreen({
     liveExam?.assessmentid,
     exam?.assessmentid
   );
+  const candidateId = pick(
+    liveAssessment?.candidateid,
+    assessment?.candidateid,
+    liveExam?.candidateid,
+    exam?.candidateid,
+    user?.userid,
+    user?.user_id
+  );
 
   const allowedSites = useMemo(
     () =>
@@ -932,12 +941,23 @@ export default function WaitScreen({
 
   useEffect(() => {
     if (!socket || !examId) return;
-    socket.emit("join_exam", {
-      examid: examId,
-      assessmentid: assessmentId,
-      candidateid: user?.userid || user?.user_id,
-      role: "Candidate",
-    });
+
+    const joinExamRoom = () => {
+      if (!socket.connected) return;
+      socket.emit("join_exam", {
+        examid: examId,
+        assessmentid: assessmentId,
+        candidateid: user?.userid || user?.user_id,
+        role: "Candidate",
+      });
+    };
+
+    const handleReconnect = () => {
+      joinExamRoom();
+      void checkExamStatus();
+    };
+
+    joinExamRoom();
 
     const applyExam = (payload) => {
       const next = normalizeExam(payload?.exam || payload);
@@ -963,17 +983,19 @@ export default function WaitScreen({
       }
     };
 
+    socket.on("connect", handleReconnect);
     socket.on("exam_updated", applyExam);
     socket.on("exam_started", applyExam);
     socket.on("assessment_updated", applyAssessment);
     socket.on("request_reviewed", applyAssessment);
     return () => {
+      socket.off("connect", handleReconnect);
       socket.off("exam_updated", applyExam);
       socket.off("exam_started", applyExam);
       socket.off("assessment_updated", applyAssessment);
       socket.off("request_reviewed", applyAssessment);
     };
-  }, [socket, examId, assessmentId, user, finishWaitingFlow, returnToDashboardSafe, onExamStart, waitingSessionId, liveExam]);
+  }, [socket, examId, assessmentId, user, finishWaitingFlow, returnToDashboardSafe, onExamStart, waitingSessionId, liveExam, checkExamStatus]);
 
   useEffect(() => {
     return () => {
@@ -1522,6 +1544,17 @@ export default function WaitScreen({
           ) : null}
         </div>
       </div>
+      {examId && candidateId ? (
+        <ChatWindow
+          examId={examId}
+          assessmentId={assessmentId}
+          candidateId={candidateId}
+          currentUser={user}
+          conversationType="PRIVATE"
+          embedded={false}
+          theme={t}
+        />
+      ) : null}
     </div>
   );
 }

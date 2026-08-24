@@ -3,6 +3,7 @@ import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useExamStore from "../../store/examStore";
 import useSocket from "../../hooks/useSocket";
+import ChatWindow from "../../components/common/ChatWindow";
 import { startCandidateWebRTC, stopCandidateWebRTC } from "../../services/candidateWebRTC";
 import { stopCameraStream } from "../../services/cameraStream";
 
@@ -719,6 +720,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const [returning, setReturning] = useState(false);
   const [browserError, setBrowserError] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
+  const [allowedSitesOpen, setAllowedSitesOpen] = useState(false);
   const [pauseLocked, setPauseLocked] = useState(
     canonicalStatus(normalizedAssessment?.status) === "PAUSED"
   );
@@ -1259,12 +1261,21 @@ clearWaitingSession();
   useEffect(() => {
     if (!socket || !examId) return;
 
-    socket.emit("join_exam", {
-      examid: examId,
-      assessmentid: assessmentId,
-      candidateid: candidateId,
-      role: "Candidate",
-    });
+    const joinExamRoom = () => {
+      if (!socket.connected) return;
+      socket.emit("join_exam", {
+        examid: examId,
+        assessmentid: assessmentId,
+        candidateid: candidateId,
+        role: "Candidate",
+      });
+    };
+
+    const handleReconnect = () => {
+      joinExamRoom();
+    };
+
+    joinExamRoom();
 
     const onControlCommand = async (payload) => {
       const payloadExamId = pick(payload?.examid, payload?.examId);
@@ -1302,8 +1313,12 @@ setPauseLocked(false);
       }
     };
 
+    socket.on("connect", handleReconnect);
     socket.on("control_command", onControlCommand);
-    return () => socket.off("control_command", onControlCommand);
+    return () => {
+      socket.off("connect", handleReconnect);
+      socket.off("control_command", onControlCommand);
+    };
   }, [socket, examId, assessmentId, candidateId, finishExam, hideBrowserForPause, showBrowserForActiveState]);
 
   const checkLiveStatus = useCallback(async () => {
@@ -1783,286 +1798,384 @@ setPauseLocked(false);
             transition: "background 0.55s ease, border-color 0.5s ease",
           }}
         >
-          {/* ============= TIMER BLOCK (centered above Session) ============= */}
+          {/* ============= SMALL TIMER PILL ============= */}
           <div
             style={{
-              padding: "22px 20px 18px",
-              borderBottom: `1px solid ${t.border}`,
+              height: 142,
               flexShrink: 0,
+              borderBottom: `1px solid ${t.border}`,
+              background: t.surfaceGlass,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              gap: 10,
-              background: t.surfaceGlass,
+              overflow: "hidden",
+              paddingTop: 8,
             }}
           >
-            <span
-              style={{
-                fontSize: 10,
-                color: t.textMuted,
-                letterSpacing: 1.6,
-                textTransform: "uppercase",
-                fontWeight: 700,
-              }}
-            >
-              Time Remaining
-            </span>
-            <TimerPill remainingMs={remainingMs} totalMs={totalMs} theme={theme} />
-            <span
-              style={{
-                fontSize: 10,
-                color: t.textFaint,
-                letterSpacing: 0.6,
-                fontWeight: 500,
-              }}
-            >
-              hours &nbsp;Â·&nbsp; minutes
-            </span>
-          </div>
-
-          {/* Session card */}
-          <div style={{ padding: "18px 20px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
             <div
               style={{
-                fontSize: 10.5,
                 color: t.textMuted,
-                fontWeight: 700,
-                letterSpacing: 1.2,
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: 1.6,
                 textTransform: "uppercase",
-                marginBottom: 12,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
+                marginBottom: 2,
+                lineHeight: 1,
               }}
             >
-              <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
-              Session
+              Time remaining
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {[
-                { label: "Assessment", value: formatStatus(assessmentStatus), color: canonicalStatus(assessmentStatus) === "PAUSED" ? t.warning : t.success },
-                { label: "Exam", value: formatStatus(examStatus), color: canonicalStatus(examStatus) === "RUNNING" ? t.success : t.textPrimary },
-                { label: "Start", value: merged.starttime || "â€”", color: t.textPrimary, mono: true },
-                { label: "Duration", value: `${durationMinutes} min`, color: t.textPrimary, mono: true },
-              ].map((row, i) => (
-                <div
-                  key={i}
+            <div
+              style={{
+                width: 94,
+                height: 116,
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "center",
+                overflow: "visible",
+              }}
+            >
+              <div
+                style={{
+                  width: 130,
+                  height: 160,
+                  flexShrink: 0,
+                  transform: "scale(0.7)",
+                  transformOrigin: "top center",
+                }}
+              >
+                <TimerPill
+                  remainingMs={remainingMs}
+                  totalMs={totalMs}
+                  theme={theme}
+                />
+              </div>
+            </div>
+          </div>
+{/* Candidate-examiner private chat */}
+          {/* Chat and Allowed Websites switchable workspace */}
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {allowedSitesOpen ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setAllowedSitesOpen(false)}
                   style={{
+                    minHeight: 48,
+                    width: "100%",
+                    padding: "0 20px",
+                    border: "none",
+                    borderBottom: `1px solid ${t.border}`,
                     background: t.surfaceGlass,
-                    border: `1px solid ${t.border}`,
-                    borderRadius: 10,
-                    padding: "10px 12px",
+                    color: t.textSecondary,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    fontFamily: "'Inter', sans-serif",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      letterSpacing: 1.2,
+                    }}
+                  >
+                    <span style={{ width: 20, height: 1, background: t.accentGradient }} />
+                    Chat with examiner
+                  </span>
+
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    padding: "18px 20px",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: 9.5,
+                      fontSize: 10.5,
                       color: t.textMuted,
-                      marginBottom: 4,
                       fontWeight: 700,
-                      letterSpacing: 0.6,
+                      letterSpacing: 1.2,
                       textTransform: "uppercase",
+                      marginBottom: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
                     }}
                   >
-                    {row.label}
+                    <span style={{ width: 20, height: 1, background: t.accentGradient }} />
+                    Allowed websites
                   </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: row.color,
-                      fontFamily: row.mono ? "'JetBrains Mono', monospace" : "'Space Grotesk', sans-serif",
-                    }}
-                  >
-                    {row.value}
-                  </div>
-                </div>
-              ))}
-            </div>
 
-            {checking ? (
-              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    border: `2px solid ${t.border}`,
-                    borderTopColor: t.accent,
-                    borderRadius: "50%",
-                    animation: "spin 0.9s linear infinite",
-                  }}
-                />
-                Syncing live state
-              </div>
-            ) : null}
-
-            {statusMsg ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  background: t.accentSoft,
-                  border: `1px solid ${t.borderAccent}`,
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                  fontSize: 12,
-                  color: t.textPrimary,
-                  lineHeight: 1.55,
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "flex-start",
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.accent} strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}>
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="16" x2="12" y2="12" />
-                  <line x1="12" y1="8" x2="12.01" y2="8" />
-                </svg>
-                <span>{statusMsg}</span>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Allowed sites + instructions */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
-            <div
-              style={{
-                fontSize: 10.5,
-                color: t.textMuted,
-                fontWeight: 700,
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
-                marginBottom: 12,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
-              Allowed websites
-            </div>
-
-            {allowedSites.length === 0 ? (
-              <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>No allowed websites found.</p>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {allowedSites.map((site, index) => {
-                  const active = index === activeTab;
-                  return (
-                    <button
-                      key={`${site}-${index}`}
-                      onClick={() => setActiveTab(index)}
-                      disabled={isPaused}
-                      title={site}
+                  {allowedSites.length === 0 ? (
+                    <div
                       style={{
-                        width: "100%",
-                        textAlign: "left",
-                        background: active ? t.accentSoft : t.surfaceGlass,
-                        border: `1px solid ${active ? t.borderAccent : t.border}`,
-                        borderRadius: 10,
-                        padding: "10px 12px",
-                        color: active ? t.accent : t.textPrimary,
-                        cursor: isPaused ? "not-allowed" : "pointer",
-                        opacity: isPaused ? 0.55 : 1,
-                        fontFamily: "'Inter', sans-serif",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
+                        padding: "30px 16px",
+                        borderRadius: 12,
+                        border: `1px solid ${t.border}`,
+                        background: t.surfaceGlass,
+                        color: t.textMuted,
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        textAlign: "center",
                       }}
                     >
+                      No allowed websites were configured for this assessment.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {allowedSites.map((site, index) => {
+                        const active = index === activeTab;
+
+                        return (
+                          <button
+                            key={`${site}-${index}`}
+                            type="button"
+                            onClick={() => {
+                              setActiveTab(index);
+                              setAllowedSitesOpen(false);
+                            }}
+                            disabled={isPaused}
+                            title={site}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              background: active ? t.accentSoft : t.surfaceGlass,
+                              border: `1px solid ${active ? t.borderAccent : t.border}`,
+                              borderRadius: 12,
+                              padding: "12px 14px",
+                              color: active ? t.accent : t.textPrimary,
+                              cursor: isPaused ? "not-allowed" : "pointer",
+                              opacity: isPaused ? 0.55 : 1,
+                              fontFamily: "'Inter', sans-serif",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 11,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 34,
+                                height: 34,
+                                borderRadius: 10,
+                                background: active ? t.accentGradient : t.surfaceGlassHover,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: active ? "#ffffff" : t.textMuted,
+                                flexShrink: 0,
+                              }}
+                            >
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="2" y1="12" x2="22" y2="12" />
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                              </svg>
+                            </div>
+
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700 }}>
+                                {safeHost(site)}
+                              </div>
+                              <div
+                                style={{
+                                  marginTop: 3,
+                                  fontSize: 10.5,
+                                  color: t.textMuted,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                }}
+                              >
+                                {site}
+                              </div>
+                            </div>
+
+                            {active ? (
+                              <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: t.accent }}>
+                                Active
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {merged.instructions ? (
+                    <>
                       <div
                         style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: 8,
-                          background: active ? t.accentGradient : t.surfaceGlassHover,
+                          marginTop: 24,
+                          marginBottom: 12,
+                          fontSize: 10.5,
+                          color: t.textMuted,
+                          fontWeight: 700,
+                          letterSpacing: 1.2,
+                          textTransform: "uppercase",
                           display: "flex",
                           alignItems: "center",
-                          justifyContent: "center",
-                          color: active ? "#ffffff" : t.textMuted,
-                          flexShrink: 0,
+                          gap: 8,
                         }}
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                          <circle cx="12" cy="12" r="10" />
-                          <line x1="2" y1="12" x2="22" y2="12" />
-                          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                        </svg>
+                        <span style={{ width: 20, height: 1, background: t.accentGradient }} />
+                        Instructions
                       </div>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700 }}>{safeHost(site)}</div>
-                        <div
-                          style={{
-                            fontSize: 10.5,
-                            color: t.textMuted,
-                            marginTop: 2,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            fontFamily: "'JetBrains Mono', monospace",
-                          }}
-                        >
-                          {site}
-                        </div>
+                      <div
+                        style={{
+                          background: t.surfaceGlass,
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 12,
+                          padding: 14,
+                          fontSize: 12.5,
+                          color: t.textSecondary,
+                          lineHeight: 1.7,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {merged.instructions}
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {merged.instructions ? (
+                    </>
+                  ) : null}
+                </div>
+              </>
+            ) : (
               <>
                 <div
                   style={{
-                    fontSize: 10.5,
-                    color: t.textMuted,
-                    fontWeight: 700,
-                    letterSpacing: 1.2,
-                    textTransform: "uppercase",
-                    marginTop: 22,
-                    marginBottom: 12,
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  {examId && candidateId ? (
+                    <ChatWindow
+                      examId={examId}
+                      assessmentId={assessmentId}
+                      candidateId={candidateId}
+                      currentUser={user}
+                      conversationType="PRIVATE"
+                      embedded
+                      theme={t}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 20,
+                        color: t.textMuted,
+                        fontSize: 12,
+                        textAlign: "center",
+                      }}
+                    >
+                      Chat becomes available when the assessment session is identified.
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAllowedSitesOpen(true)}
+                  style={{
+                    minHeight: 48,
+                    width: "100%",
+                    padding: "0 20px",
+                    border: "none",
+                    borderTop: `1px solid ${t.border}`,
+                    background: t.surfaceGlass,
+                    color: t.textSecondary,
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
+                    justifyContent: "space-between",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    fontFamily: "'Inter', sans-serif",
                   }}
                 >
-                  <span style={{ display: "inline-block", width: 20, height: 1, background: t.accentGradient }} />
-                  Instructions
-                </div>
-                <div
-                  style={{
-                    background: t.surfaceGlass,
-                    border: `1px solid ${t.border}`,
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    fontSize: 12.5,
-                    color: t.textSecondary,
-                    lineHeight: 1.7,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {merged.instructions}
-                </div>
-              </>
-            ) : null}
-          </div>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      letterSpacing: 1.2,
+                    }}
+                  >
+                    <span style={{ width: 20, height: 1, background: t.accentGradient }} />
+                    Allowed websites
+                    <span
+                      style={{
+                        minWidth: 20,
+                        height: 20,
+                        padding: "0 6px",
+                        borderRadius: 999,
+                        background: t.accentSoft,
+                        color: t.accent,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        letterSpacing: 0,
+                      }}
+                    >
+                      {allowedSites.length}
+                    </span>
+                  </span>
 
-          {/* Sidebar footer status strip */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="18 15 12 9 6 15" />
+                  </svg>
+                </button>
+              </>
+            )}
+          </div>
+          
           <div
-            style={{
-              padding: "10px 20px",
-              borderTop: `1px solid ${t.border}`,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexShrink: 0,
-              background: t.surfaceGlass,
-            }}
+            // style={{
+            //   padding: "10px 20px",
+            //   borderTop: `1px solid ${t.border}`,
+            //   display: "flex",
+            //   alignItems: "center",
+            //   gap: 8,
+            //   flexShrink: 0,
+            //   background: t.surfaceGlass,
+            // }}
           >
-            <div
+            {/* <div
               style={{
                 width: 8,
                 height: 8,
@@ -2072,13 +2185,13 @@ setPauseLocked(false);
                 animation: "pulseDot 1.5s ease-in-out infinite",
                 flexShrink: 0,
               }}
-            />
-            <span style={{ fontSize: 11, color: t.textSecondary, fontWeight: 600 }}>
+            /> */}
+            {/* <span style={{ fontSize: 11, color: t.textSecondary, fontWeight: 600 }}>
               {isPaused ? "Waiting for resume" : "Secured session live"}
             </span>
             <span style={{ marginLeft: "auto", fontSize: 10.5, color: t.textMuted, letterSpacing: 0.4 }}>
               Do not close this window
-            </span>
+            </span> */}
           </div>
         </div>
       </div>
@@ -2124,11 +2237,7 @@ setPauseLocked(false);
           </button>
         </div>
       ) : null}
+
     </div>
   );
 }
-
-
-
-
-

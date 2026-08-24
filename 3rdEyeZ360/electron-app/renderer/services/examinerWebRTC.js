@@ -17,6 +17,17 @@ export default function useExaminerWebRTC(socket, examid, examinerid) {
 
   const [streams, setStreams] = useState({});
   const [states, setStates] = useState({});
+  const streamsRef = useRef({});
+  const statesRef = useRef({});
+
+  useEffect(() => {
+    streamsRef.current = streams;
+  }, [streams]);
+
+  useEffect(() => {
+    statesRef.current = states;
+  }, [states]);
+
 
   const clearRequestTimer = useCallback((key) => {
     const timer = requestTimersRef.current.get(key);
@@ -120,7 +131,7 @@ export default function useExaminerWebRTC(socket, examid, examinerid) {
 
       const peer = peersRef.current.get(key);
       const currentState = peer?.connectionState;
-      const currentStream = streams[key];
+      const currentStream = streamsRef.current[key];
       const hasLiveVideo = Boolean(
         currentStream
           ?.getVideoTracks?.()
@@ -131,7 +142,9 @@ export default function useExaminerWebRTC(socket, examid, examinerid) {
         !force &&
         (hasLiveVideo ||
           ["new", "connecting", "connected"].includes(currentState) ||
-          ["requesting", "connecting", "connected"].includes(states[key]))
+          ["requesting", "connecting", "connected"].includes(
+            statesRef.current[key],
+          ))
       ) {
         return false;
       }
@@ -171,8 +184,6 @@ export default function useExaminerWebRTC(socket, examid, examinerid) {
       socket,
       examid,
       examinerid,
-      streams,
-      states,
       disposePeer,
       clearRequestTimer,
       scheduleRetry,
@@ -392,12 +403,28 @@ export default function useExaminerWebRTC(socket, examid, examinerid) {
     const handleCameraReady = (payload) => {
       const payloadExamId = payload?.examid ?? payload?.exam_id;
       if (String(payloadExamId) !== String(examid)) return;
+
       const candidateId = payload?.candidateid ?? payload?.candidate_id;
       const assessmentId = payload?.assessmentid ?? payload?.assessment_id;
       if (!candidateId) return;
 
       const key = String(candidateId);
       if (assessmentId) assessmentIdsRef.current.set(key, assessmentId);
+
+      const stream = streamsRef.current[key];
+      const hasLiveVideo = Boolean(
+        stream
+          ?.getVideoTracks?.()
+          .some((track) => track.readyState === "live"),
+      );
+      const state = statesRef.current[key];
+
+      if (
+        hasLiveVideo ||
+        ["requesting", "connecting", "connected", "completed"].includes(state)
+      ) {
+        return;
+      }
 
       window.setTimeout(() => {
         requestStreamRef.current?.(
@@ -408,16 +435,53 @@ export default function useExaminerWebRTC(socket, examid, examinerid) {
       }, 150);
     };
 
+    const handleSocketConnect = () => {
+      window.setTimeout(() => {
+        for (const [candidateId, assessmentId] of assessmentIdsRef.current) {
+          const stream = streamsRef.current[candidateId];
+          const hasLiveVideo = Boolean(
+            stream
+              ?.getVideoTracks?.()
+              .some((track) => track.readyState === "live"),
+          );
+          if (!hasLiveVideo) {
+            requestStreamRef.current?.(candidateId, assessmentId, true);
+          }
+        }
+      }, 250);
+    };
+
+    const recoveryTimer = window.setInterval(() => {
+      if (!socket.connected) return;
+
+      for (const [candidateId, assessmentId] of assessmentIdsRef.current) {
+        const stream = streamsRef.current[candidateId];
+        const hasLiveVideo = Boolean(
+          stream
+            ?.getVideoTracks?.()
+            .some((track) => track.readyState === "live"),
+        );
+        const state = statesRef.current[candidateId];
+
+        if (!hasLiveVideo && !["requesting", "connecting"].includes(state)) {
+          requestStreamRef.current?.(candidateId, assessmentId, true);
+        }
+      }
+    }, 3000);
+
     socket.on("webrtc_offer", handleOffer);
     socket.on("webrtc_ice_candidate", handleIce);
     socket.on("webrtc_camera_status", handleStatus);
     socket.on("webrtc_camera_ready", handleCameraReady);
+    socket.on("connect", handleSocketConnect);
 
     return () => {
       socket.off("webrtc_offer", handleOffer);
       socket.off("webrtc_ice_candidate", handleIce);
       socket.off("webrtc_camera_status", handleStatus);
       socket.off("webrtc_camera_ready", handleCameraReady);
+      socket.off("connect", handleSocketConnect);
+      window.clearInterval(recoveryTimer);
 
       for (const timer of requestTimersRef.current.values()) {
         window.clearTimeout(timer);

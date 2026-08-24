@@ -1,75 +1,137 @@
 services:
-
   mongodb:
     image: mongo:7.0
     container_name: thirdeye_mongodb
     restart: always
+
     command: mongod --noauth
+
     ports:
       - "27017:27017"
+
     volumes:
       - mongo_data:/data/db
+
 
   minio:
     image: minio/minio:latest
     container_name: thirdeye_minio
     restart: always
+
     ports:
       - "9000:9000"
       - "9001:9001"
+
     environment:
       MINIO_ROOT_USER: samp_minio
       MINIO_ROOT_PASSWORD: samp_minio_pass123
+
     command: server /data --console-address ":9001"
+
     volumes:
       - minio_data:/data
+
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.1
     container_name: thirdeye_keycloak
     restart: always
+
     ports:
       - "8080:8080"
+
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin123
       KC_DB: dev-file
+
     command:
       - start-dev
       - --import-realm
+
     volumes:
       - keycloak_data:/opt/keycloak/data
       - "D:/3rdEyeZ360V2/read/Asserts/keycloak:/opt/keycloak/data/import"
+
+
+  kafka:
+    image: apache/kafka:4.1.1
+    container_name: thirdeye_kafka
+    hostname: kafka
+    restart: always
+
+    ports:
+      - "9092:9092"
+
+    environment:
+      # KRaft single-node configuration
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      # Three listeners:
+      # EXTERNAL: Windows host access through localhost:9092
+      # INTERNAL: Docker container access through kafka:29092
+      # CONTROLLER: Kafka's internal KRaft controller
+      KAFKA_LISTENERS: >
+        EXTERNAL://0.0.0.0:9092,
+        INTERNAL://0.0.0.0:29092,
+        CONTROLLER://0.0.0.0:9093
+
+      KAFKA_ADVERTISED_LISTENERS: >
+        EXTERNAL://localhost:9092,
+        INTERNAL://kafka:29092
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
+        EXTERNAL:PLAINTEXT,
+        INTERNAL:PLAINTEXT,
+        CONTROLLER:PLAINTEXT
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      # Single-node development settings
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Chat topic defaults
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+
     container_name: thirdeye_backend
     restart: always
+
     ports:
       - "3000:3000"
+
     env_file:
       - ./backend/.env
+
+    environment:
+      # Override the .env localhost value inside Docker.
+      # The backend container must use Kafka's Docker hostname.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
     depends_on:
       - mongodb
       - minio
       - keycloak
+      - kafka
 
-  python-api:
-    build:
-      context: ./python-api
-      dockerfile: Dockerfile
-    container_name: thirdeye_python_api
-    restart: always
-    ports:
-      - "5001:5001"
-    env_file:
-      - ./python-api/.env
-    depends_on:
-      - backend
 
 volumes:
   mongo_data:
   minio_data:
   keycloak_data:
+  kafka_data:

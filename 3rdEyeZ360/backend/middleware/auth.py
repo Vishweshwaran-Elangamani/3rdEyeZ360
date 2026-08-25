@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
@@ -7,7 +7,7 @@ from jose import JWTError, jwt
 
 from config.database import get_db
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 security = HTTPBearer(auto_error=False)
 

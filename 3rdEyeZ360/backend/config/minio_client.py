@@ -1,8 +1,8 @@
-from minio import Minio
+﻿from minio import Minio
 from dotenv import load_dotenv
 import os
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 _minio_client = None
 

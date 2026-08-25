@@ -1,8 +1,8 @@
-from keycloak import KeycloakOpenID, KeycloakAdmin
+﻿from keycloak import KeycloakOpenID, KeycloakAdmin
 from dotenv import load_dotenv
 import os
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8080").rstrip("/") + "/"
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "3rdEyeZ360")

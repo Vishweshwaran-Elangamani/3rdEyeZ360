@@ -3,6 +3,7 @@ import socketio
 
 from config.database import get_db
 from middleware.auth import decode_token
+from messaging.socket_handlers import register_chat_socket_handlers
 
 
 sio = socketio.AsyncServer(
@@ -425,7 +426,6 @@ async def _authorize_webrtc(sid, data):
 
 
 @sio.on("webrtc_camera_ready")
-@sio.on("webrtc_camera_ready")
 async def webrtc_camera_ready(sid, data):
     user, examid, candidateid = await _authorize_webrtc(
         sid,
@@ -588,3 +588,12 @@ async def webrtc_stop_stream(sid, data):
         payload,
         room=f"candidate_{candidateid}",
     )
+
+# ---------------------------------------------------------
+# Kafka-backed assessment messaging
+# ---------------------------------------------------------
+register_chat_socket_handlers(
+    sio=sio,
+    get_db=get_db,
+    connected_users=connected_users,
+)

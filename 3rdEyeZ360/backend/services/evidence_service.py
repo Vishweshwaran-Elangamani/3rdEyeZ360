@@ -1,11 +1,11 @@
-from config.minio_client import get_minio
+﻿from config.minio_client import get_minio
 from dotenv import load_dotenv
 import os
 import io
 import base64
 from datetime import datetime, timedelta
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 BUCKET = os.getenv("MINIO_BUCKET", "assessment-evidence")
 

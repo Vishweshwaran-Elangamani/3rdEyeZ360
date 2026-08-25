@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
+import useSocket from "../../hooks/useSocket";
 
 const API = "http://localhost:3000";
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
@@ -368,6 +369,7 @@ export default function AssignCandidates({ exam, onBack }) {
   const t = THEMES[theme];
 
   const { accessToken } = useAuthStore();
+  const socket = useSocket(accessToken);
 
   const [allCandidates, setAllCandidates] = useState([]);
   const [assigned, setAssigned] = useState([]);
@@ -461,6 +463,31 @@ export default function AssignCandidates({ exam, onBack }) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!socket || !examId) return undefined;
+
+    const matchesExam = (payload) => {
+      const payloadExamId = payload?.examid ?? payload?.exam_id;
+      return !payloadExamId || String(payloadExamId) === String(examId);
+    };
+
+    const refreshAssignments = (payload) => {
+      if (matchesExam(payload)) void loadData();
+    };
+
+    socket.on("connect", loadData);
+    socket.on("assessment_created", refreshAssignments);
+    socket.on("assessment_updated", refreshAssignments);
+    socket.on("assessment_removed", refreshAssignments);
+
+    return () => {
+      socket.off("connect", loadData);
+      socket.off("assessment_created", refreshAssignments);
+      socket.off("assessment_updated", refreshAssignments);
+      socket.off("assessment_removed", refreshAssignments);
+    };
+  }, [socket, examId, loadData]);
 
   useEffect(() => {
     if (!candidateToRemove && !modalMessage) {

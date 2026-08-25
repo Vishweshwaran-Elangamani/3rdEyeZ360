@@ -1,118 +1,198 @@
-import React, { useState } from 'react'
-import axios from 'axios'
-import useAuthStore from '../../store/authStore'
-import { getSocket } from '../../hooks/useSocket'
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import useAuthStore from "../../store/authStore";
+import useSocket from "../../hooks/useSocket";
 
-const API = 'http://localhost:3000'
+const API = "http://localhost:3000";
+
+function pick(...values) {
+  return values.find(
+    (value) => value !== undefined && value !== null && String(value).trim() !== "",
+  );
+}
 
 export default function ReEntryRequest({ assessment, exam, onApproved }) {
-  const { accessToken } = useAuthStore()
-  const [reason, setReason] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const { accessToken } = useAuthStore();
+  const socket = useSocket(accessToken);
+  const [reason, setReason] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const assessmentId = useMemo(
+    () => pick(assessment?.assessmentid, assessment?.assessment_id),
+    [assessment],
+  );
+  const examId = useMemo(
+    () => pick(assessment?.examid, assessment?.exam_id, exam?.examid, exam?.exam_id),
+    [assessment, exam],
+  );
+  const candidateId = useMemo(
+    () => pick(assessment?.candidateid, assessment?.candidate_id),
+    [assessment],
+  );
+
+  useEffect(() => {
+    if (!socket || !assessmentId) return undefined;
+
+    const matchesAssessment = (payload = {}) => {
+      const payloadAssessmentId = pick(
+        payload?.assessmentid,
+        payload?.assessment_id,
+        payload?.assessment?.assessmentid,
+        payload?.assessment?.assessment_id,
+      );
+      return String(payloadAssessmentId || "") === String(assessmentId);
+    };
+
+    const statusOf = (payload = {}) =>
+      String(
+        pick(
+          payload?.status,
+          payload?.next_status,
+          payload?.assessment?.status,
+          payload?.assessment?.assessmentstatus,
+          payload?.assessment?.assessment_status,
+        ) || "",
+      )
+        .trim()
+        .toUpperCase()
+        .replace(/[\s_-]+/g, "");
+
+    const handleApproved = (payload = {}) => {
+      if (!matchesAssessment(payload)) return;
+      const status = statusOf(payload);
+      if (
+        payload?.approved === true ||
+        ["APPROVED", "REENTRYAPPROVED", "LATEENTRYAPPROVED", "ACTIVE"].includes(status)
+      ) {
+        setError("");
+        onApproved?.();
+      }
+    };
+
+    const handleRejected = (payload = {}) => {
+      if (!matchesAssessment(payload)) return;
+      const status = statusOf(payload);
+      if (
+        payload?.approved === false ||
+        ["REJECTED", "REENTRYREJECTED", "LATEENTRYREJECTED"].includes(status)
+      ) {
+        setSubmitted(false);
+        setError(
+          `Re-entry rejected: ${
+            pick(payload?.reason, payload?.reviewreason, payload?.review_reason) ||
+            "Contact your examiner"
+          }`,
+        );
+      }
+    };
+
+    const joinExamRoom = () => {
+      if (!socket.connected || !examId) return;
+      socket.emit("join_exam", {
+        examid: examId,
+        assessmentid: assessmentId,
+        candidateid: candidateId,
+        role: "Candidate",
+      });
+    };
+
+    const handleReviewed = (payload) => {
+      handleApproved(payload);
+      handleRejected(payload);
+    };
+
+    socket.on("connect", joinExamRoom);
+    socket.on("reentry_approved", handleApproved);
+    socket.on("reentry_rejected", handleRejected);
+    socket.on("request_reviewed", handleReviewed);
+    socket.on("assessment_updated", handleReviewed);
+    joinExamRoom();
+
+    return () => {
+      socket.off("connect", joinExamRoom);
+      socket.off("reentry_approved", handleApproved);
+      socket.off("reentry_rejected", handleRejected);
+      socket.off("request_reviewed", handleReviewed);
+      socket.off("assessment_updated", handleReviewed);
+    };
+  }, [socket, assessmentId, examId, candidateId, onApproved]);
 
   const submit = async () => {
-    if (!reason.trim()) { setError('Please explain why you need to re-enter'); return }
-    setLoading(true); setError('')
+    if (!reason.trim()) {
+      setError("Please explain why you need to re-enter");
+      return;
+    }
+    if (!assessmentId) {
+      setError("Assessment ID is unavailable");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
     try {
       await axios.post(
-        `${API}/api/assessments/${assessment.assessment_id}/reentry`,
+        `${API}/api/assessments/${assessmentId}/reentry`,
         { reason: reason.trim() },
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      )
-      setSubmitted(true)
-      // Listen for approval via socket
-      const socket = getSocket()
-      if (socket) {
-        socket.on('reentry_approved', ({ assessment_id }) => {
-          if (assessment_id === assessment.assessment_id) {
-            onApproved()
-          }
-        })
-        socket.on('reentry_rejected', ({ assessment_id, reason: rejReason }) => {
-          if (assessment_id === assessment.assessment_id) {
-            setSubmitted(false)
-            setError(`Re-entry rejected: ${rejReason || 'Contact your examiner'}`)
-          }
-        })
-      }
-    } catch (e) {
-      setError(e.response?.data?.detail || 'Failed to submit request')
-    } finally { setLoading(false) }
-  }
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      setSubmitted(true);
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || "Failed to submit request");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div style={{
-      height: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: '#0f1117'
-    }}>
-      <div style={{
-        background: '#1a1d27', border: '1px solid #f5a623',
-        borderRadius: 16, padding: 40, width: 440,
-        boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
-      }}>
-        <div style={{ fontSize: 48, textAlign: 'center', marginBottom: 16 }}>⚠️</div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, textAlign: 'center', marginBottom: 8 }}>
-          Assessment Interrupted
-        </h2>
-        <p style={{ color: '#8b90a0', fontSize: 13, textAlign: 'center', marginBottom: 28 }}>
-          Your assessment was interrupted. To re-enter, please provide a reason
-          and wait for your examiner to approve.
-        </p>
+    <div className="reentry-request">
+      <div className="reentry-icon">⚠️</div>
+      <h3>Assessment Interrupted</h3>
+      <p>
+        Your assessment was interrupted. To re-enter, please provide a reason and
+        wait for your examiner to approve.
+      </p>
 
-        {error && (
-          <div style={{
-            background: '#2a1010', border: '1px solid #f75f5f',
-            borderRadius: 8, padding: '10px 14px', color: '#f75f5f',
-            fontSize: 13, marginBottom: 16
-          }}>{error}</div>
-        )}
+      {error ? <div className="reentry-error">{error}</div> : null}
 
-        {!submitted ? (
-          <>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, color: '#8b90a0', display: 'block', marginBottom: 6 }}>
-                Reason for interruption *
-              </label>
-              <textarea
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-                rows={4}
-                placeholder="e.g. My laptop battery died and I had to restart..."
-                style={{
-                  width: '100%', background: '#22263a', border: '1px solid #2e3347',
-                  borderRadius: 8, padding: '10px 12px', color: '#e8eaf0',
-                  fontSize: 14, resize: 'none', outline: 'none',
-                  fontFamily: 'Inter, sans-serif', lineHeight: 1.6
-                }}
-              />
-            </div>
-            <button
-              onClick={submit}
-              disabled={loading}
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '12px 0', fontSize: 15 }}
-            >
-              {loading ? 'Submitting...' : 'Request Re-entry'}
-            </button>
-          </>
-        ) : (
-          <div style={{
-            background: '#0f2a1a', border: '1px solid #34c97a',
-            borderRadius: 10, padding: 20, textAlign: 'center'
-          }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>⏳</div>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>
-              Request Submitted
-            </div>
-            <p style={{ fontSize: 13, color: '#8b90a0' }}>
-              Waiting for examiner approval. Please stay at your desk
-              and keep your camera visible.
-            </p>
-          </div>
-        )}
-      </div>
+      {!submitted ? (
+        <>
+          <label>Reason for interruption *</label>
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={4}
+            placeholder="e.g. My laptop battery died and I had to restart..."
+            style={{
+              width: "100%",
+              background: "#22263a",
+              border: "1px solid #2e3347",
+              borderRadius: 8,
+              padding: "10px 12px",
+              color: "#e8eaf0",
+              fontSize: 14,
+              resize: "none",
+              outline: "none",
+              fontFamily: "Inter, sans-serif",
+              lineHeight: 1.6,
+              boxSizing: "border-box",
+            }}
+          />
+          <button type="button" onClick={submit} disabled={loading}>
+            {loading ? "Submitting..." : "Request Re-entry"}
+          </button>
+        </>
+      ) : (
+        <div className="reentry-pending">
+          <div>⏳</div>
+          <strong>Request Submitted</strong>
+          <p>
+            Waiting for examiner approval. Please stay at your desk and keep your
+            camera visible.
+          </p>
+        </div>
+      )}
     </div>
-  )
+  );
 }

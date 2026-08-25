@@ -1,374 +1,360 @@
+import math
+
 import cv2
 import mediapipe as mp
-import math
 
 
 mp_face_mesh = mp.solutions.face_mesh
-
 mesh = mp_face_mesh.FaceMesh(
     static_image_mode=False,
     max_num_faces=1,
     refine_landmarks=True,
-    min_detection_confidence=0.6,
-    min_tracking_confidence=0.6,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
 )
 
+# MediaPipe eye landmarks
+LEFT_EYE = {
+    "outer": 33, "inner": 133,
+    "top1": 159, "bottom1": 145,
+    "top2": 158, "bottom2": 153,
+    "iris": [468, 469, 470, 471, 472],
+}
+RIGHT_EYE = {
+    "outer": 263, "inner": 362,
+    "top1": 386, "bottom1": 374,
+    "top2": 385, "bottom2": 380,
+    "iris": [473, 474, 475, 476, 477],
+}
 
-# Eye landmark indexes
-LEFT_EYE_OUTER = 33
-LEFT_EYE_INNER = 133
-LEFT_EYE_TOP_1 = 159
-LEFT_EYE_BOTTOM_1 = 145
-LEFT_EYE_TOP_2 = 158
-LEFT_EYE_BOTTOM_2 = 153
+# Closed-eye detection
+# Less aggressive than 0.19/0.72 and requires both eyes for two frames.
+EYE_CLOSED_ABSOLUTE_THRESHOLD = 0.17
+EYE_CLOSED_RELATIVE_FACTOR = 0.65
+EYE_CLOSED_CONFIRMATION_FRAMES = 2
+MIN_VALID_EAR = 0.01
+MAX_VALID_EAR = 0.70
+EAR_CALIBRATION_FRAMES = 5
+EAR_OPEN_SAMPLE_MINIMUM = 0.19
+EAR_BASELINE_UPDATE_ALPHA = 0.01
 
-RIGHT_EYE_OUTER = 362
-RIGHT_EYE_INNER = 263
-RIGHT_EYE_TOP_1 = 386
-RIGHT_EYE_BOTTOM_1 = 374
-RIGHT_EYE_TOP_2 = 385
-RIGHT_EYE_BOTTOM_2 = 380
+# Gaze detection
+GAZE_CALIBRATION_FRAMES = 5
+GAZE_HORIZONTAL_SOFT_DEVIATION = 0.09
+GAZE_HORIZONTAL_STRONG_DEVIATION = 0.20
+GAZE_DOWN_SOFT_DEVIATION = 0.10
+GAZE_DOWN_STRONG_DEVIATION = 0.21
+GAZE_CONFIRMATION_FRAMES = 1
+SCREEN_FOCUS_HORIZONTAL_TOLERANCE = 0.12
+SCREEN_FOCUS_VERTICAL_TOLERANCE = 0.13
+MIN_EAR_FOR_GAZE = 0.14
+GAZE_BASELINE_UPDATE_ALPHA = 0.01
+SMOOTHING_ALPHA = 0.90
 
-# Iris landmarks are available when refine_landmarks=True
-LEFT_IRIS = [468, 469, 470, 471, 472]
-RIGHT_IRIS = [473, 474, 475, 476, 477]
+_smoothed_left_ear = None
+_smoothed_right_ear = None
+_smoothed_gaze_x = None
+_smoothed_gaze_y = None
+_open_ear_baseline = None
+_open_ear_samples = 0
+_neutral_gaze_x = None
+_neutral_gaze_y = None
+_gaze_samples = 0
+_closed_frames = 0
+_left_frames = 0
+_right_frames = 0
+_down_frames = 0
 
 
-# Tuned thresholds
-EYE_CLOSED_EAR_THRESHOLD = 0.185
-
-# Gaze ratio thresholds. Values are deliberately conservative to reduce false positives.
-GAZE_LEFT_THRESHOLD = 0.34
-GAZE_RIGHT_THRESHOLD = 0.66
-
-# Down-gaze threshold using iris vertical position inside eye box.
-GAZE_DOWN_THRESHOLD = 0.67
+def _safe_landmark(landmarks, index):
+    try:
+        return landmarks[index]
+    except Exception:
+        return None
 
 
-def _distance(point_a, point_b):
-    return math.sqrt(
-        ((point_a.x - point_b.x) ** 2) +
-        ((point_a.y - point_b.y) ** 2)
+def _distance(a, b):
+    return math.hypot(a.x - b.x, a.y - b.y)
+
+
+def _average(a, b):
+    return (float(a) + float(b)) / 2.0
+
+
+def _smooth(previous, current):
+    if previous is None:
+        return float(current)
+    return SMOOTHING_ALPHA * float(current) + (1.0 - SMOOTHING_ALPHA) * float(previous)
+
+
+def _average_point(landmarks, indexes):
+    points = [_safe_landmark(landmarks, index) for index in indexes]
+    if any(point is None for point in points):
+        return None
+    return (
+        sum(point.x for point in points) / len(points),
+        sum(point.y for point in points) / len(points),
     )
 
 
-def _avg_point(landmarks, indexes):
-    points = [landmarks[index] for index in indexes]
-    x = sum(point.x for point in points) / len(points)
-    y = sum(point.y for point in points) / len(points)
-    return x, y
-
-
-def _eye_aspect_ratio(
-    landmarks,
-    outer_index,
-    inner_index,
-    top_1,
-    bottom_1,
-    top_2,
-    bottom_2,
-):
-    outer = landmarks[outer_index]
-    inner = landmarks[inner_index]
-    top_a = landmarks[top_1]
-    bottom_a = landmarks[bottom_1]
-    top_b = landmarks[top_2]
-    bottom_b = landmarks[bottom_2]
-
+def _eye_aspect_ratio(landmarks, eye):
+    outer = _safe_landmark(landmarks, eye["outer"])
+    inner = _safe_landmark(landmarks, eye["inner"])
+    top1 = _safe_landmark(landmarks, eye["top1"])
+    bottom1 = _safe_landmark(landmarks, eye["bottom1"])
+    top2 = _safe_landmark(landmarks, eye["top2"])
+    bottom2 = _safe_landmark(landmarks, eye["bottom2"])
+    points = [outer, inner, top1, bottom1, top2, bottom2]
+    if any(point is None for point in points):
+        return None
     horizontal = _distance(outer, inner)
-    vertical_a = _distance(top_a, bottom_a)
-    vertical_b = _distance(top_b, bottom_b)
-
-    if horizontal <= 0:
-        return 0.0
-
-    return (vertical_a + vertical_b) / (2.0 * horizontal)
+    if horizontal <= 0.0001:
+        return None
+    return (_distance(top1, bottom1) + _distance(top2, bottom2)) / (2.0 * horizontal)
 
 
-def _eye_box_gaze_ratio(
-    landmarks,
-    outer_index,
-    inner_index,
-    top_1,
-    bottom_1,
-    top_2,
-    bottom_2,
-    iris_indexes,
-):
-    outer = landmarks[outer_index]
-    inner = landmarks[inner_index]
-    top_a = landmarks[top_1]
-    bottom_a = landmarks[bottom_1]
-    top_b = landmarks[top_2]
-    bottom_b = landmarks[bottom_2]
+def _eye_gaze_ratio(landmarks, eye):
+    outer = _safe_landmark(landmarks, eye["outer"])
+    inner = _safe_landmark(landmarks, eye["inner"])
+    top1 = _safe_landmark(landmarks, eye["top1"])
+    bottom1 = _safe_landmark(landmarks, eye["bottom1"])
+    top2 = _safe_landmark(landmarks, eye["top2"])
+    bottom2 = _safe_landmark(landmarks, eye["bottom2"])
+    iris = _average_point(landmarks, eye["iris"])
+    points = [outer, inner, top1, bottom1, top2, bottom2]
+    if any(point is None for point in points) or iris is None:
+        return None
 
-    iris_x, iris_y = _avg_point(landmarks, iris_indexes)
-
-    min_x = min(outer.x, inner.x)
-    max_x = max(outer.x, inner.x)
-
-    min_y = min(top_a.y, top_b.y)
-    max_y = max(bottom_a.y, bottom_b.y)
-
+    min_x, max_x = min(outer.x, inner.x), max(outer.x, inner.x)
+    top_y = _average(top1.y, top2.y)
+    bottom_y = _average(bottom1.y, bottom2.y)
+    min_y, max_y = min(top_y, bottom_y), max(top_y, bottom_y)
     width = max(max_x - min_x, 0.0001)
     height = max(max_y - min_y, 0.0001)
-
-    horizontal_ratio = (iris_x - min_x) / width
-    vertical_ratio = (iris_y - min_y) / height
-
-    return horizontal_ratio, vertical_ratio
-
-
-def _average(value_a, value_b):
-    return (value_a + value_b) / 2.0
-
-
-def _confidence_from_distance(value, threshold, direction):
-    if direction == "low":
-        distance = max(0.0, threshold - value)
-    else:
-        distance = max(0.0, value - threshold)
-
-    confidence = 0.72 + min(distance * 2.0, 0.22)
-    return round(min(confidence, 0.94), 2)
+    gaze_x = (iris[0] - min_x) / width
+    gaze_y = (iris[1] - min_y) / height
+    if not (-0.30 <= gaze_x <= 1.30 and -0.50 <= gaze_y <= 1.50):
+        return None
+    return gaze_x, gaze_y
 
 
 def _result(
-    detected: bool,
-    detail: str,
-    confidence: float,
-    issue: str | None,
-    message: str,
-    candidate_action: str | None,
-    typing_sensitive: bool = False,
+    detected, detail, confidence, issue, message, candidate_action,
+    typing_sensitive=False, metrics=None, focus_reliable=False,
+    eyes_on_screen=None, gaze_state="unavailable",
+    gaze_x_deviation=None, gaze_y_deviation=None,
 ):
-    return {
-        "detected": detected,
-        "detail": detail,
-        "confidence": confidence,
+    response = {
+        "detected": bool(detected),
+        "detail": str(detail),
+        "confidence": float(confidence),
         "category": "eye",
         "issue": issue,
         "message": message,
         "candidate_action": candidate_action,
-        "typing_sensitive": typing_sensitive,
+        "typing_sensitive": bool(typing_sensitive),
+        "focus_reliable": bool(focus_reliable),
+        "eyes_on_screen": eyes_on_screen,
+        "gaze_state": str(gaze_state),
+        "gaze_x_deviation": float(gaze_x_deviation) if gaze_x_deviation is not None else None,
+        "gaze_y_deviation": float(gaze_y_deviation) if gaze_y_deviation is not None else None,
     }
+    if metrics is not None:
+        response["metrics"] = metrics
+    return response
+
+
+def _ok_result(metrics=None, message="Eye monitoring check passed.", **focus):
+    return _result(False, "ok", 1.0, None, message, None, False, metrics, **focus)
+
+
+def _confidence(value, soft, strong):
+    amount = abs(float(value))
+    if amount >= strong:
+        return 0.94
+    if amount <= soft:
+        return 0.72
+    return round(0.72 + ((amount - soft) / max(strong - soft, 0.001)) * 0.22, 2)
+
+
+def _reset_events():
+    global _closed_frames, _left_frames, _right_frames, _down_frames
+    _closed_frames = _left_frames = _right_frames = _down_frames = 0
+
+
+def _reset_all():
+    global _smoothed_left_ear, _smoothed_right_ear, _smoothed_gaze_x, _smoothed_gaze_y
+    global _open_ear_baseline, _open_ear_samples, _neutral_gaze_x, _neutral_gaze_y, _gaze_samples
+    _smoothed_left_ear = _smoothed_right_ear = None
+    _smoothed_gaze_x = _smoothed_gaze_y = None
+    _open_ear_baseline = None
+    _open_ear_samples = 0
+    _neutral_gaze_x = _neutral_gaze_y = None
+    _gaze_samples = 0
+    _reset_events()
+
+
+def _update_ear_baseline(ear):
+    global _open_ear_baseline, _open_ear_samples
+    if _open_ear_baseline is None:
+        _open_ear_baseline, _open_ear_samples = float(ear), 1
+    elif _open_ear_samples < EAR_CALIBRATION_FRAMES:
+        count = _open_ear_samples + 1
+        _open_ear_baseline = (_open_ear_baseline * _open_ear_samples + float(ear)) / count
+        _open_ear_samples = count
+    else:
+        a = EAR_BASELINE_UPDATE_ALPHA
+        _open_ear_baseline = (1.0 - a) * _open_ear_baseline + a * float(ear)
+
+
+def _update_gaze_baseline(x, y):
+    global _neutral_gaze_x, _neutral_gaze_y, _gaze_samples
+    if _neutral_gaze_x is None:
+        _neutral_gaze_x, _neutral_gaze_y, _gaze_samples = float(x), float(y), 1
+    elif _gaze_samples < GAZE_CALIBRATION_FRAMES:
+        count = _gaze_samples + 1
+        _neutral_gaze_x = (_neutral_gaze_x * _gaze_samples + float(x)) / count
+        _neutral_gaze_y = (_neutral_gaze_y * _gaze_samples + float(y)) / count
+        _gaze_samples = count
+    else:
+        a = GAZE_BASELINE_UPDATE_ALPHA
+        _neutral_gaze_x = (1.0 - a) * _neutral_gaze_x + a * float(x)
+        _neutral_gaze_y = (1.0 - a) * _neutral_gaze_y + a * float(y)
 
 
 def detect_eye(frame):
-    """
-    Detects eye-related monitoring issues.
-
-    Returns one of:
-      ok
-      no_face
-      eyes_closed
-      eye_gaze_left
-      eye_gaze_right
-      eye_gaze_down
-
-    Notes:
-      - eye_gaze_down is typing_sensitive because candidates may look down while typing.
-      - Consecutive-frame confirmation should be handled in Electron/backend policy.
-    """
+    global _smoothed_left_ear, _smoothed_right_ear, _smoothed_gaze_x, _smoothed_gaze_y
+    global _closed_frames, _left_frames, _right_frames, _down_frames
 
     if frame is None:
-        return _result(
-            False,
-            "no_frame",
-            0.0,
-            "no_frame",
-            "Camera frame was not available for eye detection.",
-            "Ensure the camera is working.",
-            False,
-        )
+        return _ok_result(message="Camera frame was unavailable for eye monitoring.")
 
     try:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     except Exception as error:
-        print("[EYE] Failed to convert frame:", error)
-        return _result(
-            False,
-            "invalid_frame",
-            0.0,
-            "invalid_frame",
-            "Camera frame could not be processed for eye detection.",
-            "Ensure the camera frame is clear.",
-            False,
-        )
+        print("[EYE] Frame conversion failed:", error)
+        return _ok_result(message="Eye monitoring frame could not be processed.")
 
     results = mesh.process(rgb)
-
     if not results.multi_face_landmarks:
-        print("[EYE] No face detected")
-        return _result(
-            False,
-            "no_face",
-            0.0,
-            "no_face",
-            "Face is not visible, so eye movement could not be checked.",
-            "Remain visible in the camera frame.",
-            False,
-        )
+        _reset_all()
+        return _ok_result(message="Eye monitoring skipped because no face was available.")
 
     landmarks = results.multi_face_landmarks[0].landmark
+    left_ear = _eye_aspect_ratio(landmarks, LEFT_EYE)
+    right_ear = _eye_aspect_ratio(landmarks, RIGHT_EYE)
 
-    try:
-        left_ear = _eye_aspect_ratio(
-            landmarks,
-            LEFT_EYE_OUTER,
-            LEFT_EYE_INNER,
-            LEFT_EYE_TOP_1,
-            LEFT_EYE_BOTTOM_1,
-            LEFT_EYE_TOP_2,
-            LEFT_EYE_BOTTOM_2,
-        )
+    if left_ear is None or right_ear is None:
+        _reset_events()
+        return _ok_result(message="Eye landmarks were temporarily unavailable.")
 
-        right_ear = _eye_aspect_ratio(
-            landmarks,
-            RIGHT_EYE_OUTER,
-            RIGHT_EYE_INNER,
-            RIGHT_EYE_TOP_1,
-            RIGHT_EYE_BOTTOM_1,
-            RIGHT_EYE_TOP_2,
-            RIGHT_EYE_BOTTOM_2,
-        )
+    if not (MIN_VALID_EAR <= left_ear <= MAX_VALID_EAR and MIN_VALID_EAR <= right_ear <= MAX_VALID_EAR):
+        _reset_events()
+        return _ok_result(message="Eye landmarks were temporarily unavailable.")
 
-        avg_ear = _average(left_ear, right_ear)
+    _smoothed_left_ear = _smooth(_smoothed_left_ear, left_ear)
+    _smoothed_right_ear = _smooth(_smoothed_right_ear, right_ear)
+    left_ear = _smoothed_left_ear
+    right_ear = _smoothed_right_ear
+    average_ear = _average(left_ear, right_ear)
 
-        left_gaze_x, left_gaze_y = _eye_box_gaze_ratio(
-            landmarks,
-            LEFT_EYE_OUTER,
-            LEFT_EYE_INNER,
-            LEFT_EYE_TOP_1,
-            LEFT_EYE_BOTTOM_1,
-            LEFT_EYE_TOP_2,
-            LEFT_EYE_BOTTOM_2,
-            LEFT_IRIS,
-        )
+    closed_threshold = EYE_CLOSED_ABSOLUTE_THRESHOLD
+    if _open_ear_baseline is not None:
+        closed_threshold = max(closed_threshold, _open_ear_baseline * EYE_CLOSED_RELATIVE_FACTOR)
+    closed_threshold = min(closed_threshold, 0.25)
 
-        right_gaze_x, right_gaze_y = _eye_box_gaze_ratio(
-            landmarks,
-            RIGHT_EYE_OUTER,
-            RIGHT_EYE_INNER,
-            RIGHT_EYE_TOP_1,
-            RIGHT_EYE_BOTTOM_1,
-            RIGHT_EYE_TOP_2,
-            RIGHT_EYE_BOTTOM_2,
-            RIGHT_IRIS,
-        )
+    left_eye_closed = left_ear < closed_threshold
+    right_eye_closed = right_ear < closed_threshold
+    both_eyes_closed = left_eye_closed and right_eye_closed
+    _closed_frames = _closed_frames + 1 if both_eyes_closed else 0
 
-        avg_gaze_x = _average(left_gaze_x, right_gaze_x)
-        avg_gaze_y = _average(left_gaze_y, right_gaze_y)
-    except Exception as error:
-        print("[EYE] Landmark calculation failed:", error)
+    metrics = {
+        "left_ear": round(left_ear, 4),
+        "right_ear": round(right_ear, 4),
+        "average_ear": round(average_ear, 4),
+        "closed_threshold": round(closed_threshold, 4),
+        "left_eye_closed": left_eye_closed,
+        "right_eye_closed": right_eye_closed,
+        "both_eyes_closed": both_eyes_closed,
+        "closed_frames": _closed_frames,
+        "open_ear_baseline": round(_open_ear_baseline, 4) if _open_ear_baseline is not None else None,
+    }
+    print("[EYE] EAR metrics", metrics)
+
+    if _closed_frames >= EYE_CLOSED_CONFIRMATION_FRAMES:
+        _left_frames = _right_frames = _down_frames = 0
         return _result(
-            False,
-            "eye_landmarks_unclear",
-            0.0,
-            "eye_landmarks_unclear",
-            "Eye landmarks were not clear enough for reliable detection.",
-            "Keep your face clearly visible to the camera.",
-            False,
-        )
-
-    print(
-        "[EYE] Metrics",
-        {
-            "left_ear": round(left_ear, 3),
-            "right_ear": round(right_ear, 3),
-            "avg_ear": round(avg_ear, 3),
-            "avg_gaze_x": round(avg_gaze_x, 3),
-            "avg_gaze_y": round(avg_gaze_y, 3),
-        },
-    )
-
-    # Priority 1: eyes closed
-    if avg_ear < EYE_CLOSED_EAR_THRESHOLD:
-        confidence = _confidence_from_distance(
-            avg_ear,
-            EYE_CLOSED_EAR_THRESHOLD,
-            "low",
-        )
-
-        print("[EYE] Eyes closed detected", {"avg_ear": round(avg_ear, 3)})
-
-        return _result(
-            True,
-            "eyes_closed",
-            confidence,
+            True, "eyes_closed",
+            _confidence(closed_threshold - average_ear, 0.0, max(closed_threshold * 0.45, 0.04)),
             "eyes_closed",
             "Please keep your eyes open and focused on the exam screen.",
             "Open your eyes and keep looking at the exam screen.",
-            False,
+            True,  # Recent keyboard activity may suppress this typing-related posture.
+            metrics,
+            focus_reliable=True,
+            eyes_on_screen=False,
+            gaze_state="eyes_closed",
         )
 
-    # Priority 2: eye gaze left/right
-    if avg_gaze_x < GAZE_LEFT_THRESHOLD:
-        confidence = _confidence_from_distance(
-            avg_gaze_x,
-            GAZE_LEFT_THRESHOLD,
-            "low",
-        )
+    if average_ear >= max(EAR_OPEN_SAMPLE_MINIMUM, closed_threshold + 0.015):
+        _update_ear_baseline(average_ear)
 
-        print("[EYE] Eye gaze left detected", {"avg_gaze_x": round(avg_gaze_x, 3)})
+    if average_ear < MIN_EAR_FOR_GAZE:
+        _left_frames = _right_frames = _down_frames = 0
+        return _ok_result(metrics, message="Eye gaze was skipped because the eyelids were narrow.")
 
-        return _result(
-            True,
-            "eye_gaze_left",
-            confidence,
-            "eye_gaze_left",
-            "Please keep your eyes on the exam screen. Eye movement to the left was detected.",
-            "Keep your eyes focused on the exam content.",
-            False,
-        )
+    left_gaze = _eye_gaze_ratio(landmarks, LEFT_EYE)
+    right_gaze = _eye_gaze_ratio(landmarks, RIGHT_EYE)
+    if left_gaze is None or right_gaze is None:
+        _left_frames = _right_frames = _down_frames = 0
+        return _ok_result(metrics, message="Iris landmarks were temporarily unavailable.")
 
-    if avg_gaze_x > GAZE_RIGHT_THRESHOLD:
-        confidence = _confidence_from_distance(
-            avg_gaze_x,
-            GAZE_RIGHT_THRESHOLD,
-            "high",
-        )
+    gaze_x = _smooth(_smoothed_gaze_x, _average(left_gaze[0], right_gaze[0]))
+    gaze_y = _smooth(_smoothed_gaze_y, _average(left_gaze[1], right_gaze[1]))
+    _smoothed_gaze_x, _smoothed_gaze_y = gaze_x, gaze_y
 
-        print("[EYE] Eye gaze right detected", {"avg_gaze_x": round(avg_gaze_x, 3)})
+    if _gaze_samples < GAZE_CALIBRATION_FRAMES:
+        _update_gaze_baseline(gaze_x, gaze_y)
+        _left_frames = _right_frames = _down_frames = 0
+        metrics.update({"gaze_x": round(gaze_x, 4), "gaze_y": round(gaze_y, 4), "gaze_samples": _gaze_samples})
+        return _ok_result(metrics, message="Eye gaze calibration is in progress.", gaze_state="calibrating")
 
-        return _result(
-            True,
-            "eye_gaze_right",
-            confidence,
-            "eye_gaze_right",
-            "Please keep your eyes on the exam screen. Eye movement to the right was detected.",
-            "Keep your eyes focused on the exam content.",
-            False,
-        )
+    dx = gaze_x - _neutral_gaze_x
+    dy = gaze_y - _neutral_gaze_y
+    left_candidate = dx < -GAZE_HORIZONTAL_SOFT_DEVIATION
+    right_candidate = dx > GAZE_HORIZONTAL_SOFT_DEVIATION
+    down_candidate = dy > GAZE_DOWN_SOFT_DEVIATION
 
-    # Priority 3: gaze down
-    if avg_gaze_y > GAZE_DOWN_THRESHOLD:
-        confidence = _confidence_from_distance(
-            avg_gaze_y,
-            GAZE_DOWN_THRESHOLD,
-            "high",
-        )
+    _left_frames = _left_frames + 1 if left_candidate else 0
+    _right_frames = _right_frames + 1 if right_candidate else 0
+    _down_frames = _down_frames + 1 if down_candidate else 0
 
-        print("[EYE] Eye gaze down detected", {"avg_gaze_y": round(avg_gaze_y, 3)})
+    eyes_on_screen = abs(dx) <= SCREEN_FOCUS_HORIZONTAL_TOLERANCE and dy <= SCREEN_FOCUS_VERTICAL_TOLERANCE
+    gaze_state = "left" if left_candidate else "right" if right_candidate else "down" if down_candidate else "centre"
+    metrics.update({
+        "gaze_x": round(gaze_x, 4), "gaze_y": round(gaze_y, 4),
+        "gaze_x_deviation": round(dx, 4), "gaze_y_deviation": round(dy, 4),
+        "left_frames": _left_frames, "right_frames": _right_frames, "down_frames": _down_frames,
+        "focus_reliable": True, "eyes_on_screen": eyes_on_screen, "gaze_state": gaze_state,
+    })
 
-        return _result(
-            True,
-            "eye_gaze_down",
-            confidence,
-            "eye_gaze_down",
-            "Please keep your eyes on the exam screen. Downward eye movement was detected.",
-            "Keep your eyes focused on the exam content.",
-            True,
-        )
+    common = dict(metrics=metrics, focus_reliable=True, eyes_on_screen=False,
+                  gaze_x_deviation=dx, gaze_y_deviation=dy)
+    if _left_frames >= GAZE_CONFIRMATION_FRAMES:
+        return _result(True, "eye_gaze_left", _confidence(dx, GAZE_HORIZONTAL_SOFT_DEVIATION, GAZE_HORIZONTAL_STRONG_DEVIATION),
+                       "eye_gaze_left", "Please keep your eyes on the exam screen. Eye movement to the left was detected.",
+                       "Keep your eyes focused on the exam content.", False, gaze_state="left", **common)
+    if _right_frames >= GAZE_CONFIRMATION_FRAMES:
+        return _result(True, "eye_gaze_right", _confidence(dx, GAZE_HORIZONTAL_SOFT_DEVIATION, GAZE_HORIZONTAL_STRONG_DEVIATION),
+                       "eye_gaze_right", "Please keep your eyes on the exam screen. Eye movement to the right was detected.",
+                       "Keep your eyes focused on the exam content.", False, gaze_state="right", **common)
+    if _down_frames >= GAZE_CONFIRMATION_FRAMES:
+        return _result(True, "eye_gaze_down", _confidence(dy, GAZE_DOWN_SOFT_DEVIATION, GAZE_DOWN_STRONG_DEVIATION),
+                       "eye_gaze_down", "Please keep your eyes on the exam screen. Downward eye movement was detected.",
+                       "Keep your eyes focused on the exam content.", True, gaze_state="down", **common)
 
-    print("[EYE] Eye status OK")
+    if not left_candidate and not right_candidate and not down_candidate:
+        _update_gaze_baseline(gaze_x, gaze_y)
 
-    return _result(
-        False,
-        "ok",
-        1.0,
-        None,
-        "Eye monitoring check passed.",
-        None,
-        False,
-    )
+    return _ok_result(metrics, focus_reliable=True, eyes_on_screen=eyes_on_screen,
+                      gaze_state=gaze_state, gaze_x_deviation=dx, gaze_y_deviation=dy)

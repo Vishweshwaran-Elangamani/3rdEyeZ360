@@ -1,4 +1,4 @@
-﻿const { ipcMain, BrowserWindow, powerMonitor } = require("electron");
+const { ipcMain, BrowserWindow, powerMonitor } = require("electron");
 const { setupLockdown, removeLockdown } = require("../lockdown/window");
 const {
   createBrowserView,
@@ -23,7 +23,7 @@ const axios = require("axios");
 const BACKEND_URL = "http://localhost:3000";
 const DETECTION_URL = process.env.DETECTION_URL || "http://127.0.0.1:5001";
 
-const TYPING_GRACE_MS = 7000;
+const TYPING_GRACE_MS = 4000;
 const TOAST_DURATION_MS = 4500;
 
 let monitoringToastWindow = null;
@@ -504,103 +504,56 @@ function normaliseAudioPayload(data = {}) {
   };
 }
 function shouldIgnoreDetection(result) {
-  const detail = String(result?.detail || "").trim().toLowerCase();
-
-  return (
-    detail === "ok" ||
-    detail === "face_ok" ||
-    detail === "charger_connected" ||
-    detail === "eye_landmarks_unclear"
-  );
+  const detail = String(result?.detail || "").toLowerCase();
+  return detail === "ok" || detail === "no_face";
 }
 
 function getMostRecentTypingAt() {
-  let browserTypingAt = 0;
-  let fallbackTypingAt = 0;
+  const browserTypingAt =
+    typeof getLastBrowserInputAt === "function"
+      ? getLastBrowserInputAt()
+      : null;
 
-  try {
-    if (typeof getLastBrowserInputAt === "function") {
-      browserTypingAt = Number(getLastBrowserInputAt() || 0);
-    }
-  } catch (error) {
-    console.log("[TYPING] getLastBrowserInputAt failed:", error.message);
-  }
+  const fallbackTypingAt =
+    typeof getLastInputAt === "function"
+      ? getLastInputAt()
+      : null;
 
-  try {
-    if (typeof getLastInputAt === "function") {
-      fallbackTypingAt = Number(getLastInputAt() || 0);
-    }
-  } catch (error) {
-    console.log("[TYPING] getLastInputAt failed:", error.message);
-  }
-
-  return Math.max(browserTypingAt, fallbackTypingAt, 0);
+  return Number(browserTypingAt || fallbackTypingAt || 0);
 }
 
 function wasTypingRecently() {
   const lastTypedAt = getMostRecentTypingAt();
   if (!lastTypedAt) return false;
 
-  const elapsedMs = Date.now() - lastTypedAt;
-  return elapsedMs >= 0 && elapsedMs <= TYPING_GRACE_MS;
+  return Date.now() - lastTypedAt <= TYPING_GRACE_MS;
 }
 
 function isTypingSensitiveDetection(result) {
-  const detail = String(result?.detail || "").trim().toLowerCase();
-  const issue = String(result?.issue || "").trim().toLowerCase();
-
-  const detectorTypingSensitive =
-    result?.typing_sensitive === true ||
-    String(result?.typing_sensitive || "").trim().toLowerCase() === "true";
-
-  const typingSensitiveDetails = new Set([
-    "looking_down",
-    "head_looking_down",
-    "eye_gaze_down",
-    "eyes_closed",
-  ]);
-
-  const typingSensitiveIssues = new Set([
-    "head_looking_down",
-    "eye_gaze_down",
-    "eyes_closed",
-  ]);
+  const detail = String(result?.detail || "").toLowerCase();
+  const issue = String(result?.issue || "").toLowerCase();
 
   return (
-    detectorTypingSensitive ||
-    typingSensitiveDetails.has(detail) ||
-    typingSensitiveIssues.has(issue)
+    result?.typing_sensitive === true ||
+    detail === "looking_down" ||
+    detail === "head_looking_down" ||
+    detail === "eye_gaze_down" ||
+    issue === "head_looking_down" ||
+    issue === "eye_gaze_down"
   );
 }
 
 function shouldSkipForRecentTyping(result) {
   if (!isTypingSensitiveDetection(result)) return false;
 
-  const lastInputAt = getMostRecentTypingAt();
-
-  if (!lastInputAt) {
-    console.log(
-      "[TYPING] Typing-sensitive result received, but no keyboard timestamp is available.",
-      {
-        detail: result?.detail,
-        issue: result?.issue,
-        typing_sensitive: result?.typing_sensitive,
-      },
-    );
-    return false;
-  }
-
-  const elapsedMs = Date.now() - lastInputAt;
-  const recentlyTyped = elapsedMs >= 0 && elapsedMs <= TYPING_GRACE_MS;
+  const recentlyTyped = wasTypingRecently();
 
   if (recentlyTyped) {
     console.log("[IPC] Typing-sensitive detection ignored due to recent typing", {
-      detail: result?.detail,
-      issue: result?.issue,
-      typing_sensitive: result?.typing_sensitive,
-      lastInputAt,
-      elapsedMs,
+      detail: result.detail,
+      issue: result.issue,
       typingGraceMs: TYPING_GRACE_MS,
+      lastInputAt: getMostRecentTypingAt(),
     });
   }
 
@@ -1169,39 +1122,16 @@ function registerIpcHandlers(mainWindow) {
         }
 
         if (shouldSkipForRecentTyping(result)) {
-          // Close a previously displayed eye/down warning immediately.
-          closeMonitoringToastWindow();
-
-          // Convert the suppressed result to OK locally. It is not persisted.
-          const suppressedResult = {
-            ...result,
-            detected: false,
-            detail: "ok",
-            issue: null,
-            candidate_action: null,
-            suppressed_for_recent_typing: true,
-          };
-
-          console.log("[IPC] Typing-related eye/head result suppressed", {
-            type: result?.type,
-            detail: result?.detail,
-            issue: result?.issue,
-            typing_sensitive: result?.typing_sensitive,
-            lastInputAt: getMostRecentTypingAt(),
-          });
-
           safeSend(mainWindow, "detection-result", {
             source: "electron-ipc",
             persisted: false,
-            reason:
-              "Typing-sensitive detection ignored because keyboard input was recent.",
+            reason: "Typing-sensitive detection ignored because typing was recent.",
             assessmentId: payload.assessmentId,
             candidateId: payload.candidateId,
             examId: payload.examId,
             timestamp: payload.timestamp,
-            result: suppressedResult,
+            result,
           });
-
           continue;
         }
 

@@ -9,6 +9,3 @@ venv/
 .venv/
 start.ps1
 
-
-
-backend/.env

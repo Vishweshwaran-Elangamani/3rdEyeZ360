@@ -1,2 +1,9 @@
 cd D:\3rdEyez360V2\3rdEyeZ360
 .\start.ps1
+
+
+ cd D:\3rdEyeZ360V2\3rdEyeZ360\python-api                           
+>> venv\Scripts\activate
+>> uvicorn main:app --host 0.0.0.0 --port 5001             
+                                                                                                               
+                                                          

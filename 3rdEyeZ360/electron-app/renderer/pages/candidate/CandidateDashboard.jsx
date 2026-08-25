@@ -154,6 +154,21 @@ function normalizeItem(raw) {
     assessmentstatus: toUpper(assessmentStatusRaw),
     examstatus: toUpper(examStatusRaw),
     finalstatus: toUpper(firstValue(raw.finalstatus, raw.final_status)),
+    rejectionreason: firstValue(
+      raw.rejectionreason,
+      raw.rejection_reason,
+      raw.reviewreason,
+      raw.review_reason,
+      raw.requestreviewreason,
+      raw.request_review_reason,
+      raw.lastrequestreviewreason,
+      raw.last_request_review_reason,
+      raw.latestrequest?.reviewreason,
+      raw.latestrequest?.review_reason,
+      raw.latest_request?.reviewreason,
+      raw.latest_request?.review_reason,
+      ""
+    ),
     allowedwebsites: normalizeList(raw.allowedwebsites, raw.allowed_websites),
     allowedapplications: normalizeList(raw.allowedapplications, raw.allowed_applications),
   };
@@ -209,9 +224,26 @@ function normalizeRequest(raw) {
     examid: firstValue(raw.examid, raw.exam_id),
     candidateid: firstValue(raw.candidateid, raw.candidate_id),
     type: toUpper(firstValue(raw.type, raw.requesttype, raw.request_type)),
-    status: toUpper(raw.status),
+    status: toUpper(
+      firstValue(
+        raw.status,
+        raw.decision,
+        raw.requeststatus,
+        raw.request_status,
+        raw.reviewstatus,
+        raw.review_status
+      )
+    ),
     reason: firstValue(raw.reason, ""),
-    reviewreason: firstValue(raw.reviewreason, raw.review_reason, ""),
+    reviewreason: firstValue(
+      raw.reviewreason,
+      raw.review_reason,
+      raw.rejectionreason,
+      raw.rejection_reason,
+      raw.decisionreason,
+      raw.decision_reason,
+      ""
+    ),
     createdat: firstValue(raw.createdat, raw.created_at),
     reviewedat: firstValue(raw.reviewedat, raw.reviewed_at),
   };
@@ -250,6 +282,23 @@ function isRejectedStatus(status) {
 function isExamRunningStatus(examStatus) {
   return toUpper(examStatus) === "RUNNING";
 }
+function getRejectionReason(exam, request) {
+  return String(
+    firstValue(
+      request?.reviewreason,
+      request?.review_reason,
+      request?.rejectionreason,
+      request?.rejection_reason,
+      exam?.rejectionreason,
+      exam?.rejection_reason,
+      exam?.reviewreason,
+      exam?.review_reason,
+      exam?.requestreviewreason,
+      exam?.request_review_reason,
+      ""
+    ) || ""
+  ).trim();
+}
 function getRequestType(exam) {
   const s = toUpper(exam?.status);
   if (s.includes("REENTRY")) return "REENTRY";
@@ -257,6 +306,7 @@ function getRequestType(exam) {
 }
 function getCardState(exam, pendingRequest) {
   const assessmentStatus = toUpper(exam?.status);
+  const requestStatus = toUpper(pendingRequest?.status);
   const examStatus = toUpper(exam?.examstatus);
   const examRunning = isExamRunningStatus(examStatus);
   const hasEntered = Boolean(exam?.hasenteredexam);
@@ -291,7 +341,10 @@ function getCardState(exam, pendingRequest) {
     return { mode: "locked", cta: "Locked", disabled: true };
   }
 
-  if (pendingRequest || isPendingRequestStatus(assessmentStatus)) {
+  if (
+    isPendingRequestStatus(requestStatus) ||
+    isPendingRequestStatus(assessmentStatus)
+  ) {
     return {
       mode: "pending-request",
       cta: reentryStatus || hasEntered ? "Re-entry Request Pending" : "Request Pending",
@@ -300,15 +353,21 @@ function getCardState(exam, pendingRequest) {
     };
   }
 
-  if (isRejectedStatus(assessmentStatus)) {
+  if (
+    isRejectedStatus(assessmentStatus) ||
+    isRejectedStatus(requestStatus)
+  ) {
     const rejectedReentry = reentryStatus || hasEntered;
+    const rejectionReason = getRejectionReason(exam, pendingRequest);
     return {
       mode: "request",
       cta: rejectedReentry ? "Request Re-entry Again" : "Request Permission Again",
       disabled: false,
-      helper: rejectedReentry
-        ? "Your previous re-entry request was declined. You may submit a new request with an updated reason."
-        : "Your previous late-entry request was declined. You may submit a new request with an updated reason.",
+      helperLabel: "Rejection reason",
+      helperTone: "danger",
+      helper:
+        rejectionReason ||
+        "The examiner rejected this request without providing a reason.",
     };
   }
 
@@ -393,7 +452,11 @@ function getStatusMeta(status, examStatus, pendingRequest, t, exam = null) {
     };
   }
 
-  if (pendingRequest || isPendingRequestStatus(s) || cardState.mode === "pending-request") {
+  if (
+    isPendingRequestStatus(pendingRequest?.status) ||
+    isPendingRequestStatus(s) ||
+    cardState.mode === "pending-request"
+  ) {
     return {
       label: "Awaiting Review",
       color: t.warning,
@@ -1471,12 +1534,28 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
       {cardState.helper ? (
         <div
           style={{
-            background: enterable ? t.accentSoft : t.surfaceGlass,
-            border: `1px solid ${enterable ? t.borderAccent : t.border}`,
+            background:
+              cardState.helperTone === "danger"
+                ? t.dangerBg
+                : enterable
+                ? t.accentSoft
+                : t.surfaceGlass,
+            border: `1px solid ${
+              cardState.helperTone === "danger"
+                ? `${t.danger}55`
+                : enterable
+                ? t.borderAccent
+                : t.border
+            }`,
             borderRadius: 12,
             padding: "10px 12px",
             fontSize: 12,
-            color: enterable ? t.accent : t.textSecondary,
+            color:
+              cardState.helperTone === "danger"
+                ? t.danger
+                : enterable
+                ? t.accent
+                : t.textSecondary,
             lineHeight: 1.55,
             display: "flex",
             gap: 8,
@@ -1487,10 +1566,34 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}>
             <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
+            {cardState.helperTone === "danger" ? (
+              <>
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </>
+            ) : (
+              <>
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </>
+            )}
           </svg>
-          <span>{cardState.helper}</span>
+          <div style={{ minWidth: 0 }}>
+            {cardState.helperLabel ? (
+              <div
+                style={{
+                  marginBottom: 3,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: 0.7,
+                  textTransform: "uppercase",
+                }}
+              >
+                {cardState.helperLabel}
+              </div>
+            ) : null}
+            <div>{cardState.helper}</div>
+          </div>
         </div>
       ) : null}
 
@@ -1853,7 +1956,28 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
             if (!assessmentId) continue;
             const assessmentStatus = toUpper(item.status);
             const existing = prev[assessmentId];
-            if (isApprovedStatus(assessmentStatus) || isRejectedStatus(assessmentStatus)) continue;
+            if (isApprovedStatus(assessmentStatus)) continue;
+            if (isRejectedStatus(assessmentStatus)) {
+              next[assessmentId] =
+                normalizeRequest({
+                  ...(existing || {}),
+                  requestid:
+                    existing?.requestid || `rejected-${assessmentId}`,
+                  assessmentid: assessmentId,
+                  examid: item.examid,
+                  candidateid:
+                    item.candidateid ??
+                    user?.userid ??
+                    user?.user_id ??
+                    null,
+                  type: existing?.type || getRequestType(item),
+                  status: "REJECTED",
+                  reason: existing?.reason || "",
+                  reviewreason:
+                    getRejectionReason(item, existing) || "",
+                }) || existing;
+              continue;
+            }
             if (isPendingRequestStatus(assessmentStatus)) {
               next[assessmentId] =
                 normalizeRequest({
@@ -1921,13 +2045,37 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
           itemIndex === index ? mergeAssessmentUpdate(item, next) : item
         );
       });
-      if (!isPendingRequestStatus(next.status)) {
-        setPendingRequestsByAssessment((previous) => {
-          const copy = { ...previous };
-          delete copy[next.assessmentid];
+      setPendingRequestsByAssessment((previous) => {
+        const copy = { ...previous };
+        const existing = copy[next.assessmentid];
+
+        if (isRejectedStatus(next.status)) {
+          copy[next.assessmentid] = normalizeRequest({
+            ...(existing || {}),
+            requestid:
+              existing?.requestid ||
+              `rejected-${next.assessmentid}`,
+            assessmentid: next.assessmentid,
+            examid: next.examid,
+            candidateid:
+              next.candidateid ??
+              user?.userid ??
+              user?.user_id ??
+              null,
+            type: existing?.type || getRequestType(next),
+            status: "REJECTED",
+            reason: existing?.reason || "",
+            reviewreason:
+              getRejectionReason(next, existing) || "",
+          });
           return copy;
-        });
-      }
+        }
+
+        if (!isPendingRequestStatus(next.status)) {
+          delete copy[next.assessmentid];
+        }
+        return copy;
+      });
       lastUpdatedRef.current = new Date();
     };
 
@@ -1964,15 +2112,66 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
 
     const onRequestReviewed = (payload) => {
       if (!matchesCandidate(payload)) return;
-      const assessmentId = firstValue(payload?.assessmentid, payload?.assessment_id);
+
+      const reviewedRequest = normalizeRequest(
+        payload?.request || payload
+      );
+      const assessmentId = firstValue(
+        reviewedRequest?.assessmentid,
+        payload?.assessmentid,
+        payload?.assessment_id,
+        payload?.assessment?.assessmentid,
+        payload?.assessment?.assessment_id
+      );
+      const reviewStatus = toUpper(
+        firstValue(
+          reviewedRequest?.status,
+          payload?.decision,
+          payload?.status,
+          payload?.assessment?.status,
+          payload?.assessment?.assessmentstatus
+        )
+      );
+      const reviewReason = String(
+        firstValue(
+          reviewedRequest?.reviewreason,
+          payload?.reviewreason,
+          payload?.review_reason,
+          payload?.rejectionreason,
+          payload?.rejection_reason,
+          payload?.reason,
+          ""
+        ) || ""
+      ).trim();
+
       if (assessmentId) {
         setPendingRequestsByAssessment((previous) => {
           const copy = { ...previous };
-          delete copy[assessmentId];
+
+          if (isRejectedStatus(reviewStatus)) {
+            copy[assessmentId] = normalizeRequest({
+              ...(reviewedRequest || {}),
+              requestid:
+                reviewedRequest?.requestid ||
+                `rejected-${assessmentId}`,
+              assessmentid: assessmentId,
+              status: "REJECTED",
+              reviewreason: reviewReason,
+            });
+          } else {
+            delete copy[assessmentId];
+          }
+
           return copy;
         });
       }
-      if (payload?.assessment) upsertAssessment(payload.assessment);
+
+      if (payload?.assessment) {
+        upsertAssessment({
+          ...payload.assessment,
+          rejectionreason: reviewReason,
+        });
+      }
     };
 
     socket.on("assessment_created", upsertAssessment);

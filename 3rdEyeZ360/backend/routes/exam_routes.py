@@ -259,6 +259,24 @@ def _assessment_payload(
         or []
     )
 
+    rejection_reason = (
+        assessment.get("rejectionreason")
+        or assessment.get("rejection_reason")
+        or assessment.get("lastrequestreviewreason")
+        or assessment.get("last_request_review_reason")
+        or ""
+    )
+    last_request_status = (
+        assessment.get("lastrequeststatus")
+        or assessment.get("last_request_status")
+        or ""
+    )
+    assessment_data["rejectionreason"] = rejection_reason
+    assessment_data["rejection_reason"] = rejection_reason
+    assessment_data["lastrequestreviewreason"] = rejection_reason
+    assessment_data["last_request_review_reason"] = rejection_reason
+    assessment_data["lastrequeststatus"] = last_request_status
+    assessment_data["last_request_status"] = last_request_status
     return assessment_data
 
 
@@ -651,12 +669,41 @@ async def get_candidate_upcoming(
         if not exam:
             continue
 
-        result.append(
-            _merge_exam_assessment(
-                exam,
-                assessment,
-            )
+        merged = _merge_exam_assessment(
+            exam,
+            assessment,
         )
+        latest_rejected_request = await db.requests.find_one(
+            {
+                "$and": [
+                    {
+                        "$or": [
+                            {"assessmentid": merged.get("assessmentid")},
+                            {"assessment_id": merged.get("assessment_id")},
+                        ]
+                    },
+                    {"status": "REJECTED"},
+                ]
+            },
+            sort=[("reviewedat", -1), ("reviewed_at", -1), ("createdat", -1)],
+        )
+        if latest_rejected_request:
+            rejection_reason = (
+                latest_rejected_request.get("reviewreason")
+                or latest_rejected_request.get("review_reason")
+                or ""
+            )
+            merged.update(
+                {
+                    "lastrequeststatus": "REJECTED",
+                    "last_request_status": "REJECTED",
+                    "lastrequestreviewreason": rejection_reason,
+                    "last_request_review_reason": rejection_reason,
+                    "rejectionreason": rejection_reason,
+                    "rejection_reason": rejection_reason,
+                }
+            )
+        result.append(merged)
 
     return result
 

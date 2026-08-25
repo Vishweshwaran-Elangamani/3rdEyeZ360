@@ -215,6 +215,50 @@ def _merge_exam_into_assessment(assessment: dict, exam: dict | None) -> dict:
             "waiting_registered_at": _waiting_registered_at(assessment),
             "lastheartbeatat": _heartbeat_time(assessment),
             "last_heartbeat_at": _heartbeat_time(assessment),
+            "lastrequeststatus": _field_value(
+                assessment, "lastrequeststatus", "last_request_status", default=""
+            ),
+            "last_request_status": _field_value(
+                assessment, "lastrequeststatus", "last_request_status", default=""
+            ),
+            "lastrequesttype": _field_value(
+                assessment, "lastrequesttype", "last_request_type", default=""
+            ),
+            "last_request_type": _field_value(
+                assessment, "lastrequesttype", "last_request_type", default=""
+            ),
+            "lastrequestreviewreason": _field_value(
+                assessment,
+                "lastrequestreviewreason",
+                "last_request_review_reason",
+                "rejectionreason",
+                "rejection_reason",
+                default="",
+            ),
+            "last_request_review_reason": _field_value(
+                assessment,
+                "lastrequestreviewreason",
+                "last_request_review_reason",
+                "rejectionreason",
+                "rejection_reason",
+                default="",
+            ),
+            "rejectionreason": _field_value(
+                assessment,
+                "rejectionreason",
+                "rejection_reason",
+                "lastrequestreviewreason",
+                "last_request_review_reason",
+                default="",
+            ),
+            "rejection_reason": _field_value(
+                assessment,
+                "rejectionreason",
+                "rejection_reason",
+                "lastrequestreviewreason",
+                "last_request_review_reason",
+                default="",
+            ),
         }
     )
 
@@ -731,6 +775,30 @@ async def get_assessment(assessment_id: str, current_user=Depends(requirerole("C
         assessment = await _get_assessment_doc(db, assessment_id)
 
     exam_id = assessment.get("examid") or assessment.get("exam_id")
+    latest_rejected_request = await db.requests.find_one(
+        {
+            "$and": [
+                _assessment_query(assessment_id),
+                {"status": "REJECTED"},
+            ]
+        },
+        sort=[("reviewedat", -1), ("reviewed_at", -1), ("createdat", -1)],
+    )
+    if latest_rejected_request:
+        rejection_reason = (
+            latest_rejected_request.get("reviewreason")
+            or latest_rejected_request.get("review_reason")
+            or ""
+        )
+        assessment = {
+            **assessment,
+            "lastrequeststatus": "REJECTED",
+            "last_request_status": "REJECTED",
+            "lastrequestreviewreason": rejection_reason,
+            "last_request_review_reason": rejection_reason,
+            "rejectionreason": rejection_reason,
+            "rejection_reason": rejection_reason,
+        }
     exam = await _get_exam_doc(db, exam_id) if exam_id else None
     return _merge_exam_into_assessment(assessment, exam)
 

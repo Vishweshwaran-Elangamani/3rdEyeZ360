@@ -121,6 +121,11 @@ async def submit(req: CreateRequestBody, current_user=Depends(requirerole("Candi
     status = "REENTRYREQUESTED" if request_type == "REENTRY" else "LATEENTRYREQUESTED"
     update = {
         "status": status, "assessmentstatus": status, "assessment_status": status,
+        "lastrequeststatus": "PENDING", "last_request_status": "PENDING",
+        "lastrequesttype": request_type, "last_request_type": request_type,
+        "lastrequestreason": reason, "last_request_reason": reason,
+        "lastrequestreviewreason": None, "last_request_review_reason": None,
+        "rejectionreason": None, "rejection_reason": None,
         "updatedat": now, "updated_at": now,
     }
     if request_type == "REENTRY":
@@ -188,6 +193,12 @@ async def review(requestid: str, req: ReviewBody, current_user=Depends(requirero
 
     update = {
         "status": status, "assessmentstatus": status, "assessment_status": status,
+        "lastrequeststatus": decision, "last_request_status": decision,
+        "lastrequesttype": request_type, "last_request_type": request_type,
+        "lastrequestreviewreason": reason or None,
+        "last_request_review_reason": reason or None,
+        "rejectionreason": reason if decision == "REJECTED" else None,
+        "rejection_reason": reason if decision == "REJECTED" else None,
         "updatedat": now, "updated_at": now,
     }
     if request_type == "REENTRY":

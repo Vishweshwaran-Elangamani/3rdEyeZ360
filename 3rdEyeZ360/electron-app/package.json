@@ -14,7 +14,7 @@
     "productName": "3rdEyeZ360",
     "win": {
       "target": "nsis",
-      "icon": "dist-renderer/assets/icons/app-icon.ico"
+      "icon": "dist-renderer/assets/icons/3rdeyez360-icon.ico"
     },
     "directories": {
       "output": "dist"

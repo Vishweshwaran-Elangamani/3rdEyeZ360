@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog } = require("electron");
+const { app, BrowserWindow, Menu, dialog, screen } = require("electron");
 const path = require("path");
 const { spawnPythonApi } = require("./services/python-spawner");
 const registerIpcHandlers = require("./ipc");
@@ -11,7 +11,7 @@ let mainWindow = null;
 let pythonProcess = null;
 
 function getIconPath() {
-  return path.join(__dirname, "..", "assets", "icons", "app-icon.ico");
+  return path.join(__dirname, "..", "assets", "icons", "3rdeyez360-icon.ico");
 }
 
 function getPreloadPath() {
@@ -22,19 +22,56 @@ function getProdHtmlPath() {
   return path.join(__dirname, "..", "dist-renderer", "index.html");
 }
 
+function showMainWindowMaximized() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  // Keep the normal Windows title bar and taskbar visible.
+  if (mainWindow.isFullScreen()) {
+    mainWindow.setFullScreen(false);
+  }
+
+  mainWindow.maximize();
+  mainWindow.show();
+  mainWindow.focus();
+
+  // Windows can restore the startup bounds while the window is first shown.
+  // Reapply maximize after the native window has completed its initial layout.
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    if (!mainWindow.isMaximized()) {
+      mainWindow.maximize();
+    }
+  }, 150);
+}
+
 function createWindow() {
+  const { workArea } = screen.getPrimaryDisplay();
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    // Start with the complete usable desktop area as a fallback.
+    // The taskbar is excluded from Electron's workArea dimensions.
+    x: workArea.x,
+    y: workArea.y,
+    width: workArea.width,
+    height: workArea.height,
     minWidth: 1024,
     minHeight: 700,
+
+    // This is a normal maximized window, not true fullscreen.
+    fullscreen: false,
     frame: true,
     resizable: true,
+    movable: true,
+    minimizable: true,
+    maximizable: true,
+
     autoHideMenuBar: true,
     show: false,
     backgroundColor: "#0b1114",
     title: "3rdEyeZ360",
     icon: getIconPath(),
+
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
@@ -49,10 +86,12 @@ function createWindow() {
 
   mainWindow.webContents.on("did-fail-load", (_event, code, desc, url) => {
     console.error("Main window failed to load:", { code, desc, url });
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    showMainWindowMaximized();
+  });
+
+  // Show the hidden native window only after its first visual frame is ready.
+  mainWindow.once("ready-to-show", () => {
+    showMainWindowMaximized();
   });
 
   if (process.env.NODE_ENV === "development") {
@@ -63,10 +102,16 @@ function createWindow() {
 
       mainWindow.loadURL(DEV_URL).catch((err) => {
         if (retries > 0) {
-          console.log("Vite not ready, retrying...", retries, "retries left");
+          console.log(
+            "Vite not ready, retrying...",
+            retries,
+            "retries left"
+          );
+
           setTimeout(() => tryLoad(retries - 1), 1500);
         } else {
           console.error("Could not connect to Vite on port 5173", err);
+          showMainWindowMaximized();
         }
       });
     };
@@ -75,14 +120,9 @@ function createWindow() {
   } else {
     mainWindow.loadFile(getProdHtmlPath()).catch((err) => {
       console.error("Failed to load production HTML:", err);
+      showMainWindowMaximized();
     });
   }
-
-  mainWindow.webContents.once("did-finish-load", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.show();
-    mainWindow.focus();
-  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;

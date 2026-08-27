@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/global.css";
+import StartupSplash from "./components/SplashScreen";
 import Login from "./pages/Login";
 import CandidateDashboard from "./pages/candidate/CandidateDashboard";
 import PreCheck from "./pages/candidate/PreCheck";
@@ -373,6 +374,7 @@ function choosePrimaryAssessment(list) {
 }
 
 function App() {
+  const [showStartupSplash, setShowStartupSplash] = useState(true);
   const { user, accessToken, hasHydrated, clearAuth } = useAuthStore();
   const {
     currentExam,
@@ -1004,6 +1006,10 @@ const handleLogout = useCallback(async () => {
   const handleExamComplete = useCallback(() => {
     setScreen("complete");
   }, []);
+
+  if (showStartupSplash) {
+    return <StartupSplash onFinish={() => setShowStartupSplash(false)} />;
+  }
 
   if (!hasHydrated) return <SplashScreen text="Restoring session..." />;
   if (isLoggingOut) return <SplashScreen text="Signing out..." />;

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import useAuthStore from "../store/authStore";
 import useExamStore from "../store/examStore";
-import appIcon from "../../assets/icons/3rdeyez360logo_bgremoved.png";
+import appIcon from "../../assets/icons/app-icon (2).png";
 
 const API = "http://localhost:3000";
 
@@ -266,57 +266,68 @@ function LockAnimation({ hasEmail, hasPassword, lockState }) {
             transform: "translate(-50%, -50%)",
           }}
         >
-          <svg width="90" height="100" viewBox="0 0 90 100" fill="none">
-            <g
-              style={{
-                transformOrigin: "22px 45px",
-                animation: isSuccess ? "shackleOpen 0.6s ease-out forwards" : "none",
-                transition: "stroke 0.3s ease",
-              }}
-            >
-              <path
-                d="M22 45 V32 a23 23 0 0 1 46 0 V45"
-                stroke={lockStroke}
-                strokeWidth="4"
-                strokeLinecap="round"
-                fill="none"
-              />
-            </g>
-
+          <svg
+            width="100"
+            height="112"
+            viewBox="0 0 100 112"
+            fill="none"
+            style={{ overflow: "visible", display: "block" }}
+          >
+            {/* Draw the lock body first so its top border can never cut across
+                or hide the curved shackle during the unlock animation. */}
             <rect
-              x="16"
-              y="42"
-              width="58"
-              height="50"
-              rx="8"
+              x="18"
+              y="48"
+              width="64"
+              height="54"
+              rx="9"
               stroke={lockStroke}
-              strokeWidth="3"
+              strokeWidth="3.5"
               fill={lockFill}
               style={{ transition: "all 0.3s ease" }}
             />
 
+            {/* The complete shackle is rendered above the body and SVG overflow
+                remains visible, preventing clipping while it rotates open. */}
+            <g
+              style={{
+                transformOrigin: "25px 49px",
+                animation: isSuccess ? "shackleOpen 0.65s ease-out forwards" : "none",
+                transition: "stroke 0.3s ease",
+              }}
+            >
+              <path
+                d="M25 49 V35 C25 13 75 13 75 35 V49"
+                stroke={lockStroke}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </g>
+
             {!isSuccess && !isError && (
               <>
-                <circle cx="45" cy="62" r="5" fill={lockStroke} opacity="0.9" />
-                <rect x="43" y="65" width="4" height="12" fill={lockStroke} opacity="0.9" />
+                <circle cx="50" cy="69" r="5" fill={lockStroke} opacity="0.9" />
+                <rect x="48" y="72" width="4" height="12" fill={lockStroke} opacity="0.9" />
               </>
             )}
 
             {isError && (
               <g
                 style={{
-                  transformOrigin: "45px 67px",
+                  transformOrigin: "50px 75px",
                   animation: "xPop 0.4s ease-out forwards",
                 }}
               >
-                <line x1="37" y1="59" x2="53" y2="75" stroke="#ff6b6b" strokeWidth="4" strokeLinecap="round" />
-                <line x1="53" y1="59" x2="37" y2="75" stroke="#ff6b6b" strokeWidth="4" strokeLinecap="round" />
+                <line x1="41" y1="67" x2="59" y2="83" stroke="#ff6b6b" strokeWidth="4" strokeLinecap="round" />
+                <line x1="59" y1="67" x2="41" y2="83" stroke="#ff6b6b" strokeWidth="4" strokeLinecap="round" />
               </g>
             )}
 
             {isSuccess && (
               <path
-                d="M35 66 L43 74 L57 58"
+                d="M39 73 L48 82 L63 64"
                 stroke="#4ade80"
                 strokeWidth="4"
                 strokeLinecap="round"
@@ -380,6 +391,8 @@ export default function Login({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [transitionPhase, setTransitionPhase] = useState("idle");
+  const transitionTimers = useRef([]);
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState("");
   const [lockState, setLockState] = useState(LOCK_STATE.IDLE);
@@ -396,6 +409,12 @@ export default function Login({ onLogin }) {
       setError("");
     }
   }, [email, password]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return () => {
+      transitionTimers.current.forEach(clearTimeout);
+    };
+  }, []);
 
   const handleLogin = async () => {
     if (loading) return;
@@ -418,22 +437,34 @@ export default function Login({ onLogin }) {
         password: cleanPassword,
       });
 
-      resetExam();
-      setAuth(res.data.user, res.data.access_token, res.data.refresh_token);
+      // Do not write authentication into the global store yet. The application
+      // may render the dashboard as soon as accessToken changes, which would
+      // skip the success animation even if onLogin itself is delayed.
       setLockState(LOCK_STATE.SUCCESS);
+      setTransitionPhase("unlocking");
 
-      setTimeout(() => {
+      // Keep the unlocked lock and Access Granted state visible for 2.8 seconds.
+      const handoffTimer = setTimeout(() => {
+        setTransitionPhase("handoff");
+      }, 1800);
+
+      // After the visible 1.2 second handoff, commit authentication and route.
+      const navigationTimer = setTimeout(() => {
+        resetExam();
+        setAuth(res.data.user, res.data.access_token, res.data.refresh_token);
         onLogin?.(res.data.user);
-      }, 900);
+      }, 4000);
+
+      transitionTimers.current = [handoffTimer, navigationTimer];
     } catch (e) {
       const friendly = getFriendlyErrorMessage(e);
       setError(friendly);
       setLockState(LOCK_STATE.ERROR);
+      setTransitionPhase("idle");
       setLoading(false);
       return;
     }
 
-    setLoading(false);
   };
 
   const handleSubmit = (e) => {
@@ -485,6 +516,14 @@ export default function Login({ onLogin }) {
         display: "flex",
         background: "#0a0c12",
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        position: "relative",
+        overflow: "hidden",
+        animation:
+          transitionPhase === "handoff"
+            ? "loginPageExit 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards"
+            : transitionPhase === "unlocking"
+            ? "verifiedGlow 1.4s ease-in-out 2"
+            : "none",
       }}
     >
       <style>{`
@@ -495,6 +534,31 @@ export default function Login({ onLogin }) {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-4px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes verifiedGlow {
+          0%, 100% { box-shadow: inset 0 0 0 rgba(74,222,128,0); }
+          50% { box-shadow: inset 0 0 110px rgba(74,222,128,0.1); }
+        }
+        @keyframes handoffBackdrop {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes handoffPanel {
+          from { opacity: 0; transform: translateY(30px) scale(0.9); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes dashboardMark {
+          0% { opacity: 0; transform: scale(0.55) rotate(-12deg); }
+          75% { opacity: 1; transform: scale(1.08) rotate(2deg); }
+          100% { opacity: 1; transform: scale(1) rotate(0); }
+        }
+        @keyframes handoffBar {
+          from { transform: scaleX(0); }
+          to { transform: scaleX(1); }
+        }
+        @keyframes loginPageExit {
+          from { opacity: 1; transform: scale(1); filter: blur(0); }
+          to { opacity: 0; transform: scale(1.05); filter: blur(9px); }
         }
 
         @keyframes drift {
@@ -581,6 +645,37 @@ export default function Login({ onLogin }) {
         }
       `}</style>
 
+      {transitionPhase === "handoff" && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "radial-gradient(circle at center, rgba(31,43,78,0.94), rgba(5,7,13,0.99) 70%)",
+            animation: "handoffBackdrop 0.3s ease forwards",
+            pointerEvents: "all",
+          }}
+        >
+          <div style={{ width: 340, padding: "36px 34px 30px", borderRadius: 22, textAlign: "center", color: "#fff", background: "rgba(17,21,35,0.96)", border: "1px solid rgba(111,145,255,0.38)", boxShadow: "0 32px 100px rgba(0,0,0,0.62), 0 0 80px rgba(79,142,247,0.25)", animation: "handoffPanel 0.55s cubic-bezier(0.2,0.8,0.2,1) forwards" }}>
+            <div style={{ width: 68, height: 68, margin: "0 auto 18px", borderRadius: 19, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#4f8ef7,#7c5ce7)", boxShadow: "0 16px 40px rgba(79,142,247,0.42)", animation: "dashboardMark 0.65s ease forwards" }}>
+              <svg width="31" height="31" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" />
+              </svg>
+            </div>
+            <div style={{ fontFamily: "'Poppins',sans-serif", fontSize: 20, fontWeight: 600 }}>Opening your dashboard</div>
+            <div style={{ marginTop: 8, color: "#a1abc5", fontSize: 13, lineHeight: 1.5 }}>Credentials verified successfully</div>
+            <div style={{ height: 4, marginTop: 25, borderRadius: 999, background: "rgba(255,255,255,0.09)", overflow: "hidden" }}>
+              <div style={{ width: "100%", height: "100%", borderRadius: 999, background: "linear-gradient(90deg,#4ade80,#4f8ef7,#7c5ce7)", transformOrigin: "left", animation: "handoffBar 1.2s linear forwards" }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         className="login-branding"
         style={{
@@ -646,36 +741,48 @@ export default function Login({ onLogin }) {
           }}
         >
           {/* ===== LOGO — image is the badge, fills box, no double-frame ===== */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img
-              src={appIcon}
-              alt="3rdEyeZ360"
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 14,
-                objectFit: "contain",
-                display: "block",
-                flexShrink: 0,
-                background: "#dcdcdc",
-                padding: 6,
-                boxSizing: "border-box",
-                boxShadow: "0 8px 20px rgba(79,142,247,0.35)",
-              }}
-            />
-            <span
-              style={{
-                color: "#e8eaf0",
-                fontSize: 22,
-                fontWeight: 600,
-                letterSpacing: 0.3,
-                fontFamily: "'Poppins', sans-serif",
-              }}
-            >
-              3rdEyeZ360
-            </span>
-          </div>
-
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "transparent",
+                    overflow: "visible",
+                    flexShrink: 0,
+                  }}
+                >
+                  <img
+                    src={appIcon}
+                    alt="3rdEyeZ360"
+                    draggable="false"
+                    style={{
+                      width: "68px",
+                      height: "68px",
+                      objectFit: "contain",
+                      display: "block",
+                      background: "transparent",
+                      filter:
+                        "drop-shadow(0 0 2px rgba(255,255,255,0.85)) drop-shadow(0 0 6px rgba(190,65,255,0.8)) drop-shadow(0 0 12px rgba(255,35,180,0.55))",
+                      userSelect: "none",
+                    }}
+                  />
+                </div>
+          
+                <span
+                  style={{
+                    color: "#e8eaf0",
+                    fontSize: 22,
+                    fontWeight: 600,
+                    letterSpacing: 0.3,
+                    fontFamily: "'Poppins', sans-serif",
+                  }}
+                >
+                  3rdEyeZ360
+                </span>
+              </div>
           <div style={{ maxWidth: 620 }}>
             <h1
               style={{
@@ -992,7 +1099,7 @@ export default function Login({ onLogin }) {
                   }}
                 />
               )}
-              {loading ? "Signing in..." : "Sign In"}
+              {transitionPhase === "unlocking" ? "Access granted" : transitionPhase === "handoff" ? "Opening dashboard..." : loading ? "Signing in..." : "Sign In"}
             </button>
           </div>
 

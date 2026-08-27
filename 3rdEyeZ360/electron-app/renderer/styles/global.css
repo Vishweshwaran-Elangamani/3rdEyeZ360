@@ -15,6 +15,14 @@
   --info: #64b5f6;
   --radius: 8px;
   --font: 'Inter', sans-serif;
+  --titlebar-height: 32px;
+  --titlebar-bg: #0f1117;
+  --titlebar-text: #f8fafc;
+}
+
+:root[data-window-theme="splash"] {
+  --titlebar-bg: #ffffff;
+  --titlebar-text: #111827;
 }
 
 body {
@@ -25,6 +33,43 @@ body {
   line-height: 1.5;
   overflow: hidden;
   user-select: none;
+}
+
+.app-titlebar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 2147483647;
+  height: var(--titlebar-height);
+  background: var(--titlebar-bg);
+  color: var(--titlebar-text);
+  transition: none;
+  will-change: auto;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+.app-titlebar__brand {
+  width: max-content;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+.app-titlebar__icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+}
+
+.app-titlebar__title {
+  font-family: "Segoe UI", var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
 }
 
 button {
@@ -47,9 +92,7 @@ input, textarea {
   outline: none;
 }
 
-input:focus, textarea:focus {
-  border-color: var(--primary);
-}
+input:focus, textarea:focus { border-color: var(--primary); }
 
 .btn {
   padding: 9px 18px;
@@ -58,31 +101,34 @@ input:focus, textarea:focus {
   font-weight: 500;
 }
 
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-}
-
+.btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-hover); }
-
-.btn-danger {
-  background: var(--error);
-  color: #fff;
-}
-
-.btn-ghost {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
+.btn-danger { background: var(--error); color: #fff; }
+.btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 .btn-ghost:hover { background: var(--surface-2); }
-
-.btn-success {
-  background: var(--success);
-  color: #fff;
-}
+.btn-success { background: var(--success); color: #fff; }
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Reserve a dedicated viewport below the 32px title bar. */
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-viewport {
+  position: fixed;
+  top: var(--titlebar-height);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+}
+
+/* Fixed pages now fill only the usable renderer area below the title bar. */
+.app-viewport .startup-splash {
+  position: absolute;
+  inset: 0;
+}

@@ -5,8 +5,6 @@ const BLACK_TEXT_DURATION = 500;
 const FRAME_DURATION = 250;
 const EXIT_DURATION = 450;
 
-// Automatically load all supported images from electron-app/assets/splash.
-// This file must be located at renderer/components/SplashScreen.jsx.
 const importedSplashImages = import.meta.glob(
   "../../assets/splash/*.{jpg,jpeg,png,webp}",
   {
@@ -15,7 +13,6 @@ const importedSplashImages = import.meta.glob(
   }
 );
 
-// Numeric sorting keeps security-02 before security-10.
 const SPLASH_IMAGES = Object.entries(importedSplashImages)
   .sort(([pathA], [pathB]) =>
     pathA.localeCompare(pathB, undefined, {
@@ -30,7 +27,9 @@ export default function StartupSplash({ onFinish }) {
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
-    // Preload all frames to minimize flashing between image changes.
+    document.documentElement.dataset.windowTheme = "splash";
+    window.electronAPI?.setTitleBarTheme?.("splash");
+
     SPLASH_IMAGES.forEach((src) => {
       const image = new Image();
       image.src = src;
@@ -50,6 +49,10 @@ export default function StartupSplash({ onFinish }) {
     }, TOTAL_DURATION - EXIT_DURATION);
 
     const finishTimer = window.setTimeout(() => {
+      // Switch the title-bar background, native symbols, and application page
+      // together in the same event-loop tick.
+      document.documentElement.dataset.windowTheme = "app";
+      window.electronAPI?.setTitleBarTheme?.("app");
       onFinish?.();
     }, TOTAL_DURATION);
 

@@ -32,7 +32,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.removeAllListeners("detection-result");
   },
 
-  captureWebsitePreview: (url) => ipcRenderer.invoke("capture-website-preview", url),
+  captureWebsitePreview: (url) =>
+    ipcRenderer.invoke("capture-website-preview", url),
 
   openBrowser: (data) => ipcRenderer.invoke("open-browser", data),
   closeBrowser: () => ipcRenderer.invoke("close-browser"),
@@ -67,5 +68,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   setClosable: (val) => ipcRenderer.invoke("set-closable", val),
+
+  setTitleBarTheme: (themeName) =>
+    ipcRenderer.send("set-title-bar-theme", themeName),
 });
- 

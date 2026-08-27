@@ -1,4 +1,11 @@
-const { app, BrowserWindow, Menu, dialog, screen } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  dialog,
+  screen,
+  ipcMain,
+} = require("electron");
 const path = require("path");
 const { spawnPythonApi } = require("./services/python-spawner");
 const registerIpcHandlers = require("./ipc");
@@ -11,7 +18,13 @@ let mainWindow = null;
 let pythonProcess = null;
 
 function getIconPath() {
-  return path.join(__dirname, "..", "assets", "icons", "3rdeyez360-icon.ico");
+  return path.join(
+    __dirname,
+    "..",
+    "assets",
+    "icons",
+    "3rdeyez360-icon.ico"
+  );
 }
 
 function getPreloadPath() {
@@ -22,10 +35,21 @@ function getProdHtmlPath() {
   return path.join(__dirname, "..", "dist-renderer", "index.html");
 }
 
+const TITLE_BAR_THEMES = {
+  splash: { color: "#00000000", symbolColor: "#111827", height: 32 },
+  app: { color: "#00000000", symbolColor: "#f8fafc", height: 32 },
+};
+
+function setTitleBarTheme(themeName = "app") {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const theme = themeName === "splash" ? TITLE_BAR_THEMES.splash : TITLE_BAR_THEMES.app;
+  mainWindow.setTitleBarOverlay(theme);
+  return true;
+}
+
 function showMainWindowMaximized() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // Keep the normal Windows title bar and taskbar visible.
   if (mainWindow.isFullScreen()) {
     mainWindow.setFullScreen(false);
   }
@@ -34,8 +58,6 @@ function showMainWindowMaximized() {
   mainWindow.show();
   mainWindow.focus();
 
-  // Windows can restore the startup bounds while the window is first shown.
-  // Reapply maximize after the native window has completed its initial layout.
   setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -49,8 +71,6 @@ function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
 
   mainWindow = new BrowserWindow({
-    // Start with the complete usable desktop area as a fallback.
-    // The taskbar is excluded from Electron's workArea dimensions.
     x: workArea.x,
     y: workArea.y,
     width: workArea.width,
@@ -58,7 +78,6 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
 
-    // This is a normal maximized window, not true fullscreen.
     fullscreen: false,
     frame: true,
     resizable: true,
@@ -66,9 +85,12 @@ function createWindow() {
     minimizable: true,
     maximizable: true,
 
+    titleBarStyle: "hidden",
+    titleBarOverlay: TITLE_BAR_THEMES.splash,
+
     autoHideMenuBar: true,
     show: false,
-    backgroundColor: "#0b1114",
+    backgroundColor: "#ffffff",
     title: "3rdEyeZ360",
     icon: getIconPath(),
 
@@ -89,7 +111,6 @@ function createWindow() {
     showMainWindowMaximized();
   });
 
-  // Show the hidden native window only after its first visual frame is ready.
   mainWindow.once("ready-to-show", () => {
     showMainWindowMaximized();
   });
@@ -130,6 +151,10 @@ function createWindow() {
 
   registerIpcHandlers(mainWindow);
 }
+
+ipcMain.on("set-title-bar-theme", (_event, themeName) => {
+  setTitleBarTheme(themeName);
+});
 
 app.whenReady().then(() => {
   try {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createRoot } from "react-dom/client";
 import "./styles/global.css";
 import StartupSplash from "./components/SplashScreen";
+import AppTitleBar from "./components/AppTitleBar";
 import Login from "./pages/Login";
 import CandidateDashboard from "./pages/candidate/CandidateDashboard";
 import PreCheck from "./pages/candidate/PreCheck";
@@ -1091,6 +1092,9 @@ if (
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <AppTitleBar />
+    <main className="app-viewport">
+      <App />
+    </main>
   </React.StrictMode>
 );

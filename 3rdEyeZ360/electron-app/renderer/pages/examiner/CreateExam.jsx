@@ -939,6 +939,8 @@ const defaultForm = {
   violation_threshold: 10,
   instructions: "",
   allowed_websites: [],
+  exam_type: "SINGLE_SESSION",
+  timeframes: [{ date: "", start_time: "", end_time: "" }],
 };
 
 const todayStr = () => {
@@ -965,6 +967,12 @@ const calculateDuration = (start, end) => {
   return endMinutes > startMinutes ? endMinutes - startMinutes : 0;
 };
 
+const timeframeDuration = (frame) =>
+  calculateDuration(frame?.start_time, frame?.end_time);
+const intervalsOverlap = (left, right) => {
+  if (!left?.date || !right?.date || left.date !== right.date) return false;
+  return left.start_time < right.end_time && right.start_time < left.end_time;
+};
 /* ============= Field + section helpers ============= */
 
 function Field({ label, error, children, theme, hint }) {
@@ -1062,16 +1070,42 @@ export default function CreateExam({ onBack, onCreated }) {
   const validate = () => {
     const e = {};
     if (!form.name.trim()) e.name = "Exam name is required";
-    if (!form.date) {
-      e.date = "Date is required";
-    } else if (form.date < todayStr()) {
-      e.date = "Date cannot be in the past";
+    if (form.exam_type === "MULTI_SESSION") {
+      const frames = form.timeframes || [];
+      if (frames.length < 1 || frames.length > 4) {
+        e.timeframes = "Add between 1 and 4 timeframes";
+      } else {
+        frames.forEach((frame, index) => {
+          if (!frame.date || !frame.start_time || !frame.end_time) {
+            e.timeframes = `Complete all fields in timeframe ${index + 1}`;
+          } else if (frame.date < todayStr()) {
+            e.timeframes = `Timeframe ${index + 1} cannot be in the past`;
+          } else if (frame.end_time <= frame.start_time) {
+            e.timeframes = `Timeframe ${index + 1} end must be after start`;
+          } else if (frame.date === todayStr() && frame.start_time < nowTimeStr()) {
+            e.timeframes = `Timeframe ${index + 1} cannot start in the past`;
+          }
+        });
+        for (let i = 0; i < frames.length; i += 1) {
+          for (let j = i + 1; j < frames.length; j += 1) {
+            if (intervalsOverlap(frames[i], frames[j])) {
+              e.timeframes = "Flexible timeframes cannot overlap";
+            }
+          }
+        }
+      }
+    } else {
+      if (!form.date) e.date = "Date is required";
+      else if (form.date < todayStr()) e.date = "Date cannot be in the past";
+      if (!form.start_time) e.start_time = "Start time is required";
+      if (!form.end_time) e.end_time = "End time is required";
+      if (form.start_time && form.end_time && form.end_time <= form.start_time) e.end_time = "End must be after start";
+      if (form.date === todayStr() && form.start_time && form.start_time < nowTimeStr()) e.start_time = "Cannot be in the past";
     }
-    if (!form.start_time) e.start_time = "Start time is required";
-    if (!form.end_time) e.end_time = "End time is required";
-    if (form.start_time && form.end_time && form.end_time <= form.start_time) e.end_time = "End must be after start";
-    if (form.date === todayStr() && form.start_time && form.start_time < nowTimeStr()) e.start_time = "Cannot be in the past";
-    if (form.duration_minutes < 1) e.duration_minutes = "Min 1 minute";
+    const effectiveDuration = form.exam_type === "MULTI_SESSION"
+      ? timeframeDuration(form.timeframes?.[0])
+      : form.duration_minutes;
+    if (effectiveDuration < 1) e.duration_minutes = "Min 1 minute";
     if (form.violation_threshold < 1) e.violation_threshold = "Min 1";
     if (form.allowed_websites.length === 0) e.websites = "Add at least one website";
     setErrors(e);
@@ -1095,6 +1129,54 @@ export default function CreateExam({ onBack, onCreated }) {
     }));
   };
 
+  const setExamType = (examType) => {
+    setForm((previous) => ({
+      ...previous,
+      exam_type: examType,
+      timeframes:
+        previous.timeframes?.length
+          ? previous.timeframes
+          : [{ date: "", start_time: "", end_time: "" }],
+    }));
+    setErrors((previous) => ({ ...previous, timeframes: undefined }));
+  };
+  const updateTimeframe = (index, key, value) => {
+    setForm((previous) => {
+      const timeframes = previous.timeframes.map((frame, frameIndex) =>
+        frameIndex === index ? { ...frame, [key]: value } : frame
+      );
+      return {
+        ...previous,
+        timeframes,
+        duration_minutes: timeframeDuration(timeframes[0]),
+      };
+    });
+    setErrors((previous) => ({ ...previous, timeframes: undefined }));
+  };
+  const addTimeframe = () => {
+    setForm((previous) =>
+      previous.timeframes.length >= 4
+        ? previous
+        : {
+            ...previous,
+            timeframes: [
+              ...previous.timeframes,
+              { date: "", start_time: "", end_time: "" },
+            ],
+          }
+    );
+  };
+  const removeTimeframe = (index) => {
+    setForm((previous) => {
+      if (previous.timeframes.length <= 1) return previous;
+      const timeframes = previous.timeframes.filter((_, frameIndex) => frameIndex !== index);
+      return {
+        ...previous,
+        timeframes,
+        duration_minutes: timeframeDuration(timeframes[0]),
+      };
+    });
+  };
   const normalizeWebsiteUrl = (value) => {
     const trimmed = String(value || "").trim();
     if (!trimmed) return "";
@@ -1190,7 +1272,15 @@ export default function CreateExam({ onBack, onCreated }) {
     try {
       const res = await axios.post(
         `${API}/api/exams`,
-        { ...form, duration_minutes: calculateDuration(form.start_time, form.end_time), examiner_id: user.user_id, status },
+        {
+          ...form,
+          duration_minutes:
+            form.exam_type === "MULTI_SESSION"
+              ? timeframeDuration(form.timeframes[0])
+              : calculateDuration(form.start_time, form.end_time),
+          examiner_id: user.user_id,
+          status,
+        },
         { headers }
       );
       setSaved(true);
@@ -1331,26 +1421,93 @@ export default function CreateExam({ onBack, onCreated }) {
                 <textarea value={form.description} onChange={(e) => set("description", e.target.value)} onFocus={() => setFocusField("description")} onBlur={() => setFocusField("")} rows={3} placeholder="Brief description of this exam..." style={{ ...inputStyle("description"), resize: "none", lineHeight: 1.55 }} />
               </Field>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                <Field label="Date *" error={errors.date} theme={theme}>
-                  <DatePicker
-                    theme={theme}
-                    value={form.date}
-                    minDate={todayStr()}
-                    onChange={(val) => {
-                      set("date", val);
-                      setErrors((prev) => ({ ...prev, date: val && val < todayStr() ? "Cannot be in the past" : undefined, start_time: val === todayStr() && form.start_time && form.start_time < nowTimeStr() ? "Cannot be in the past" : undefined }));
-                    }}
-                  />
-                </Field>
-                <Field label="Start *" error={errors.start_time} theme={theme}>
-                  <WheelTimePicker theme={theme} value={form.start_time} onChange={setStartTime} minValue={form.date === todayStr() ? nowTimeStr() : undefined} />
-                </Field>
-                <Field label="End *" error={errors.end_time} theme={theme}>
-                  <WheelTimePicker theme={theme} value={form.end_time} onChange={setEndTime} minValue={form.start_time || undefined} />
-                </Field>
-              </div>
+              <Field label="Exam Type *" theme={theme}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {["SINGLE_SESSION", "MULTI_SESSION"].map((type) => {
+                    const selected = form.exam_type === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setExamType(type)}
+                        style={{
+                          padding: "11px 12px",
+                          borderRadius: 11,
+                          border: `1px solid ${selected ? t.borderAccent : t.border}`,
+                          background: selected ? t.accentSoft : t.inputBg,
+                          color: selected ? t.accent : t.textSecondary,
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontFamily: "'Inter', sans-serif",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {type === "SINGLE_SESSION" ? "Single-Session Exam" : "Multi-Session Exam"}
+                        <div style={{ marginTop: 4, fontSize: 10.5, fontWeight: 500, color: t.textMuted, lineHeight: 1.4 }}>
+                          {type === "SINGLE_SESSION"
+                            ? "One examiner-controlled session."
+                            : "Multiple examiner-controlled sessions; each candidate attends once."}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
 
+              {form.exam_type === "SINGLE_SESSION" ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <Field label="Date *" error={errors.date} theme={theme}>
+                    <DatePicker
+                      theme={theme}
+                      value={form.date}
+                      minDate={todayStr()}
+                      onChange={(val) => {
+                        set("date", val);
+                        setErrors((prev) => ({ ...prev, date: val && val < todayStr() ? "Cannot be in the past" : undefined, start_time: val === todayStr() && form.start_time && form.start_time < nowTimeStr() ? "Cannot be in the past" : undefined }));
+                      }}
+                    />
+                  </Field>
+                  <Field label="Start *" error={errors.start_time} theme={theme}>
+                    <WheelTimePicker theme={theme} value={form.start_time} onChange={setStartTime} minValue={form.date === todayStr() ? nowTimeStr() : undefined} />
+                  </Field>
+                  <Field label="End *" error={errors.end_time} theme={theme}>
+                    <WheelTimePicker theme={theme} value={form.end_time} onChange={setEndTime} minValue={form.start_time || undefined} />
+                  </Field>
+                </div>
+              ) : (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11.5, color: t.label, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                      Available Timeframes *
+                    </div>
+                    <span style={{ fontSize: 10.5, color: t.textMuted }}>{form.timeframes.length}/4</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {form.timeframes.map((frame, index) => (
+                      <div key={`timeframe-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 8, alignItems: "end", padding: 10, borderRadius: 12, border: `1px solid ${t.border}`, background: t.surfaceGlass }}>
+                        <Field label={`Date ${index + 1}`} theme={theme}>
+                          <DatePicker theme={theme} value={frame.date} minDate={todayStr()} onChange={(value) => updateTimeframe(index, "date", value)} />
+                        </Field>
+                        <Field label="Start" theme={theme}>
+                          <WheelTimePicker theme={theme} value={frame.start_time} onChange={(value) => updateTimeframe(index, "start_time", value)} minValue={frame.date === todayStr() ? nowTimeStr() : undefined} />
+                        </Field>
+                        <Field label="End" theme={theme}>
+                          <WheelTimePicker theme={theme} value={frame.end_time} onChange={(value) => updateTimeframe(index, "end_time", value)} minValue={frame.start_time || undefined} />
+                        </Field>
+                        <div style={{ display: "flex", gap: 6, paddingBottom: 14 }}>
+                          {index === form.timeframes.length - 1 && form.timeframes.length < 4 ? (
+                            <button type="button" title="Add timeframe" onClick={addTimeframe} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${t.borderAccent}`, background: t.accentSoft, color: t.accent, fontSize: 20, cursor: "pointer" }}>+</button>
+                          ) : null}
+                          {form.timeframes.length > 1 ? (
+                            <button type="button" title="Remove timeframe" onClick={() => removeTimeframe(index)} style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${t.danger}55`, background: t.dangerBg, color: t.danger, fontSize: 18, cursor: "pointer" }}>×</button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {errors.timeframes ? <div style={{ fontSize: 11, color: t.danger, marginTop: 6, fontWeight: 600 }}>{errors.timeframes}</div> : null}
+                </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <Field label="Duration (min)" error={errors.duration_minutes} theme={theme} hint="Auto from start & end time">
                   <input type="number" value={form.duration_minutes} readOnly tabIndex={-1} style={{ ...inputStyle("duration"), background: t.inputReadonly, cursor: "not-allowed", opacity: 0.9, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }} />

@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -859,11 +859,13 @@ async def start_exam(
                 ]
             },
             {"$set": {
-                # Preserve READY status and the valid waiting-session token. A candidate
-                # already in WaitScreen must use that token when the examiner starts.
+                "status": "ASSIGNED", "assessmentstatus": "ASSIGNED", "assessment_status": "ASSIGNED",
+                "hasenteredexam": False, "has_entered_exam": False,
                 "requiresreentryapproval": False, "requires_reentry_approval": False,
                 "reentryapprovalconsumed": False, "reentry_approval_consumed": False,
                 "activesessionid": None, "active_session_id": None,
+                "waitingsessionid": None, "waiting_session_id": None,
+                "waitingregisteredat": None, "waiting_registered_at": None,
                 "lastheartbeatat": None, "last_heartbeat_at": None,
                 "enteredexamsession": None, "entered_exam_session": None,
                 "updatedat": now, "updated_at": now,
@@ -935,11 +937,11 @@ async def stop_exam(exam_id: str, current_user=Depends(require_role("Examiner", 
     if not is_multi_session_exam(exam):
         raise HTTPException(status_code=400, detail="Only a multi-session exam can be permanently stopped")
     status = _normalize_status(exam.get("status") or exam.get("examstatus"))
-    if bool(exam.get("permanentlystopped", exam.get("permanently_stopped", False))):
-        raise HTTPException(status_code=400, detail="This exam is already permanently completed")
+    if status == "STOPPED":
+        raise HTTPException(status_code=400, detail="This exam is already permanently stopped")
     now = datetime.utcnow()
     await db.exams.update_one(_get_exam_query(exam_id), {"$set": {
-        "status": "COMPLETED", "examstatus": "COMPLETED",
+        "status": "STOPPED", "examstatus": "STOPPED",
         "permanentlystopped": True, "permanently_stopped": True,
         "stoppedat": now, "stopped_at": now, "updatedat": now, "updated_at": now,
     }})
@@ -951,7 +953,7 @@ async def stop_exam(exam_id: str, current_user=Depends(require_role("Examiner", 
     updated_exam = await db.exams.find_one(_get_exam_query(exam_id))
     payload = _exam_payload(updated_exam)
     await emit_exam_event("exam_updated", payload)
-    return {"message": "Exam completed permanently", "exam": payload, **payload}
+    return {"message": "Exam permanently stopped", "exam": payload, **payload}
 
 @router.get("/{exam_id}/assessments")
 async def get_exam_assessments(

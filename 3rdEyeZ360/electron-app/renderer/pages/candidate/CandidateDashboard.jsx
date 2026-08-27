@@ -154,6 +154,11 @@ function normalizeItem(raw) {
     assessmentstatus: toUpper(assessmentStatusRaw),
     examstatus: toUpper(examStatusRaw),
     finalstatus: toUpper(firstValue(raw.finalstatus, raw.final_status)),
+    examtype: toUpper(firstValue(raw.examtype, raw.exam_type, "SINGLE_SESSION")),
+    timeframes: raw.timeframes || raw.flexibleintervals || raw.flexible_intervals || [],
+    sessionnumber: Number(firstValue(raw.sessionnumber, raw.session_number, 0)) || 0,
+    permanentlystopped: Boolean(firstValue(raw.permanentlystopped, raw.permanently_stopped, false)),
+    isfinalized: Boolean(firstValue(raw.isfinalized, raw.is_finalized, false)),
     rejectionreason: firstValue(
       raw.rejectionreason,
       raw.rejection_reason,
@@ -196,6 +201,11 @@ function mergeAssessmentUpdate(current, incoming) {
     "endtime",
     "durationminutes",
     "examstatus",
+    "examtype",
+    "timeframes",
+    "sessionnumber",
+    "permanentlystopped",
+    "isfinalized",
   ];
   for (const key of preserve) {
     const value = incoming[key];
@@ -313,6 +323,24 @@ function getCardState(exam, pendingRequest) {
   const reentryStatus = assessmentStatus.includes("REENTRY");
   const isReentryApproved = ["REENTRYAPPROVED", "REENTRY_APPROVED"].includes(assessmentStatus);
   const isLateEntryApproved = ["LATEENTRYAPPROVED", "LATEENTRY_APPROVED"].includes(assessmentStatus);
+  const isMultiSession = exam?.examtype === "MULTI_SESSION";
+  const permanentlyStopped = examStatus === "STOPPED" || exam?.permanentlystopped;
+  const finalized = Boolean(exam?.isfinalized) || ["COMPLETED", "TERMINATED", "LOCKED"].includes(assessmentStatus);
+  if (permanentlyStopped) {
+    return { mode: "stopped", cta: "Exam Stopped", disabled: true, helperTone: "danger", helper: "The examiner permanently closed this multi-session exam." };
+  }
+  if (isMultiSession && finalized) {
+    return { mode: "completed", cta: "Assessment Finalized", disabled: true, helper: "This assessment was finalized by the examiner. You cannot enter another session." };
+  }
+  if (isMultiSession && examStatus === "COMPLETED" && !finalized) {
+    return {
+      mode: "enter",
+      cta: "Enter Assessment Waiting Window",
+      disabled: false,
+      helper:
+        "The current session has ended. Complete the instructions and pre-check now, then wait for the examiner to start the next session.",
+    };
+  }
   const requiresReentry =
     hasEntered &&
     !isReentryApproved &&
@@ -1348,24 +1376,26 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
           >
             {exam.name}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: t.textMuted, fontWeight: 500 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              {exam.date || "—"}
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: t.textMuted, fontWeight: 500 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              {exam.starttime} — {exam.endtime}
-            </span>
-          </div>
+          {exam.examtype !== "MULTI_SESSION" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: t.textMuted, fontWeight: 500 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                {exam.date || "—"}
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: t.textMuted, fontWeight: 500 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                {exam.starttime} — {exam.endtime}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         <div
@@ -1399,6 +1429,18 @@ function AssessmentCard({ exam, pendingRequest, theme, onEnter, onRequest, index
         </div>
       </div>
 
+      {exam.examtype === "MULTI_SESSION" && exam.timeframes?.length ? (
+        <div style={{ position: "relative", zIndex: 1, padding: "11px 12px", borderRadius: 12, background: t.accentSoft, border: `1px solid ${t.borderAccent}` }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: t.accent, letterSpacing: 0.7, textTransform: "uppercase", marginBottom: 7 }}>Multi-Session Timeframes</div>
+          <div style={{ display: "grid", gap: 5 }}>
+            {exam.timeframes.map((frame, timeframeIndex) => (
+              <div key={`${frame.date}-${frame.starttime || frame.start_time}-${timeframeIndex}`} style={{ fontSize: 11.5, color: t.textSecondary }}>
+                {frame.date} · {frame.starttime || frame.start_time} - {frame.endtime || frame.end_time}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div
         style={{
           fontSize: 13,

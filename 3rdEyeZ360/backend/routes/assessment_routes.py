@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from config.database import getdb
 from middleware.auth import requirerole
 from sockets.monitoring_socket import emit_assessment_event
+from services.exam_session_service import is_assessment_finalized, is_multi_session_exam
 
 router = APIRouter(prefix="/api/assessments", tags=["Assessments"])
 
@@ -215,6 +216,10 @@ def _merge_exam_into_assessment(assessment: dict, exam: dict | None) -> dict:
             "waiting_registered_at": _waiting_registered_at(assessment),
             "lastheartbeatat": _heartbeat_time(assessment),
             "last_heartbeat_at": _heartbeat_time(assessment),
+            "isfinalized": is_assessment_finalized(assessment),
+            "is_finalized": is_assessment_finalized(assessment),
+            "enteredexamsession": _field_value(assessment, "enteredexamsession", "entered_exam_session"),
+            "entered_exam_session": _field_value(assessment, "enteredexamsession", "entered_exam_session"),
             "lastrequeststatus": _field_value(
                 assessment, "lastrequeststatus", "last_request_status", default=""
             ),
@@ -303,6 +308,19 @@ def _merge_exam_into_assessment(assessment: dict, exam: dict | None) -> dict:
     data["allowed_applications"] = allowed_apps
     data["examstatus"] = exam_status
     data["exam_status"] = exam_status
+    exam_type = str(exam_data.get("examtype") or exam_data.get("exam_type") or "SINGLE_SESSION").upper()
+    timeframes = exam_data.get("timeframes") or exam_data.get("flexibleintervals") or exam_data.get("flexible_intervals") or []
+    data["examtype"] = exam_type
+    data["exam_type"] = exam_type
+    data["isflexible"] = exam_type == "MULTI_SESSION"
+    data["is_flexible"] = exam_type == "MULTI_SESSION"
+    data["timeframes"] = timeframes
+    data["flexibleintervals"] = timeframes
+    data["flexible_intervals"] = timeframes
+    data["sessionnumber"] = int(exam_data.get("sessionnumber", exam_data.get("session_number", 0)) or 0)
+    data["session_number"] = data["sessionnumber"]
+    data["permanentlystopped"] = bool(exam_data.get("permanentlystopped", exam_data.get("permanently_stopped", False)))
+    data["permanently_stopped"] = data["permanentlystopped"]
     return data
 
 
@@ -825,6 +843,10 @@ async def enter_assessment(assessment_id: str, body: EnterAssessmentBody, curren
         raise HTTPException(status_code=404, detail="Exam not found")
 
     exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
+    if exam_status == "STOPPED" or bool(exam.get("permanentlystopped", exam.get("permanently_stopped", False))):
+        raise HTTPException(status_code=403, detail="This multi-session exam was permanently stopped")
+    if is_assessment_finalized(assessment):
+        raise HTTPException(status_code=403, detail="This assessment was already finalized and cannot be entered again")
     now = datetime.utcnow()
     session_id = body.sessionid or f"SES-{uuid.uuid4().hex.upper()}"
     has_entered = _has_entered(assessment)
@@ -879,6 +901,8 @@ async def enter_assessment(assessment_id: str, body: EnterAssessmentBody, curren
         "assessment_status": "ACTIVE",
         "hasenteredexam": True,
         "has_entered_exam": True,
+        "enteredexamsession": int(exam.get("sessionnumber", exam.get("session_number", 1)) or 1),
+        "entered_exam_session": int(exam.get("sessionnumber", exam.get("session_number", 1)) or 1),
         "requiresreentryapproval": False,
         "requires_reentry_approval": False,
         "reentryapprovalconsumed": has_entered,
@@ -1042,7 +1066,7 @@ async def assessment_action(assessment_id: str, body: dict, current_user=Depends
         update["actionreason"] = reason
 
     if action == "terminate":
-        update.update({"status": "TERMINATED", "assessmentstatus": "TERMINATED", "assessment_status": "TERMINATED", "finalstatus": "TERMINATED", "final_status": "TERMINATED", "activesessionid": None, "active_session_id": None, "waitingsessionid": None, "waiting_session_id": None, "exittime": now, "exit_time": now})
+        update.update({"status": "TERMINATED", "assessmentstatus": "TERMINATED", "assessment_status": "TERMINATED", "finalstatus": "TERMINATED", "final_status": "TERMINATED", "isfinalized": True, "is_finalized": True, "finalizedreason": "EXAMINER_TERMINATED", "finalized_reason": "EXAMINER_TERMINATED", "finalizedat": now, "finalized_at": now, "activesessionid": None, "active_session_id": None, "waitingsessionid": None, "waiting_session_id": None, "exittime": now, "exit_time": now})
     elif action == "pause":
         if current_status in {"TERMINATED", "COMPLETED", "LOCKED"}:
             raise HTTPException(status_code=400, detail=f"Cannot pause assessment in {current_status}")

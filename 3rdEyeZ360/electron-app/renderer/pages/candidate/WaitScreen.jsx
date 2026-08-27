@@ -423,7 +423,7 @@ function AnimatedBackground({ theme }) {
 /* ============= Data helpers ============= */
 
 const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "LOCKED", "COMPLETED"]);
-const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
+const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED", "STOPPED"]);
 
 const APPROVED_ENTRY_STATUSES = new Set([
   "ASSIGNED",
@@ -496,6 +496,9 @@ function normalizeExam(raw) {
     allowedapplications: normalizeSites(raw.allowedapplications, raw.allowed_applications),
     status: examStatus,
     examstatus: examStatus,
+    examtype: toUpper(pick(raw.examtype, raw.exam_type, "SINGLE_SESSION")),
+    sessionnumber: Number(pick(raw.sessionnumber, raw.session_number, 0)) || 0,
+    permanentlystopped: Boolean(pick(raw.permanentlystopped, raw.permanently_stopped, false)),
   };
 }
 
@@ -524,6 +527,10 @@ function normalizeAssessment(raw) {
     assessmentstatus: assessmentStatus,
     finalstatus: finalStatus,
     examstatus: examStatus,
+    examtype: toUpper(pick(raw.examtype, raw.exam_type, "SINGLE_SESSION")),
+    sessionnumber: Number(pick(raw.sessionnumber, raw.session_number, 0)) || 0,
+    permanentlystopped: Boolean(pick(raw.permanentlystopped, raw.permanently_stopped, false)),
+    isfinalized: Boolean(pick(raw.isfinalized, raw.is_finalized, false)),
   };
 }
 
@@ -535,6 +542,22 @@ function getAssessmentStatus(assessment) {
 }
 function getFinalStatus(assessment) {
   return toUpper(pick(assessment?.finalstatus));
+}
+function isMultiSession(exam, assessment) {
+  return toUpper(pick(assessment?.examtype, exam?.examtype, "SINGLE_SESSION")) === "MULTI_SESSION";
+}
+function isPermanentlyClosedExam(exam, assessment) {
+  const status = getExamStatus(exam);
+  return status === "STOPPED" || Boolean(
+    pick(assessment?.permanentlystopped, exam?.permanentlystopped, false)
+  );
+}
+function isFinalizedAssessment(assessment) {
+  const status = getAssessmentStatus(assessment);
+  const finalStatus = getFinalStatus(assessment);
+  return Boolean(assessment?.isfinalized) ||
+    TERMINAL_ASSESSMENT_STATUSES.has(status) ||
+    TERMINAL_ASSESSMENT_STATUSES.has(finalStatus);
 }
 function formatDateTime(date, time) {
   if (!date && !time) return "—";
@@ -867,9 +890,11 @@ export default function WaitScreen({
       const assessmentStatus = getAssessmentStatus(latestAssessment);
       const finalStatus = getFinalStatus(latestAssessment);
 
-      const assessmentTerminal =
-        TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatus) || TERMINAL_ASSESSMENT_STATUSES.has(finalStatus);
-      const examTerminal = TERMINAL_EXAM_STATUSES.has(examStatus);
+      const multiSession = isMultiSession(latestExam, latestAssessment);
+      const assessmentTerminal = isFinalizedAssessment(latestAssessment);
+      const examTerminal =
+        isPermanentlyClosedExam(latestExam, latestAssessment) ||
+        (!multiSession && TERMINAL_EXAM_STATUSES.has(examStatus));
       const examRunning = examStatus === "RUNNING";
       const approvedToEnter = APPROVED_ENTRY_STATUSES.has(assessmentStatus);
       const pendingApproval = PENDING_ENTRY_STATUSES.has(assessmentStatus);
@@ -963,7 +988,26 @@ export default function WaitScreen({
       const next = normalizeExam(payload?.exam || payload);
       if (!next?.examid || String(next.examid) !== String(examId)) return;
       setLiveExam((previous) => ({ ...(previous || {}), ...next }));
-      if (TERMINAL_EXAM_STATUSES.has(getExamStatus(next))) finishWaitingFlow();
+      const nextStatus = getExamStatus(next);
+      const multiSession = isMultiSession(next, liveAssessment);
+      const permanentlyClosed = isPermanentlyClosedExam(next, liveAssessment);
+      if (permanentlyClosed || (!multiSession && TERMINAL_EXAM_STATUSES.has(nextStatus))) {
+        finishWaitingFlow();
+        return;
+      }
+      if (
+        nextStatus === "RUNNING" &&
+        APPROVED_ENTRY_STATUSES.has(getAssessmentStatus(liveAssessment)) &&
+        waitingSessionId &&
+        !launchedRef.current &&
+        !launchingRef.current
+      ) {
+        launchingRef.current = true;
+        setActionMsg("Exam started. Opening your assessment workspace.");
+        launchedRef.current = true;
+        launchingRef.current = false;
+        onExamStart?.();
+      }
     };
 
     const applyAssessment = async (payload) => {
@@ -972,7 +1016,7 @@ export default function WaitScreen({
       setLiveAssessment((previous) => ({ ...(previous || {}), ...next }));
       const status = getAssessmentStatus(next);
       const finalStatus = getFinalStatus(next);
-      if (TERMINAL_ASSESSMENT_STATUSES.has(status) || TERMINAL_ASSESSMENT_STATUSES.has(finalStatus)) {
+      if (isFinalizedAssessment(next)) {
         await finishWaitingFlow();
       } else if (REJECTED_ENTRY_STATUSES.has(status)) {
         setActionMsg("Your permission request was declined by the examiner.");

@@ -11,7 +11,7 @@ const API = "http://localhost:3000";
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
 
 const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "LOCKED", "COMPLETED"]);
-const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED"]);
+const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED", "STOPPED"]);
 
 function getAssessmentTimerStorageKey(assessmentId) {
   return assessmentId ? `3rdeyez360.assessment-timer.${assessmentId}` : null;
@@ -580,6 +580,9 @@ function normalizeExam(raw) {
       : [],
     status,
     examstatus: status,
+    examtype: toUpper(pick(raw.examtype, raw.exam_type, "SINGLE_SESSION")),
+    sessionnumber: Number(pick(raw.sessionnumber, raw.session_number, 0)) || 0,
+    permanentlystopped: Boolean(pick(raw.permanentlystopped, raw.permanently_stopped, false)),
   };
 }
 function normalizeAssessment(raw) {
@@ -608,6 +611,10 @@ function normalizeAssessment(raw) {
     assessmentstatus: status,
     finalstatus,
     examstatus,
+    examtype: toUpper(pick(raw.examtype, raw.exam_type, "SINGLE_SESSION")),
+    sessionnumber: Number(pick(raw.sessionnumber, raw.session_number, 0)) || 0,
+    permanentlystopped: Boolean(pick(raw.permanentlystopped, raw.permanently_stopped, false)),
+    isfinalized: Boolean(pick(raw.isfinalized, raw.is_finalized, false)),
   };
 }
 function getExamStatus(source) {

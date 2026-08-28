@@ -1032,6 +1032,22 @@ function ReasonModal({
 }) {
   const t = THEMES[theme];
   if (!open) return null;
+
+  const confirmationWord = ["Resume", "Terminate"].includes(actionLabel)
+    ? actionLabel
+    : null;
+  const normalizedValue = String(reason || "").trim().toLowerCase();
+  const confirmationMatches = confirmationWord
+    ? normalizedValue === confirmationWord.toLowerCase()
+    : Boolean(normalizedValue);
+
+  const handleKeyDown = (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    if (!confirmationMatches || working) return;
+    event.preventDefault();
+    onConfirm();
+  };
+
   return (
     <div
       style={{
@@ -1047,8 +1063,14 @@ function ReasonModal({
         padding: 20,
         animation: "fadeIn 0.2s ease",
       }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !working) onCancel();
+      }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         style={{
           width: "100%",
           maxWidth: 460,
@@ -1074,45 +1096,81 @@ function ReasonModal({
         >
           {title}
         </h3>
+
         <p
           style={{
             fontSize: 12.5,
             color: t.textMuted,
             margin: "0 0 16px",
-            lineHeight: 1.5,
+            lineHeight: 1.55,
           }}
         >
-          Please provide a reason. This will be recorded and sent to the
-          candidate.
+          {confirmationWord ? (
+            <>
+              {actionLabel === "Terminate"
+                ? "This permanently finalizes this candidate's assessment. "
+                : "This resumes this candidate's assessment. "}
+              To confirm, type <strong style={{ color: t.textPrimary }}>{confirmationWord}</strong> below.
+            </>
+          ) : (
+            "Please provide a reason. This will be recorded and sent to the candidate."
+          )}
         </p>
-        <textarea
-          value={reason}
-          onChange={(e) => onChange(e.target.value)}
-          rows={4}
-          placeholder="Type your reason..."
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            resize: "none",
-            background: t.inputBg,
-            border: `1px solid ${t.border}`,
-            borderRadius: 12,
-            color: t.textPrimary,
-            padding: 12,
-            fontSize: 13.5,
-            outline: "none",
-            fontFamily: "'Inter', sans-serif",
-            lineHeight: 1.5,
-          }}
-          onFocus={(e) => {
-            e.target.style.borderColor = t.accent;
-            e.target.style.boxShadow = `0 0 0 3px ${t.accentSoft}`;
-          }}
-          onBlur={(e) => {
-            e.target.style.borderColor = t.border;
-            e.target.style.boxShadow = "none";
-          }}
-        />
+
+        {confirmationWord ? (
+          <input
+            autoFocus
+            value={reason}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={handleKeyDown}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={`Type ${confirmationWord} to confirm`}
+            aria-label={`Type ${confirmationWord} to confirm`}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              background: t.inputBg,
+              border: `1px solid ${confirmationMatches ? t.success : t.border}`,
+              borderRadius: 12,
+              color: t.textPrimary,
+              padding: "12px 13px",
+              fontSize: 14,
+              outline: "none",
+              fontFamily: "'Inter', sans-serif",
+              boxShadow: confirmationMatches ? `0 0 0 3px ${t.successBg}` : "none",
+            }}
+          />
+        ) : (
+          <textarea
+            autoFocus
+            value={reason}
+            onChange={(event) => onChange(event.target.value)}
+            rows={4}
+            placeholder="Type your reason..."
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              resize: "none",
+              background: t.inputBg,
+              border: `1px solid ${t.border}`,
+              borderRadius: 12,
+              color: t.textPrimary,
+              padding: 12,
+              fontSize: 13.5,
+              outline: "none",
+              fontFamily: "'Inter', sans-serif",
+              lineHeight: 1.5,
+            }}
+          />
+        )}
+
+        {confirmationWord && reason.trim() && !confirmationMatches ? (
+          <div style={{ marginTop: 8, color: t.danger, fontSize: 11.5, fontWeight: 600 }}>
+            Type {confirmationWord} exactly to enable the action.
+          </div>
+        ) : null}
+
         <div
           style={{
             display: "flex",
@@ -1140,22 +1198,22 @@ function ReasonModal({
           </button>
           <button
             onClick={onConfirm}
-            disabled={working || !reason.trim()}
+            disabled={working || !confirmationMatches}
             style={{
               padding: "10px 22px",
               fontSize: 13,
               fontWeight: 700,
               borderRadius: 11,
               background:
-                working || !reason.trim()
+                working || !confirmationMatches
                   ? t.borderStrong
                   : actionGradient || t.accentGradient,
               color: "#fff",
               border: "none",
-              cursor: working || !reason.trim() ? "not-allowed" : "pointer",
+              cursor: working || !confirmationMatches ? "not-allowed" : "pointer",
               fontFamily: "'Inter', sans-serif",
               boxShadow:
-                working || !reason.trim() ? "none" : actionGlow || t.glowAccent,
+                working || !confirmationMatches ? "none" : actionGlow || t.glowAccent,
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
@@ -1172,7 +1230,7 @@ function ReasonModal({
                     borderRadius: "50%",
                     animation: "spin 0.7s linear infinite",
                   }}
-                />{" "}
+                />
                 Working...
               </>
             ) : (
@@ -1184,7 +1242,6 @@ function ReasonModal({
     </div>
   );
 }
-
 /* ============= Request rejection modal ============= */
 function RequestRejectionModal({
   open,
@@ -2749,7 +2806,10 @@ export default function ExaminerDashboard() {
     if (!reasonModal) return;
     const { assessmentid, action } = reasonModal;
     const reason = reasonText.trim();
+    const requiredConfirmation =
+      action === "resume" ? "resume" : action === "terminate" ? "terminate" : null;
     if (!reason) return;
+    if (requiredConfirmation && reason.toLowerCase() !== requiredConfirmation) return;
     setReasonWorking(true);
     try {
       await axios.post(
@@ -3910,7 +3970,8 @@ export default function ExaminerDashboard() {
     return (
       <div
         style={{
-          height: "100vh",
+          height: "calc(100vh - 50px)",
+          maxHeight: "calc(100vh - 50px)",
           display: "flex",
           flexDirection: "column",
           background: t.canvas,
@@ -4434,8 +4495,10 @@ export default function ExaminerDashboard() {
                 background: t.panelBg,
                 display: "flex",
                 flexDirection: "column",
+                height: "100%",
                 minHeight: 0,
                 overflow: "hidden",
+                boxSizing: "border-box",
                 transition: "background 0.55s ease, border-color 0.5s ease",
               }}
             >
@@ -4457,7 +4520,8 @@ export default function ExaminerDashboard() {
                     type="button"
                     onClick={() => setChatOpen(false)}
                     style={{
-                      minHeight: 48,
+                      height: 52,
+                      minHeight: 52,
                       width: "100%",
                       padding: "0 18px",
                       border: "none",
@@ -4468,7 +4532,10 @@ export default function ExaminerDashboard() {
                       alignItems: "center",
                       justifyContent: "space-between",
                       cursor: "pointer",
-                      flexShrink: 0,
+                      flex: "0 0 52px",
+                      boxSizing: "border-box",
+                      position: "relative",
+                      zIndex: 5,
                       fontFamily: "'Inter', sans-serif",
                     }}
                   >
@@ -4513,7 +4580,7 @@ export default function ExaminerDashboard() {
                     </svg>
                   </button>
 
-                  <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                  <div style={{ flex: "1 1 0", height: 0, minHeight: 0, overflow: "hidden", boxSizing: "border-box" }}>
                     <ChatWindow
                       examId={selectedExamId}
                       assessmentId={selectedCandidate.assessmentid}
@@ -4716,13 +4783,16 @@ export default function ExaminerDashboard() {
                     </div>
                   </div>
 
-                  {/* SCROLLABLE MIDDLE: live data + violations (priority space) */}
+                  {/* SCROLLABLE MIDDLE: live data + violations. */}
                   <div
                     style={{
-                      flex: "2 1 0",
-                      minHeight: 200,
+                      flex: "1 1 auto",
+                      height: 0,
+                      minHeight: 0,
                       overflowY: "auto",
-                      padding: "16px 20px",
+                      overflowX: "hidden",
+                      padding: "16px 20px 20px",
+                      boxSizing: "border-box",
                     }}
                   >
                     <div

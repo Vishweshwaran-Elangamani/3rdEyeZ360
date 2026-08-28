@@ -324,10 +324,10 @@ function getCardState(exam, pendingRequest) {
   const isReentryApproved = ["REENTRYAPPROVED", "REENTRY_APPROVED"].includes(assessmentStatus);
   const isLateEntryApproved = ["LATEENTRYAPPROVED", "LATEENTRY_APPROVED"].includes(assessmentStatus);
   const isMultiSession = exam?.examtype === "MULTI_SESSION";
-  const permanentlyStopped = examStatus === "STOPPED" || exam?.permanentlystopped;
+  const permanentlyCompleted = Boolean(exam?.permanentlystopped) || examStatus === "STOPPED";
   const finalized = Boolean(exam?.isfinalized) || ["COMPLETED", "TERMINATED", "LOCKED"].includes(assessmentStatus);
-  if (permanentlyStopped) {
-    return { mode: "stopped", cta: "Exam Stopped", disabled: true, helperTone: "danger", helper: "The examiner permanently closed this multi-session exam." };
+  if (isMultiSession && permanentlyCompleted) {
+    return { mode: "completed", cta: "Exam Completed", disabled: true, helper: "The examiner permanently completed this multi-session exam." };
   }
   if (isMultiSession && finalized) {
     return { mode: "completed", cta: "Assessment Finalized", disabled: true, helper: "This assessment was finalized by the examiner. You cannot enter another session." };
@@ -470,6 +470,15 @@ function getStatusMeta(status, examStatus, pendingRequest, t, exam = null) {
     exam || { status: s, examstatus: e },
     pendingRequest
   );
+
+  if (cardState.mode === "completed") {
+    return {
+      label: "Completed",
+      color: t.success,
+      gradient: t.successGradient,
+      bucket: "other",
+    };
+  }
 
   if (s === "TERMINATED") {
     return {
@@ -2238,7 +2247,10 @@ export default function CandidateDashboard({ onEnterExam, onLogout }) {
   }, [socket, user, fetchAssessments, reconcileAssessment]);
 
   const allottedCount = assessments.length;
-  const completedCount = assessments.filter((a) => toUpper(a.status) === "COMPLETED").length;
+  const completedCount = assessments.filter((assessment) => {
+    const pending = pendingRequestsByAssessment[assessment.assessmentid] ?? null;
+    return getCardState(assessment, pending).mode === "completed";
+  }).length;
   const activeCount = assessments.filter((a) => {
     const pending = pendingRequestsByAssessment[a.assessmentid];
     return getCardState(a, pending).mode === "enter";

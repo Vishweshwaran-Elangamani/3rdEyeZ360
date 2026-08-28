@@ -346,6 +346,7 @@ function Wheel({ items, index, onIndexChange, theme, width }) {
 function WheelTimePicker({ theme, value, onChange, minValue }) {
   const t = THEMES[theme];
   const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const rootRef = useRef(null);
 
   const parsed = to12h(value) || { h12: 9, mm: 0, period: "AM" };
@@ -383,12 +384,24 @@ function WheelTimePicker({ theme, value, onChange, minValue }) {
 
   const display = value ? formatDisplay(value) : "";
 
+  const togglePicker = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = rootRef.current?.getBoundingClientRect();
+    const roomBelow = rect ? window.innerHeight - rect.bottom : window.innerHeight;
+    const roomAbove = rect ? rect.top : 0;
+    setOpenUpward(roomBelow < 290 && roomAbove > roomBelow);
+    setOpen(true);
+  };
+
   return (
     <div ref={rootRef} style={{ position: "relative" }}>
       {/* Trigger */}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={togglePicker}
         style={{
           width: "100%",
           boxSizing: "border-box",
@@ -423,9 +436,10 @@ function WheelTimePicker({ theme, value, onChange, minValue }) {
         <div
           style={{
             position: "absolute",
-            top: "calc(100% + 8px)",
+            top: openUpward ? "auto" : "calc(100% + 8px)",
+            bottom: openUpward ? "calc(100% + 8px)" : "auto",
             left: 0,
-            zIndex: 200,
+            zIndex: 1000,
             background: t.surfaceElevated,
             backdropFilter: "blur(24px)",
             WebkitBackdropFilter: "blur(24px)",
@@ -633,6 +647,7 @@ function formatDateDisplay(str) {
 function DatePicker({ theme, value, onChange, minDate }) {
   const t = THEMES[theme];
   const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const rootRef = useRef(null);
 
   const selected = parseYmd(value);
@@ -686,11 +701,23 @@ function DatePicker({ theme, value, onChange, minDate }) {
 
   const display = value ? formatDateDisplay(value) : "";
 
+  const togglePicker = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = rootRef.current?.getBoundingClientRect();
+    const roomBelow = rect ? window.innerHeight - rect.bottom : window.innerHeight;
+    const roomAbove = rect ? rect.top : 0;
+    setOpenUpward(roomBelow < 390 && roomAbove > roomBelow);
+    setOpen(true);
+  };
+
   return (
     <div ref={rootRef} style={{ position: "relative" }}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={togglePicker}
         style={{
           width: "100%",
           boxSizing: "border-box",
@@ -723,9 +750,10 @@ function DatePicker({ theme, value, onChange, minDate }) {
         <div
           style={{
             position: "absolute",
-            top: "calc(100% + 8px)",
+            top: openUpward ? "auto" : "calc(100% + 8px)",
+            bottom: openUpward ? "calc(100% + 8px)" : "auto",
             left: 0,
-            zIndex: 200,
+            zIndex: 1000,
             background: t.surfaceElevated,
             backdropFilter: "blur(24px)",
             WebkitBackdropFilter: "blur(24px)",
@@ -969,6 +997,13 @@ const calculateDuration = (start, end) => {
 
 const timeframeDuration = (frame) =>
   calculateDuration(frame?.start_time, frame?.end_time);
+const addMinutesToTime = (startTime, durationMinutes) => {
+  if (!startTime || !durationMinutes) return "";
+  const [hours, minutes] = startTime.split(":").map(Number);
+  const total = hours * 60 + minutes + Number(durationMinutes);
+  if (total >= 24 * 60) return "";
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+};
 const intervalsOverlap = (left, right) => {
   if (!left?.date || !right?.date || left.date !== right.date) return false;
   return left.start_time < right.end_time && right.start_time < left.end_time;
@@ -1086,6 +1121,16 @@ export default function CreateExam({ onBack, onCreated }) {
             e.timeframes = `Timeframe ${index + 1} cannot start in the past`;
           }
         });
+        const baseDuration = timeframeDuration(frames[0]);
+        if (baseDuration > 0) {
+          frames.slice(1).forEach((frame, index) => {
+            if (frame.start_time && !frame.end_time) {
+              e.timeframes = `Timeframe ${index + 2} calculated end crosses midnight. Choose an earlier start time`;
+            } else if (frame.start_time && frame.end_time && timeframeDuration(frame) !== baseDuration) {
+              e.timeframes = "All multi-session timeframes must use the same duration";
+            }
+          });
+        }
         for (let i = 0; i < frames.length; i += 1) {
           for (let j = i + 1; j < frames.length; j += 1) {
             if (intervalsOverlap(frames[i], frames[j])) {
@@ -1142,9 +1187,29 @@ export default function CreateExam({ onBack, onCreated }) {
   };
   const updateTimeframe = (index, key, value) => {
     setForm((previous) => {
-      const timeframes = previous.timeframes.map((frame, frameIndex) =>
+      let timeframes = previous.timeframes.map((frame, frameIndex) =>
         frameIndex === index ? { ...frame, [key]: value } : frame
       );
+
+      if (index === 0) {
+        const baseDuration = timeframeDuration(timeframes[0]);
+        timeframes = timeframes.map((frame, frameIndex) => {
+          if (frameIndex === 0) return frame;
+          return {
+            ...frame,
+            end_time: frame.start_time && baseDuration > 0
+              ? addMinutesToTime(frame.start_time, baseDuration)
+              : "",
+          };
+        });
+      } else if (key === "start_time") {
+        const baseDuration = timeframeDuration(timeframes[0]);
+        timeframes[index] = {
+          ...timeframes[index],
+          end_time: baseDuration > 0 ? addMinutesToTime(value, baseDuration) : "",
+        };
+      }
+
       return {
         ...previous,
         timeframes,
@@ -1316,11 +1381,6 @@ export default function CreateExam({ onBack, onCreated }) {
       ::-webkit-scrollbar-thumb { background: ${t.borderStrong}; border-radius: 999px; }
       ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
       .wheel-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
-      .timeframe-scroll-area { scrollbar-width: thin; scrollbar-color: ${t.accent} ${t.surfaceGlass}; }
-      .timeframe-scroll-area::-webkit-scrollbar { width: 7px; }
-      .timeframe-scroll-area::-webkit-scrollbar-track { background: ${t.surfaceGlass}; border-radius: 999px; }
-      .timeframe-scroll-area::-webkit-scrollbar-thumb { background: ${t.accent}; border-radius: 999px; border: 1px solid ${t.border}; }
-      .timeframe-scroll-area::-webkit-scrollbar-thumb:hover { background: ${t.accent2}; }
       .create-exam-page-scroll { scrollbar-width: thin; scrollbar-color: ${t.accent} ${t.surfaceGlass}; }
       .create-exam-page-scroll::-webkit-scrollbar { width: 9px; }
       .create-exam-page-scroll::-webkit-scrollbar-track { background: ${t.surfaceGlass}; border-radius: 999px; margin: 8px 0; }
@@ -1508,18 +1568,10 @@ export default function CreateExam({ onBack, onCreated }) {
                     <span style={{ fontSize: 10.5, color: t.textMuted }}>{form.timeframes.length}/4</span>
                   </div>
                   <div
-                    className="timeframe-scroll-area"
                     style={{
                       display: "flex",
                       flexDirection: "column",
                       gap: 10,
-                      maxHeight: form.timeframes.length > 2 ? 238 : "none",
-                      overflowY: form.timeframes.length > 2 ? "auto" : "visible",
-                      overflowX: "hidden",
-                      paddingRight: form.timeframes.length > 2 ? 8 : 0,
-                      paddingBottom: 2,
-                      scrollBehavior: "smooth",
-                      scrollbarGutter: "stable",
                     }}
                   >
                     {form.timeframes.map((frame, index) => (
@@ -1530,8 +1582,37 @@ export default function CreateExam({ onBack, onCreated }) {
                         <Field label="Start" theme={theme}>
                           <WheelTimePicker theme={theme} value={frame.start_time} onChange={(value) => updateTimeframe(index, "start_time", value)} minValue={frame.date === todayStr() ? nowTimeStr() : undefined} />
                         </Field>
-                        <Field label="End" theme={theme}>
-                          <WheelTimePicker theme={theme} value={frame.end_time} onChange={(value) => updateTimeframe(index, "end_time", value)} minValue={frame.start_time || undefined} />
+                        <Field label={index === 0 ? "End" : "End (Auto)"} theme={theme}>
+                          {index === 0 ? (
+                            <WheelTimePicker theme={theme} value={frame.end_time} onChange={(value) => updateTimeframe(index, "end_time", value)} minValue={frame.start_time || undefined} />
+                          ) : (
+                            <div
+                              title={frame.end_time ? "Calculated from Timeframe 1 duration" : "Set Timeframe 1 duration and choose a start time"}
+                              style={{
+                                minHeight: 36,
+                                boxSizing: "border-box",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 8,
+                                padding: "9px 12px",
+                                borderRadius: 9,
+                                border: `1px solid ${t.border}`,
+                                background: t.inputReadonly,
+                                color: frame.end_time ? t.textPrimary : t.textMuted,
+                                fontSize: 14,
+                                fontFamily: frame.end_time ? "'Space Grotesk', sans-serif" : "'Inter', sans-serif",
+                                fontWeight: frame.end_time ? 700 : 400,
+                                cursor: "not-allowed",
+                              }}
+                            >
+                              <span>{frame.end_time ? formatDisplay(frame.end_time) : "Auto-calculated"}</span>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                              </svg>
+                            </div>
+                          )}
                         </Field>
                         <div style={{ display: "flex", gap: 6, paddingBottom: 14 }}>
                           {index === form.timeframes.length - 1 && form.timeframes.length < 4 ? (
@@ -1548,7 +1629,7 @@ export default function CreateExam({ onBack, onCreated }) {
                 </div>
               )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Field label="Duration (min)" error={errors.duration_minutes} theme={theme} hint="Auto from start & end time">
+                <Field label="Duration (min)" error={errors.duration_minutes} theme={theme} hint={form.exam_type === "MULTI_SESSION" ? "Defined by Timeframe 1 and applied to every session" : "Auto from start & end time"}>
                   <input type="number" value={form.duration_minutes} readOnly tabIndex={-1} style={{ ...inputStyle("duration"), background: t.inputReadonly, cursor: "not-allowed", opacity: 0.9, fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }} />
                 </Field>
                 <Field label="Violation Threshold" error={errors.violation_threshold} theme={theme} hint="Locks at this risk score">

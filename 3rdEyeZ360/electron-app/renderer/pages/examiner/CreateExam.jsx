@@ -1316,6 +1316,16 @@ export default function CreateExam({ onBack, onCreated }) {
       ::-webkit-scrollbar-thumb { background: ${t.borderStrong}; border-radius: 999px; }
       ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
       .wheel-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
+      .timeframe-scroll-area { scrollbar-width: thin; scrollbar-color: ${t.accent} ${t.surfaceGlass}; }
+      .timeframe-scroll-area::-webkit-scrollbar { width: 7px; }
+      .timeframe-scroll-area::-webkit-scrollbar-track { background: ${t.surfaceGlass}; border-radius: 999px; }
+      .timeframe-scroll-area::-webkit-scrollbar-thumb { background: ${t.accent}; border-radius: 999px; border: 1px solid ${t.border}; }
+      .timeframe-scroll-area::-webkit-scrollbar-thumb:hover { background: ${t.accent2}; }
+      .create-exam-page-scroll { scrollbar-width: thin; scrollbar-color: ${t.accent} ${t.surfaceGlass}; }
+      .create-exam-page-scroll::-webkit-scrollbar { width: 9px; }
+      .create-exam-page-scroll::-webkit-scrollbar-track { background: ${t.surfaceGlass}; border-radius: 999px; margin: 8px 0; }
+      .create-exam-page-scroll::-webkit-scrollbar-thumb { background: ${t.accent}; border-radius: 999px; border: 2px solid ${t.canvas}; }
+      .create-exam-page-scroll::-webkit-scrollbar-thumb:hover { background: ${t.accent2}; }
       button, a, input, textarea { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease; }
       input::placeholder, textarea::placeholder { color: ${t.textMuted}; opacity: 0.8; }
     `}</style>
@@ -1388,7 +1398,22 @@ export default function CreateExam({ onBack, onCreated }) {
       </header>
 
       {/* Body */}
-      <div style={{ flex: 1, minHeight: 0, padding: "18px 22px", position: "relative", zIndex: 1, display: "flex", flexDirection: "column" }}>
+      <div
+        className="create-exam-page-scroll"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          padding: "18px 22px 30px",
+          position: "relative",
+          zIndex: 1,
+          display: "flex",
+          flexDirection: "column",
+          overflowY: "auto",
+          overflowX: "hidden",
+          scrollBehavior: "smooth",
+          scrollbarGutter: "stable",
+        }}
+      >
         {errors.submit && (
           <div style={{ background: t.dangerBg, border: `1px solid ${t.danger}66`, borderRadius: 10, padding: "10px 14px", color: t.danger, fontSize: 13, marginBottom: 14, display: "flex", gap: 9, alignItems: "center", flexShrink: 0, fontWeight: 600 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
@@ -1398,11 +1423,11 @@ export default function CreateExam({ onBack, onCreated }) {
 
         <div
           style={{
-            flex: 1,
-            minHeight: 0,
+            flex: "0 0 auto",
+            minHeight: "max-content",
             display: "grid",
             gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-            gridTemplateRows: "1fr auto",
+            gridTemplateRows: "auto auto",
             gap: 16,
             maxWidth: 1180,
             width: "100%",
@@ -1482,7 +1507,21 @@ export default function CreateExam({ onBack, onCreated }) {
                     </div>
                     <span style={{ fontSize: 10.5, color: t.textMuted }}>{form.timeframes.length}/4</span>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div
+                    className="timeframe-scroll-area"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      maxHeight: form.timeframes.length > 2 ? 238 : "none",
+                      overflowY: form.timeframes.length > 2 ? "auto" : "visible",
+                      overflowX: "hidden",
+                      paddingRight: form.timeframes.length > 2 ? 8 : 0,
+                      paddingBottom: 2,
+                      scrollBehavior: "smooth",
+                      scrollbarGutter: "stable",
+                    }}
+                  >
                     {form.timeframes.map((frame, index) => (
                       <div key={`timeframe-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 8, alignItems: "end", padding: 10, borderRadius: 12, border: `1px solid ${t.border}`, background: t.surfaceGlass }}>
                         <Field label={`Date ${index + 1}`} theme={theme}>

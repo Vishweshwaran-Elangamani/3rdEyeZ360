@@ -1,4 +1,5 @@
 ﻿from datetime import datetime
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,6 +8,10 @@ from config.database import get_db
 from middleware.auth import require_role
 from utils.id_generator import generate_assessment_id
 from sockets.monitoring_socket import emit_exam_event, emit_assessment_event
+from services.email_service import (
+    send_exam_assignment_email,
+    send_exam_removal_email,
+)
 from services.exam_session_service import (
     is_assessment_finalized,
     is_multi_session_exam,
@@ -19,6 +24,8 @@ router = APIRouter(
     prefix="/api/exams",
     tags=["Exams"],
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _serialize(document: dict) -> dict:
@@ -1109,10 +1116,14 @@ async def unassign_candidate(
             detail="candidate_id is required",
         )
 
-    await _ensure_exam_access(
+    exam = await _ensure_exam_access(
         db,
         exam_id,
         current_user,
+    )
+
+    candidate = await db.users.find_one(
+        _get_user_query(candidate_id)
     )
 
     assessment = (
@@ -1184,9 +1195,29 @@ async def unassign_candidate(
         }
     )
 
+    email_sent = False
+    email_error = None
+    candidate_email = (candidate or {}).get("email", "")
+    if candidate_email:
+        try:
+            await send_exam_removal_email(
+                candidate_email=candidate_email,
+                candidate_name=(candidate or {}).get("name", candidate_id),
+                exam=exam,
+            )
+            email_sent = True
+        except Exception as exc:
+            email_error = str(exc)
+            logger.exception("Removal email failed for candidate %s and exam %s", candidate_id, exam_id)
+    else:
+        email_error = "Candidate email address is unavailable"
+        logger.warning("No email available for removed candidate %s", candidate_id)
+
     removed_payload = _assessment_payload(assessment)
     await emit_assessment_event("assessment_removed", removed_payload)
     return {
+        "email_sent": email_sent,
+        "email_error": email_error,
         "message": (
             "Candidate removed successfully."
         ),
@@ -1209,7 +1240,7 @@ async def assign_candidate(
 ):
     db = get_db()
 
-    await _ensure_exam_access(
+    exam = await _ensure_exam_access(
         db,
         exam_id,
         current_user,
@@ -1339,16 +1370,36 @@ async def assign_candidate(
 
     # Send the candidate the same fully hydrated assessment shape returned by
     # /candidate/upcoming, so the live card never renders placeholder values.
-    exam = await db.exams.find_one(_get_exam_query(exam_id))
     assessment_payload = _merge_exam_assessment(
         exam or {},
         assessment_document,
     )
     assessment_payload["candidate_name"] = user.get("name", candidate_id)
     assessment_payload["candidate_email"] = user.get("email", "")
+
+    email_sent = False
+    email_error = None
+    candidate_email = user.get("email", "")
+    if candidate_email:
+        try:
+            await send_exam_assignment_email(
+                candidate_email=candidate_email,
+                candidate_name=user.get("name", candidate_id),
+                exam=exam,
+            )
+            email_sent = True
+        except Exception as exc:
+            email_error = str(exc)
+            logger.exception("Assignment email failed for candidate %s and exam %s", candidate_id, exam_id)
+    else:
+        email_error = "Candidate email address is unavailable"
+        logger.warning("No email available for assigned candidate %s", candidate_id)
+
     await emit_assessment_event("assessment_created", assessment_payload)
     return {
         "message": "Candidate assigned",
+        "email_sent": email_sent,
+        "email_error": email_error,
         "assessment": assessment_payload,
         **assessment_payload,
     }

@@ -18,6 +18,62 @@ import { stopCameraStream } from "./services/cameraStream";
 import { useSocket, disconnectSocket } from "./hooks/useSocket";
 import axios from "axios";
 
+const STARTUP_SPLASH_SESSION_KEY = "3rdeyez360-startup-splash-shown";
+
+function shouldShowStartupSplash() {
+  try {
+    if (sessionStorage.getItem(STARTUP_SPLASH_SESSION_KEY) === "true") {
+      document.documentElement.dataset.windowTheme = "app";
+      return false;
+    }
+
+    // Mark the splash as shown for this Electron window session before React
+    // renders. Renderer refreshes keep sessionStorage, while closing the
+    // Electron window destroys the session and enables the splash next launch.
+    sessionStorage.setItem(STARTUP_SPLASH_SESSION_KEY, "true");
+    document.documentElement.dataset.windowTheme = "splash";
+    return true;
+  } catch (error) {
+    console.warn("Unable to access startup splash session state:", error);
+    return true;
+  }
+}
+
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Renderer error:", error, errorInfo);
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <div className="app-error-fallback" role="alert">
+        <div className="app-error-fallback__panel">
+          <h1>Unable to display this page</h1>
+          <p>The application encountered a renderer error. Reload the page to recover.</p>
+          <button type="button" className="btn btn-primary" onClick={this.handleReload}>
+            Reload application
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 const API = "http://localhost:3000";
 
 const FLOW_SCREENS = new Set([
@@ -375,7 +431,9 @@ function choosePrimaryAssessment(list) {
 }
 
 function App() {
-  const [showStartupSplash, setShowStartupSplash] = useState(true);
+  const [showStartupSplash, setShowStartupSplash] = useState(
+    shouldShowStartupSplash
+  );
   const { user, accessToken, hasHydrated, clearAuth } = useAuthStore();
   const {
     currentExam,
@@ -393,6 +451,15 @@ function App() {
   const [screen, setScreen] = useState("login");
   const [bootstrapping, setBootstrapping] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    // If a renderer refresh skips the splash, switch the title bar to the
+    // application theme immediately on the first committed render.
+    if (!showStartupSplash) {
+      document.documentElement.dataset.windowTheme = "app";
+      window.electronAPI?.setTitleBarTheme?.("app");
+    }
+  }, [showStartupSplash]);
 
   const isLoggingOutRef = useRef(false);
   const screenRef = useRef("login");
@@ -1094,7 +1161,9 @@ createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AppTitleBar />
     <main className="app-viewport">
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </main>
   </React.StrictMode>
 );

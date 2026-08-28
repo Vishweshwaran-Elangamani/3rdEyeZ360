@@ -16,6 +16,7 @@ if (process.env.NODE_ENV !== "development") {
 
 let mainWindow = null;
 let pythonProcess = null;
+let rendererReloadTimer = null;
 
 function getIconPath() {
   return path.join(
@@ -90,7 +91,7 @@ function createWindow() {
 
     autoHideMenuBar: true,
     show: false,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#0f1117",
     title: "3rdEyeZ360",
     icon: getIconPath(),
 
@@ -100,6 +101,38 @@ function createWindow() {
       nodeIntegration: false,
       webviewTag: true,
     },
+  });
+
+  // Debounce repeated Ctrl+R/F5 input. Multiple overlapping reloads can
+  // temporarily destroy the renderer faster than Vite can recreate it.
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    const key = String(input.key || "").toLowerCase();
+    const isRefresh =
+      key === "f5" ||
+      (input.control && key === "r") ||
+      (input.meta && key === "r");
+
+    if (!isRefresh) return;
+
+    event.preventDefault();
+
+    if (rendererReloadTimer) {
+      clearTimeout(rendererReloadTimer);
+    }
+
+    rendererReloadTimer = setTimeout(() => {
+      rendererReloadTimer = null;
+
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+
+      setTitleBarTheme("app");
+      mainWindow.webContents.reload();
+    }, 300);
+  });
+
+  mainWindow.webContents.on("did-start-loading", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.setBackgroundColor("#0f1117");
   });
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
@@ -146,6 +179,11 @@ function createWindow() {
   }
 
   mainWindow.on("closed", () => {
+    if (rendererReloadTimer) {
+      clearTimeout(rendererReloadTimer);
+      rendererReloadTimer = null;
+    }
+
     mainWindow = null;
   });
 

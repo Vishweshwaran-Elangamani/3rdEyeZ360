@@ -320,10 +320,27 @@ async def emit_request_event(event, request_payload, assessment=None):
     payload = _normalized_socket_payload(request_payload)
     if assessment:
         payload["assessment"] = _normalized_socket_payload(assessment)
+
     exam_id = payload.get("examid")
     candidate_id = payload.get("candidateid")
+    examiner_id = payload.get("examinerid") or payload.get("examiner_id")
+
+    # The examiner dashboard list view is not joined to every exam-specific room.
+    # Resolve the exam owner and also deliver request events to the examiner's
+    # personal room, which is joined automatically when the socket connects.
+    if exam_id and not examiner_id:
+        db = get_db()
+        exam = await db.exams.find_one(
+            {"$or": [{"examid": exam_id}, {"exam_id": exam_id}]},
+            {"_id": 0, "examinerid": 1, "examiner_id": 1},
+        )
+        if exam:
+            examiner_id = exam.get("examinerid") or exam.get("examiner_id")
+
     if exam_id:
         await sio.emit(event, payload, room=f"exam_{exam_id}_examiners")
+    if examiner_id:
+        await sio.emit(event, payload, room=f"examiner_{examiner_id}")
     if candidate_id:
         await sio.emit(event, payload, room=f"candidate_{candidate_id}")
     await sio.emit(event, payload, room="admins")

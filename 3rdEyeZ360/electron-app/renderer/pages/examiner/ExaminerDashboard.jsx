@@ -1033,7 +1033,7 @@ function ReasonModal({
   const t = THEMES[theme];
   if (!open) return null;
 
-  const confirmationWord = ["Resume", "Terminate"].includes(actionLabel)
+  const confirmationWord = ["Pause", "Resume", "Terminate"].includes(actionLabel)
     ? actionLabel
     : null;
   const normalizedValue = String(reason || "").trim().toLowerCase();
@@ -1109,7 +1109,9 @@ function ReasonModal({
             <>
               {actionLabel === "Terminate"
                 ? "This permanently finalizes this candidate's assessment. "
-                : "This resumes this candidate's assessment. "}
+                : actionLabel === "Pause"
+                  ? "This pauses this candidate's assessment. "
+                  : "This resumes this candidate's assessment. "}
               To confirm, type <strong style={{ color: t.textPrimary }}>{confirmationWord}</strong> below.
             </>
           ) : (
@@ -2440,6 +2442,15 @@ export default function ExaminerDashboard() {
             : item,
         );
       });
+      setSelectedCandidate((previous) => {
+        if (!previous || previous.assessmentid !== next.assessmentid) return previous;
+        return {
+          ...previous,
+          ...next,
+          candidatename: next.candidatename || previous.candidatename,
+          candidateemail: next.candidateemail || previous.candidateemail,
+        };
+      });
     };
 
     const onAssessmentRemoved = (payload) => {
@@ -2798,6 +2809,22 @@ export default function ExaminerDashboard() {
   };
   const requestAction = (assessmentId, action) => {
     if (!assessmentId) return;
+    const currentStatus = normalizeStatusKey(selectedCandidate?.status);
+    if (action === "pause" && currentStatus !== "ACTIVE") {
+      setActionMsg(currentStatus === "PAUSED" ? "Assessment is already paused" : "Only an active assessment can be paused");
+      setTimeout(() => setActionMsg(""), 3500);
+      return;
+    }
+    if (action === "resume" && currentStatus !== "PAUSED") {
+      setActionMsg(currentStatus === "ACTIVE" ? "Assessment is already active" : "Only a paused assessment can be resumed");
+      setTimeout(() => setActionMsg(""), 3500);
+      return;
+    }
+    if (action === "terminate" && ["TERMINATED", "COMPLETED", "LOCKED"].includes(currentStatus)) {
+      setActionMsg("Finalized assessment cannot be modified");
+      setTimeout(() => setActionMsg(""), 3500);
+      return;
+    }
     setReasonText("");
     setReasonModal({ assessmentid: assessmentId, action });
   };
@@ -2807,7 +2834,13 @@ export default function ExaminerDashboard() {
     const { assessmentid, action } = reasonModal;
     const reason = reasonText.trim();
     const requiredConfirmation =
-      action === "resume" ? "resume" : action === "terminate" ? "terminate" : null;
+      action === "pause"
+        ? "pause"
+        : action === "resume"
+          ? "resume"
+          : action === "terminate"
+            ? "terminate"
+            : null;
     if (!reason) return;
     if (requiredConfirmation && reason.toLowerCase() !== requiredConfirmation) return;
     setReasonWorking(true);
@@ -3967,6 +4000,13 @@ export default function ExaminerDashboard() {
               glow: t.glowSuccess,
             };
 
+    const selectedAssessmentStatus = normalizeStatusKey(selectedCandidate?.status);
+    const selectedAssessmentFinalized = ["TERMINATED", "COMPLETED", "LOCKED"].includes(
+      selectedAssessmentStatus,
+    );
+    const canPauseSelected = selectedAssessmentStatus === "ACTIVE";
+    const canResumeSelected = selectedAssessmentStatus === "PAUSED";
+    const canTerminateSelected = Boolean(selectedCandidate) && !selectedAssessmentFinalized;
     return (
       <div
         style={{
@@ -4745,6 +4785,7 @@ export default function ExaminerDashboard() {
                     >
                       <GhostButton
                         theme={theme}
+                        disabled={!canPauseSelected}
                         onClick={() =>
                           requestAction(selectedCandidate.assessmentid, "pause")
                         }
@@ -4754,6 +4795,7 @@ export default function ExaminerDashboard() {
                       </GhostButton>
                       <GradientButton
                         theme={theme}
+                        disabled={!canResumeSelected}
                         onClick={() =>
                           requestAction(
                             selectedCandidate.assessmentid,
@@ -4768,6 +4810,7 @@ export default function ExaminerDashboard() {
                       </GradientButton>
                       <GradientButton
                         theme={theme}
+                        disabled={!canTerminateSelected}
                         onClick={() =>
                           requestAction(
                             selectedCandidate.assessmentid,

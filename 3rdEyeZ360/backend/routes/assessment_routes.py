@@ -1066,16 +1066,22 @@ async def assessment_action(assessment_id: str, body: dict, current_user=Depends
         update["actionreason"] = reason
 
     if action == "terminate":
+        if current_status in {"TERMINATED", "COMPLETED", "LOCKED"} or is_assessment_finalized(assessment):
+            raise HTTPException(status_code=409, detail="Finalized assessment cannot be modified")
         update.update({"status": "TERMINATED", "assessmentstatus": "TERMINATED", "assessment_status": "TERMINATED", "finalstatus": "TERMINATED", "final_status": "TERMINATED", "isfinalized": True, "is_finalized": True, "finalizedreason": "EXAMINER_TERMINATED", "finalized_reason": "EXAMINER_TERMINATED", "finalizedat": now, "finalized_at": now, "activesessionid": None, "active_session_id": None, "waitingsessionid": None, "waiting_session_id": None, "exittime": now, "exit_time": now})
     elif action == "pause":
-        if current_status in {"TERMINATED", "COMPLETED", "LOCKED"}:
-            raise HTTPException(status_code=400, detail=f"Cannot pause assessment in {current_status}")
+        if current_status == "PAUSED":
+            raise HTTPException(status_code=409, detail="Assessment is already paused")
+        if current_status != "ACTIVE":
+            raise HTTPException(status_code=409, detail=f"Only an active assessment can be paused; current status is {current_status or 'UNKNOWN'}")
         update.update({"status": "PAUSED", "assessmentstatus": "PAUSED", "assessment_status": "PAUSED"})
     else:
         if exam_status != "RUNNING":
             raise HTTPException(status_code=400, detail="Exam must be RUNNING to resume assessment")
-        if current_status in {"TERMINATED", "COMPLETED", "LOCKED"}:
-            raise HTTPException(status_code=400, detail=f"Cannot resume assessment in {current_status}")
+        if current_status == "ACTIVE":
+            raise HTTPException(status_code=409, detail="Assessment is already active")
+        if current_status != "PAUSED":
+            raise HTTPException(status_code=409, detail=f"Only a paused assessment can be resumed; current status is {current_status or 'UNKNOWN'}")
         update.update({"status": "ACTIVE", "assessmentstatus": "ACTIVE", "assessment_status": "ACTIVE"})
         if not (assessment.get("activetime") or assessment.get("active_time")):
             update["activetime"] = now

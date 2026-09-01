@@ -130,6 +130,32 @@ function createWindow() {
     }, 300);
   });
 
+  const restoreSecuredExamWindow = () => {
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      mainWindow.__examWindowMode !== true
+    ) return;
+
+    if (!mainWindow.isKiosk()) mainWindow.setKiosk(true);
+    if (!mainWindow.isFullScreen()) mainWindow.setFullScreen(true);
+    mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.moveTop();
+  };
+
+  mainWindow.on("blur", () => {
+    if (mainWindow.__examWindowMode !== true) return;
+    setTimeout(restoreSecuredExamWindow, 0);
+    setTimeout(restoreSecuredExamWindow, 100);
+  });
+
+  mainWindow.on("leave-full-screen", () => {
+    if (mainWindow.__examWindowMode !== true) return;
+    setTimeout(restoreSecuredExamWindow, 0);
+  });
+
   mainWindow.webContents.on("did-start-loading", () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.setBackgroundColor("#0f1117");

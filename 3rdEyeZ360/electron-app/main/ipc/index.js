@@ -296,7 +296,7 @@ function showNativeMonitoringToast(mainWindow, rawPayload) {
       minimizable: false,
       maximizable: false,
       closable: true,
-      focusable: true,
+      focusable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
       show: false,
@@ -309,7 +309,7 @@ function showNativeMonitoringToast(mainWindow, rawPayload) {
       },
     });
 
-    monitoringToastWindow.setIgnoreMouseEvents(true, { forward: true });
+    monitoringToastWindow.setIgnoreMouseEvents(true);
     monitoringToastWindow.setAlwaysOnTop(true, "screen-saver");
 
     monitoringToastWindow.once("closed", () => {
@@ -444,9 +444,18 @@ function showNativeMonitoringToast(mainWindow, rawPayload) {
     if (!monitoringToastWindow || monitoringToastWindow.isDestroyed()) return;
 
     positionMonitoringToastWindow(mainWindow);
-    monitoringToastWindow.setAlwaysOnTop(true, "screen-saver");
-    monitoringToastWindow.show();
+    monitoringToastWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    monitoringToastWindow.showInactive();
     monitoringToastWindow.moveTop();
+
+    if (isWindowAlive(mainWindow) && mainWindow.__examWindowMode === true) {
+      if (!mainWindow.isKiosk()) mainWindow.setKiosk(true);
+      if (!mainWindow.isFullScreen()) mainWindow.setFullScreen(true);
+      mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+      mainWindow.focus();
+      mainWindow.moveTop();
+      monitoringToastWindow.moveTop();
+    }
 
     console.log("[NATIVE TOAST] shown", {
       title,
@@ -751,6 +760,8 @@ function registerIpcHandlers(mainWindow) {
     "enable-lockdown",
     "disable-lockdown",
     "set-closable",
+    "enter-exam-window-mode",
+    "exit-exam-window-mode",
     "open-browser",
     "close-browser",
     "navigate-browser",
@@ -797,6 +808,50 @@ function registerIpcHandlers(mainWindow) {
 
     mainWindow.setClosable(Boolean(value));
     return { success: true };
+  });
+
+  ipcMain.handle("enter-exam-window-mode", () => {
+    if (!isWindowAlive(mainWindow)) return { success: false, error: "Main window unavailable" };
+    try {
+      mainWindow.__examWindowMode = true;
+      mainWindow.setClosable(false);
+      mainWindow.setMinimizable(false);
+      mainWindow.setMaximizable(false);
+      mainWindow.setMenuBarVisibility(false);
+      setupLockdown(mainWindow);
+      mainWindow.setKiosk(true);
+      if (!mainWindow.isFullScreen()) mainWindow.setFullScreen(true);
+      mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.moveTop();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error?.message || "Unable to enter secured exam mode" };
+    }
+  });
+
+  ipcMain.handle("exit-exam-window-mode", () => {
+    if (!isWindowAlive(mainWindow)) return { success: false, error: "Main window unavailable" };
+    try {
+      mainWindow.__examWindowMode = false;
+      closeMonitoringToastWindow();
+      mainWindow.setAlwaysOnTop(false);
+      if (mainWindow.isKiosk()) mainWindow.setKiosk(false);
+      if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
+      removeLockdown(mainWindow);
+      mainWindow.setClosable(true);
+      mainWindow.setMinimizable(true);
+      mainWindow.setMaximizable(true);
+      mainWindow.setResizable(true);
+      mainWindow.setMovable(true);
+      mainWindow.maximize();
+      mainWindow.show();
+      mainWindow.focus();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error?.message || "Unable to restore application window" };
+    }
   });
 
   ipcMain.handle("open-browser", async (_event, data) => {

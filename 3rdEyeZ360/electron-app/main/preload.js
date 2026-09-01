@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   setClosable: (val) => ipcRenderer.invoke("set-closable", val),
+  enterExamWindowMode: () => ipcRenderer.invoke("enter-exam-window-mode"),
+  exitExamWindowMode: () => ipcRenderer.invoke("exit-exam-window-mode"),
 
   setTitleBarTheme: (themeName) =>
     ipcRenderer.send("set-title-bar-theme", themeName),

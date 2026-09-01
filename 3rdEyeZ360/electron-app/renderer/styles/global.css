@@ -175,3 +175,8 @@ body,
   margin-bottom: 20px;
   color: #a8aec0;
 }
+
+
+/* Active examination mode fills the complete display and hides app chrome. */
+:root[data-exam-mode="true"] .app-titlebar { display: none !important; }
+:root[data-exam-mode="true"] .app-viewport { top: 0 !important; }

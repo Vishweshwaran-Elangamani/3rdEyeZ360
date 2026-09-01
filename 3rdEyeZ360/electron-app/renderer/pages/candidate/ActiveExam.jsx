@@ -710,6 +710,27 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const waitingRegistrationRef = useRef(null);
   const monitoringStartedRef = useRef(false);
 
+  useEffect(() => {
+    let mounted = true;
+    document.documentElement.dataset.examMode = "true";
+
+    window.electronAPI?.enterExamWindowMode?.().then((result) => {
+      if (mounted && result?.success === false) {
+        console.error("Unable to enter secured exam window mode:", result.error);
+      }
+    }).catch((error) => {
+      if (mounted) console.error("Unable to enter secured exam window mode:", error);
+    });
+
+    return () => {
+      mounted = false;
+      delete document.documentElement.dataset.examMode;
+      window.electronAPI?.exitExamWindowMode?.().catch?.((error) => {
+        console.error("Unable to restore the application window:", error);
+      });
+    };
+  }, []);
+
   // Stopwatch countdown starts when secured candidate entry is granted.
   const timerStartedAtRef = useRef(null);
   const { accessToken, user } = useAuthStore();
@@ -902,6 +923,7 @@ try {
     try { await window.electronAPI?.stopCapture?.(); } catch (error) { console.log("stopCapture failed", error); }
     try { await window.electronAPI?.closeBrowser?.(); } catch (error) { console.log("closeBrowser failed", error); }
     try { await window.electronAPI?.disableLockdown?.(); } catch (error) { console.log("disableLockdown failed", error); }
+    try { await window.electronAPI?.exitExamWindowMode?.(); } catch (error) { console.log("exitExamWindowMode failed", error); }
     try { await window.electronAPI?.setClosable?.(true); } catch (error) { console.log("setClosable failed", error); }
     browserOpenedRef.current = false;
     lastNavigatedUrlRef.current = null;
@@ -1528,6 +1550,7 @@ setPauseLocked(false);
       window.electronAPI?.stopCapture?.();
       window.electronAPI?.closeBrowser?.();
       window.electronAPI?.disableLockdown?.();
+      window.electronAPI?.exitExamWindowMode?.();
       window.electronAPI?.setClosable?.(true);
     };
   }, [assessmentId, accessToken]);

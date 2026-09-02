@@ -1,4 +1,5 @@
 ﻿from datetime import datetime
+import asyncio
 import logging
 import uuid
 
@@ -26,6 +27,7 @@ router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
+MAX_CANDIDATES_PER_EXAM = 25
 
 
 def _serialize(document: dict) -> dict:
@@ -1230,6 +1232,310 @@ async def unassign_candidate(
     }
 
 
+@router.post("/{exam_id}/remove-candidates")
+async def remove_candidates_bulk(
+    exam_id: str,
+    body: dict,
+    current_user=Depends(
+        require_role("Examiner", "Admin")
+    ),
+):
+    """Remove multiple candidate assignments using the existing safe removal flow."""
+    raw_candidate_ids = (
+        body.get("candidate_ids")
+        or body.get("candidateids")
+        or []
+    )
+    if not isinstance(raw_candidate_ids, list):
+        raise HTTPException(
+            status_code=400,
+            detail="candidate_ids must be an array",
+        )
+
+    candidate_ids = []
+    seen = set()
+    for value in raw_candidate_ids:
+        candidate_id = str(value or "").strip()
+        if candidate_id and candidate_id not in seen:
+            seen.add(candidate_id)
+            candidate_ids.append(candidate_id)
+
+    if not candidate_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Select at least one assigned candidate to remove.",
+        )
+
+    # Reuse the individual endpoint so access checks, audit logs, events,
+    # assignment cleanup, and removal emails remain identical.
+    results = await asyncio.gather(
+        *[
+            unassign_candidate(
+                exam_id=exam_id,
+                candidate_id=candidate_id,
+                current_user=current_user,
+            )
+            for candidate_id in candidate_ids
+        ],
+        return_exceptions=True,
+    )
+
+    removed = []
+    failed = []
+    email_failures = []
+    for candidate_id, result in zip(candidate_ids, results):
+        if isinstance(result, Exception):
+            detail = (
+                result.detail
+                if isinstance(result, HTTPException)
+                else str(result)
+            )
+            failed.append({
+                "candidate_id": candidate_id,
+                "error": detail,
+            })
+            continue
+
+        removed.append(candidate_id)
+        if not result.get("email_sent", False):
+            email_failures.append({
+                "candidate_id": candidate_id,
+                "error": result.get("email_error")
+                or "Removal email was not sent",
+            })
+
+    if not removed and failed:
+        raise HTTPException(
+            status_code=400,
+            detail="No selected candidate assignments could be removed.",
+        )
+
+    return {
+        "message": f"{len(removed)} candidate(s) removed successfully.",
+        "removed_candidate_ids": removed,
+        "failed": failed,
+        "email_failures": email_failures,
+    }
+
+
+@router.post("/{exam_id}/assign-candidates")
+async def assign_candidates_bulk(
+    exam_id: str,
+    body: dict,
+    current_user=Depends(
+        require_role("Examiner", "Admin")
+    ),
+):
+    """Assign multiple unique candidates in one request, up to the exam limit."""
+    db = get_db()
+    exam = await _ensure_exam_access(db, exam_id, current_user)
+    current_user_id = (
+        current_user.get("user_id")
+        or current_user.get("userid")
+    )
+
+    raw_candidate_ids = (
+        body.get("candidate_ids")
+        or body.get("candidateids")
+        or body.get("candidate_ids")
+        or []
+    )
+    if not isinstance(raw_candidate_ids, list):
+        raise HTTPException(
+            status_code=400,
+            detail="candidate_ids must be an array",
+        )
+
+    candidate_ids = []
+    seen = set()
+    for value in raw_candidate_ids:
+        candidate_id = str(value or "").strip()
+        if candidate_id and candidate_id not in seen:
+            seen.add(candidate_id)
+            candidate_ids.append(candidate_id)
+
+    if not candidate_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Select at least one candidate to assign.",
+        )
+
+    assigned_documents = await db.assessments.find(
+        {"$or": [{"exam_id": exam_id}, {"examid": exam_id}]},
+        {"_id": 0, "candidate_id": 1, "candidateid": 1},
+    ).to_list(None)
+    assigned_ids = {
+        str(item.get("candidate_id") or item.get("candidateid") or "").strip()
+        for item in assigned_documents
+    }
+    assigned_ids.discard("")
+
+    new_candidate_ids = [
+        candidate_id
+        for candidate_id in candidate_ids
+        if candidate_id not in assigned_ids
+    ]
+    skipped_ids = [
+        candidate_id
+        for candidate_id in candidate_ids
+        if candidate_id in assigned_ids
+    ]
+
+    if len(assigned_ids) + len(new_candidate_ids) > MAX_CANDIDATES_PER_EXAM:
+        available_slots = max(0, MAX_CANDIDATES_PER_EXAM - len(assigned_ids))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Only {available_slots} assignment slot(s) remain. "
+                f"A maximum of {MAX_CANDIDATES_PER_EXAM} candidates "
+                "can be assigned to an exam."
+            ),
+        )
+
+    users = []
+    invalid_ids = []
+    for candidate_id in new_candidate_ids:
+        user = await db.users.find_one(_get_user_query(candidate_id))
+        if not user or user.get("role") != "Candidate":
+            invalid_ids.append(candidate_id)
+        else:
+            users.append((candidate_id, user))
+
+    if invalid_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Candidate record not found for: "
+                + ", ".join(invalid_ids)
+            ),
+        )
+
+    if not users:
+        return {
+            "message": "All selected candidates are already assigned.",
+            "assigned": [],
+            "skipped_candidate_ids": skipped_ids,
+            "email_failures": [],
+        }
+
+    now = datetime.utcnow()
+    assessment_documents = []
+    audit_documents = []
+    hydrated_payloads = []
+
+    for candidate_id, user in users:
+        assessment_id = await generate_assessment_id()
+        assessment_document = {
+            "assessment_id": assessment_id,
+            "assessmentid": assessment_id,
+            "exam_id": exam_id,
+            "examid": exam_id,
+            "candidate_id": candidate_id,
+            "candidateid": candidate_id,
+            "examiner_id": current_user_id,
+            "examinerid": current_user_id,
+            "status": "ASSIGNED",
+            "assessmentstatus": "ASSIGNED",
+            "assessment_status": "ASSIGNED",
+            "violation_count": 0,
+            "violationcount": 0,
+            "warning_count": 0,
+            "warningcount": 0,
+            "risk_score": 0,
+            "riskscore": 0,
+            "credibility_score": 100,
+            "credibilityscore": 100,
+            "integrity_score": 100,
+            "integrityscore": 100,
+            "attendance_status": None,
+            "attendancestatus": None,
+            "join_time": None,
+            "jointime": None,
+            "active_time": None,
+            "activetime": None,
+            "exit_time": None,
+            "exittime": None,
+            "threshold_reached": False,
+            "thresholdreached": False,
+            "re_entry_count": 0,
+            "reentrycount": 0,
+            "final_status": None,
+            "finalstatus": None,
+            "isfinalized": False,
+            "is_finalized": False,
+            "enteredexamsession": None,
+            "entered_exam_session": None,
+            "created_at": now,
+            "createdat": now,
+            "updated_at": now,
+            "updatedat": now,
+        }
+        assessment_documents.append(assessment_document)
+        audit_documents.append({
+            "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+            "user_id": current_user_id,
+            "userid": current_user_id,
+            "exam_id": exam_id,
+            "examid": exam_id,
+            "assessment_id": assessment_id,
+            "assessmentid": assessment_id,
+            "candidate_id": candidate_id,
+            "candidateid": candidate_id,
+            "action": "AssignCandidate",
+            "reason": f"Bulk assigned candidate {candidate_id}",
+            "timestamp": now,
+        })
+        payload = _merge_exam_assessment(exam or {}, assessment_document)
+        payload["candidate_name"] = user.get("name", candidate_id)
+        payload["candidate_email"] = user.get("email", "")
+        hydrated_payloads.append(payload)
+
+    await db.assessments.insert_many(assessment_documents)
+    if audit_documents:
+        await db.audit_logs.insert_many(audit_documents)
+
+    await asyncio.gather(*[
+        emit_assessment_event("assessment_created", payload)
+        for payload in hydrated_payloads
+    ])
+
+    async def send_assignment_email(candidate_id, user):
+        candidate_email = user.get("email", "")
+        if not candidate_email:
+            return {
+                "candidate_id": candidate_id,
+                "error": "Candidate email address is unavailable",
+            }
+        try:
+            await send_exam_assignment_email(
+                candidate_email=candidate_email,
+                candidate_name=user.get("name", candidate_id),
+                exam=exam,
+            )
+            return None
+        except Exception as exc:
+            logger.exception(
+                "Bulk assignment email failed for candidate %s and exam %s",
+                candidate_id,
+                exam_id,
+            )
+            return {"candidate_id": candidate_id, "error": str(exc)}
+
+    email_results = await asyncio.gather(*[
+        send_assignment_email(candidate_id, user)
+        for candidate_id, user in users
+    ])
+    email_failures = [item for item in email_results if item]
+
+    return {
+        "message": f"{len(hydrated_payloads)} candidate(s) assigned successfully.",
+        "assigned": hydrated_payloads,
+        "assigned_candidate_ids": [item[0] for item in users],
+        "skipped_candidate_ids": skipped_ids,
+        "email_failures": email_failures,
+    }
+
+
 @router.post("/{exam_id}/assign")
 async def assign_candidate(
     exam_id: str,
@@ -1289,6 +1595,38 @@ async def assign_candidate(
         raise HTTPException(
             status_code=409,
             detail="Candidate already assigned",
+        )
+
+    assigned_documents = await db.assessments.find(
+        {
+            "$or": [
+                {"exam_id": exam_id},
+                {"examid": exam_id},
+            ]
+        },
+        {
+            "_id": 0,
+            "candidate_id": 1,
+            "candidateid": 1,
+        },
+    ).to_list(None)
+    assigned_candidate_ids = {
+        str(
+            item.get("candidate_id")
+            or item.get("candidateid")
+            or ""
+        ).strip()
+        for item in assigned_documents
+    }
+    assigned_candidate_ids.discard("")
+
+    if len(assigned_candidate_ids) >= MAX_CANDIDATES_PER_EXAM:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A maximum of {MAX_CANDIDATES_PER_EXAM} "
+                "candidates can be assigned to an exam."
+            ),
         )
 
     assessment_id = (

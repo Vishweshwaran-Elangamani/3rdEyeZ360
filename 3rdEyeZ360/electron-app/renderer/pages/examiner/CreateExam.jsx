@@ -1766,13 +1766,6 @@ export default function CreateExam({ onBack, onCreated }) {
           {/* FOOTER ACTIONS */}
           <div style={{ gridColumn: "1 / -1", gridRow: "2 / 3", display: "flex", gap: 12, justifyContent: "flex-end", alignItems: "center", flexShrink: 0 }}>
             <button
-              onClick={() => handleSave("Draft")}
-              disabled={loading}
-              style={{ padding: "12px 24px", fontSize: 14, fontWeight: 700, borderRadius: 12, background: t.surfaceGlass, color: t.textPrimary, border: `1px solid ${t.borderStrong}`, cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Inter', sans-serif", opacity: loading ? 0.6 : 1 }}
-            >
-              Save as Draft
-            </button>
-            <button
               onClick={() => handleSave("Published")}
               disabled={loading}
               style={{ padding: "12px 28px", fontSize: 14, fontWeight: 700, borderRadius: 12, background: t.accentGradient, color: "#fff", border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Inter', sans-serif", letterSpacing: 0.3, boxShadow: loading ? "none" : t.glowAccent, opacity: loading ? 0.7 : 1, display: "inline-flex", alignItems: "center", gap: 8 }}

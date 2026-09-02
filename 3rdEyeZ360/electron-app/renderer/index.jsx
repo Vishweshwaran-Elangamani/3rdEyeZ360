@@ -159,64 +159,313 @@ function SplashScreen({ text = "Loading..." }) {
   );
 }
 
-function CompletionView({ onLogout }) {
+function CompletionView({ onLogout, exam, assessment }) {
+  const storedTheme = (() => {
+    try {
+      return localStorage.getItem("3rdeyez360.theme") === "light" ? "light" : "dark";
+    } catch (error) {
+      return "dark";
+    }
+  })();
+
+  const isLight = storedTheme === "light";
+  const examName = firstValue(
+    assessment?.name,
+    assessment?.examname,
+    assessment?.exam_name,
+    exam?.name,
+    exam?.examname,
+    exam?.exam_name,
+    "Assessment"
+  );
+  const rawStatus = toUpper(
+    firstValue(
+      assessment?.finalstatus,
+      assessment?.final_status,
+      assessment?.assessmentstatus,
+      assessment?.assessment_status,
+      assessment?.status,
+      exam?.examstatus,
+      exam?.exam_status,
+      exam?.status,
+      "COMPLETED"
+    )
+  );
+  const isTerminated = rawStatus === "TERMINATED";
+  const heading = isTerminated ? "Assessment Terminated" : "Assessment Completed";
+  const description = isTerminated
+    ? "The examiner has terminated this assessment. Your secured session has been closed safely."
+    : "The examiner has ended this assessment. Your secured session has been closed safely.";
+  const statusLabel = isTerminated ? "Terminated" : "Completed";
+
+  const palette = isLight
+    ? {
+        canvas: "#eef1fb",
+        canvasTint:
+          "radial-gradient(circle at 18% 18%, rgba(75,96,232,0.18), transparent 34%), radial-gradient(circle at 82% 78%, rgba(233,74,168,0.14), transparent 34%)",
+        header: "rgba(255,255,255,0.82)",
+        card: "rgba(255,255,255,0.9)",
+        cardSoft: "rgba(75,96,232,0.06)",
+        border: "rgba(20,28,60,0.10)",
+        borderStrong: "rgba(20,28,60,0.16)",
+        text: "#0b1024",
+        secondary: "#4b5475",
+        muted: "#78809b",
+        accent: "#4b60e8",
+        accent2: "#7c3aed",
+        success: "#0ea564",
+        successSoft: "rgba(14,165,100,0.12)",
+        danger: "#dc2626",
+        dangerSoft: "rgba(220,38,38,0.10)",
+        shadow: "0 28px 80px rgba(38,48,94,0.18)",
+      }
+    : {
+        canvas: "#07080d",
+        canvasTint:
+          "radial-gradient(circle at 18% 18%, rgba(91,140,255,0.18), transparent 34%), radial-gradient(circle at 82% 78%, rgba(255,110,199,0.12), transparent 34%)",
+        header: "rgba(15,18,32,0.82)",
+        card: "rgba(21,25,39,0.9)",
+        cardSoft: "rgba(255,255,255,0.035)",
+        border: "rgba(255,255,255,0.07)",
+        borderStrong: "rgba(255,255,255,0.13)",
+        text: "#f3f5fc",
+        secondary: "#aeb5ce",
+        muted: "#747c98",
+        accent: "#6c8cff",
+        accent2: "#a065ff",
+        success: "#3ecf8e",
+        successSoft: "rgba(62,207,142,0.11)",
+        danger: "#ef6a6a",
+        dangerSoft: "rgba(239,106,106,0.11)",
+        shadow: "0 30px 90px rgba(0,0,0,0.48)",
+      };
+
+  const stateColor = isTerminated ? palette.danger : palette.success;
+  const stateSoft = isTerminated ? palette.dangerSoft : palette.successSoft;
+
   return (
     <div
+      className="completion-page-scroll"
       style={{
-        height: "100vh",
+        width: "100%",
+        height: "100%",
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        background: "#0f1117",
-        color: "#fff",
-        fontFamily: "Inter, sans-serif",
+        background: palette.canvas,
+        backgroundImage: palette.canvasTint,
+        color: palette.text,
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        overflowX: "hidden",
+        overflowY: "auto",
+        scrollbarGutter: "stable",
+        position: "relative",
       }}
     >
-      <div
-        style={{
-          height: 56,
-          background: "#1a1d27",
-          borderBottom: "1px solid #2e3347",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 20px",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <AppLogo size={22} />
-          <span style={{ fontWeight: 700, fontSize: 15 }}>3rdEyeZ360</span>
-        </div>
-        <button onClick={onLogout} className="btn btn-ghost" style={{ padding: "8px 14px", fontSize: 12 }}>
-          Logout
-        </button>
-      </div>
+      <style>{`
+        @keyframes completionFadeUp {
+          from { opacity: 0; transform: translateY(18px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes completionPulse {
+          0%, 100% { transform: scale(1); opacity: 0.55; }
+          50% { transform: scale(1.08); opacity: 0.22; }
+        }
+        .completion-page-scroll::-webkit-scrollbar { width: 9px; }
+        .completion-page-scroll::-webkit-scrollbar-track { background: transparent; }
+        .completion-page-scroll::-webkit-scrollbar-thumb {
+          background: ${isLight ? "rgba(75,84,117,0.28)" : "rgba(174,181,206,0.24)"};
+          border: 2px solid transparent;
+          background-clip: padding-box;
+          border-radius: 999px;
+        }
+        .completion-page-scroll::-webkit-scrollbar-thumb:hover {
+          background: ${isLight ? "rgba(75,84,117,0.42)" : "rgba(174,181,206,0.38)"};
+          border: 2px solid transparent;
+          background-clip: padding-box;
+        }
+      `}</style>
 
-      <div
+
+
+      <main
         style={{
           flex: 1,
+          minHeight: 0,
           display: "flex",
-          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          padding: 24,
+          padding: "24px",
+          minHeight: 540,
+          boxSizing: "border-box",
+          position: "relative",
+          zIndex: 1,
         }}
       >
-        <div style={{ marginBottom: 18 }}>
-          <AppLogo size={72} />
-        </div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Exam Completed</h2>
-        <p style={{ color: "#8b90a0", fontSize: 14, marginBottom: 20, textAlign: "center" }}>
-          Your assessment has ended. You may now close this application.
-        </p>
-        <button onClick={onLogout} className="btn btn-primary" style={{ padding: "10px 20px", fontSize: 14 }}>
-          Finish and Logout
-        </button>
-      </div>
+        <section
+          style={{
+            width: "min(620px, 100%)",
+            borderRadius: 24,
+            border: `1px solid ${palette.borderStrong}`,
+            background: palette.card,
+            boxShadow: palette.shadow,
+            backdropFilter: "blur(26px)",
+            WebkitBackdropFilter: "blur(26px)",
+            overflow: "hidden",
+            animation: "completionFadeUp 0.45s ease both",
+          }}
+        >
+          <div
+            style={{
+              height: 4,
+              background: isTerminated
+                ? "linear-gradient(90deg, #ff7a7a, #dc2626)"
+                : "linear-gradient(90deg, #3ecf8e, #5b8cff, #a065ff)",
+            }}
+          />
+
+          <div style={{ padding: "30px 34px 24px", textAlign: "center" }}>
+            <div
+              style={{
+                width: 78,
+                height: 78,
+                margin: "0 auto 20px",
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  background: stateSoft,
+                  border: `1px solid ${stateColor}44`,
+                  animation: "completionPulse 2.4s ease-in-out infinite",
+                }}
+              />
+              <div
+                style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: 18,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: isTerminated
+                    ? "linear-gradient(135deg, #ff7a7a, #dc2626)"
+                    : "linear-gradient(135deg, #3ecf8e, #4b60e8)",
+                  color: "#ffffff",
+                  boxShadow: `0 14px 34px ${stateColor}44`,
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                {isTerminated ? (
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <line x1="8.8" y1="8.8" x2="15.2" y2="15.2" />
+                    <line x1="15.2" y1="8.8" x2="8.8" y2="15.2" />
+                  </svg>
+                ) : (
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            <div style={{ color: stateColor, fontSize: 10, fontWeight: 850, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>
+              Secured session closed
+            </div>
+            <h1 style={{ margin: 0, color: palette.text, fontSize: 28, fontWeight: 800, letterSpacing: -0.75 }}>
+              {heading}
+            </h1>
+            <p style={{ margin: "12px auto 0", maxWidth: 470, color: palette.secondary, fontSize: 13.5, lineHeight: 1.7 }}>
+              {description}
+            </p>
+          </div>
+
+          <div style={{ padding: "0 34px 26px" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(150px, 0.58fr)",
+                gap: 10,
+              }}
+            >
+              <div style={{ padding: "14px 16px", borderRadius: 14, background: palette.cardSoft, border: `1px solid ${palette.border}` }}>
+                <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: palette.muted }}>Assessment</div>
+                <div style={{ marginTop: 6, color: palette.text, fontSize: 13, fontWeight: 750, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={examName}>
+                  {examName}
+                </div>
+              </div>
+
+              <div style={{ padding: "14px 16px", borderRadius: 14, background: stateSoft, border: `1px solid ${stateColor}33` }}>
+                <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: palette.muted }}>Final status</div>
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 7, color: stateColor, fontSize: 13, fontWeight: 800 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: stateColor, boxShadow: `0 0 9px ${stateColor}88` }} />
+                  {statusLabel}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 13, background: palette.cardSoft, border: `1px solid ${palette.border}`, display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={palette.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                <circle cx="12" cy="12" r="9" />
+                <line x1="12" y1="11" x2="12" y2="16" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <div style={{ color: palette.muted, fontSize: 11.5, lineHeight: 1.55, textAlign: "left" }}>
+                Camera monitoring, secured browsing, and assessment controls have been closed. Select Finish and Logout to leave the application safely.
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: "16px 34px 22px",
+              borderTop: `1px solid ${palette.border}`,
+              display: "flex",
+              justifyContent: "center",
+              background: palette.cardSoft,
+            }}
+          >
+            <button
+              type="button"
+              onClick={onLogout}
+              style={{
+                minWidth: 178,
+                minHeight: 42,
+                padding: "0 20px",
+                border: "none",
+                borderRadius: 12,
+                background: "linear-gradient(135deg, #5b8cff 0%, #7c3aed 55%, #e94aa8 100%)",
+                color: "#ffffff",
+                fontSize: 12.5,
+                fontWeight: 800,
+                cursor: "pointer",
+                boxShadow: "0 12px 28px rgba(91,140,255,0.30)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              Finish and Logout
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14" />
+                <polyline points="13 6 19 12 13 18" />
+              </svg>
+            </button>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
-
 function firstValue(...values) {
   for (const value of values) {
     if (value !== undefined && value !== null && String(value).trim() !== "") {
@@ -1152,7 +1401,15 @@ if (
       />
     );
   }
-  if (screen === "complete") return <CompletionView onLogout={handleLogout} />;
+  if (screen === "complete") {
+    return (
+      <CompletionView
+        onLogout={handleLogout}
+        exam={currentExam}
+        assessment={currentAssessment}
+      />
+    );
+  }
 
   return <Login onLogin={handleLogin} />;
 }

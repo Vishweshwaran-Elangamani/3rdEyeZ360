@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import axios from "axios";
 import useAuthStore from "../../store/authStore";
 import useSocket from "../../hooks/useSocket";
 
 const API = "http://localhost:3000";
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
+const MAX_CANDIDATES_PER_EXAM = 25;
 
 /* ============= Theme system ============= */
 
@@ -370,13 +371,23 @@ export default function AssignCandidates({ exam, onBack }) {
 
   const { accessToken } = useAuthStore();
   const socket = useSocket(accessToken);
+  const assignmentRefreshTimerRef = useRef(null);
+  const bulkOperationRef = useRef(false);
 
   const [allCandidates, setAllCandidates] = useState([]);
   const [assigned, setAssigned] = useState([]);
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [nameSortOrder, setNameSortOrder] = useState("ASC");
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [savingCandidateId, setSavingCandidateId] = useState(null);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
+  const [selectedRemovalIds, setSelectedRemovalIds] = useState([]);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [bulkRemoving, setBulkRemoving] = useState(false);
+  const [showBulkRemoveConfirm, setShowBulkRemoveConfirm] = useState(false);
+  const [showBulkAssignConfirm, setShowBulkAssignConfirm] = useState(false);
   const [error, setError] = useState("");
 
   const [candidateToRemove, setCandidateToRemove] = useState(null);
@@ -384,6 +395,8 @@ export default function AssignCandidates({ exam, onBack }) {
   const [modalType, setModalType] = useState("error");
 
   const examId = exam?.exam_id || exam?.examid || "";
+  const assignedCount = assigned.length;
+  const assignmentLimitReached = assignedCount >= MAX_CANDIDATES_PER_EXAM;
 
   const headers = useMemo(
     () => ({
@@ -402,13 +415,13 @@ export default function AssignCandidates({ exam, onBack }) {
     setModalMessage(message);
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ silent = false } = {}) => {
     if (!examId) {
       setError("Exam ID is unavailable.");
       return;
     }
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError("");
 
     try {
@@ -442,8 +455,24 @@ export default function AssignCandidates({ exam, onBack }) {
         )
         .filter(Boolean);
 
+      const uniqueAssignedIds = Array.from(new Set(assignedIds));
       setAllCandidates(normalizedCandidates);
-      setAssigned(Array.from(new Set(assignedIds)));
+      setAssigned(uniqueAssignedIds);
+      setSelectedCandidateIds((previous) =>
+        previous.filter(
+          (candidateId) =>
+            !uniqueAssignedIds.some(
+              (assignedId) => String(assignedId) === String(candidateId),
+            ),
+        ),
+      );
+      setSelectedRemovalIds((previous) =>
+        previous.filter((candidateId) =>
+          uniqueAssignedIds.some(
+            (assignedId) => String(assignedId) === String(candidateId),
+          ),
+        ),
+      );
     } catch (requestError) {
       console.error("Failed to load candidates/assignments", requestError);
 
@@ -456,7 +485,7 @@ export default function AssignCandidates({ exam, onBack }) {
       setAllCandidates([]);
       setAssigned([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [examId, headers]);
 
@@ -473,19 +502,36 @@ export default function AssignCandidates({ exam, onBack }) {
     };
 
     const refreshAssignments = (payload) => {
-      if (matchesExam(payload)) void loadData();
+      if (!matchesExam(payload) || bulkOperationRef.current) return;
+
+      if (assignmentRefreshTimerRef.current) {
+        window.clearTimeout(assignmentRefreshTimerRef.current);
+      }
+
+      assignmentRefreshTimerRef.current = window.setTimeout(() => {
+        assignmentRefreshTimerRef.current = null;
+        void loadData({ silent: true });
+      }, 200);
     };
 
-    socket.on("connect", loadData);
+    const refreshAfterReconnect = () => {
+      if (!bulkOperationRef.current) void loadData({ silent: true });
+    };
+
+    socket.on("connect", refreshAfterReconnect);
     socket.on("assessment_created", refreshAssignments);
     socket.on("assessment_updated", refreshAssignments);
     socket.on("assessment_removed", refreshAssignments);
 
     return () => {
-      socket.off("connect", loadData);
+      socket.off("connect", refreshAfterReconnect);
       socket.off("assessment_created", refreshAssignments);
       socket.off("assessment_updated", refreshAssignments);
       socket.off("assessment_removed", refreshAssignments);
+      if (assignmentRefreshTimerRef.current) {
+        window.clearTimeout(assignmentRefreshTimerRef.current);
+        assignmentRefreshTimerRef.current = null;
+      }
     };
   }, [socket, examId, loadData]);
 
@@ -519,8 +565,137 @@ export default function AssignCandidates({ exam, onBack }) {
     };
   }, [candidateToRemove, modalMessage, savingCandidateId]);
 
+  const availableSlots = Math.max(
+    0,
+    MAX_CANDIDATES_PER_EXAM - assignedCount,
+  );
+
+  const toggleCandidateSelection = (candidateId) => {
+    if (!candidateId || bulkAssigning || bulkRemoving || savingCandidateId) return;
+    if (assigned.some((id) => String(id) === String(candidateId))) return;
+
+    setSelectedRemovalIds([]);
+    setSelectedCandidateIds((previous) => {
+      const selected = previous.some((id) => String(id) === String(candidateId));
+      if (selected) {
+        return previous.filter((id) => String(id) !== String(candidateId));
+      }
+      if (previous.length >= availableSlots) {
+        showResultModal(
+          `Only ${availableSlots} assignment slot(s) remain. A maximum of ${MAX_CANDIDATES_PER_EXAM} candidates can be assigned to an exam.`,
+          "error",
+        );
+        return previous;
+      }
+      return [...previous, candidateId];
+    });
+  };
+
+  const toggleRemovalSelection = (candidateId) => {
+    if (!candidateId || bulkRemoving || bulkAssigning || savingCandidateId) return;
+    if (!assigned.some((id) => String(id) === String(candidateId))) return;
+    setSelectedCandidateIds([]);
+    setSelectedRemovalIds((previous) =>
+      previous.some((id) => String(id) === String(candidateId))
+        ? previous.filter((id) => String(id) !== String(candidateId))
+        : [...previous, candidateId],
+    );
+  };
+
+  const removeSelectedCandidates = async () => {
+    if (!examId || bulkRemoving || selectedRemovalIds.length === 0) return;
+    setBulkRemoving(true);
+    bulkOperationRef.current = true;
+    setError("");
+    try {
+      const response = await axios.post(
+        `${API}/api/exams/${examId}/remove-candidates`,
+        { candidate_ids: selectedRemovalIds },
+        { headers },
+      );
+      const removedIds = response.data?.removed_candidate_ids || [];
+      setAssigned((previous) =>
+        previous.filter(
+          (id) => !removedIds.some((removedId) => String(removedId) === String(id)),
+        ),
+      );
+      setSelectedRemovalIds([]);
+      setShowBulkRemoveConfirm(false);
+      const emailFailures = response.data?.email_failures?.length || 0;
+      const failed = response.data?.failed?.length || 0;
+      showResultModal(
+        failed || emailFailures
+          ? `${removedIds.length} candidate(s) removed. ${failed} removal(s) and ${emailFailures} email(s) need attention.`
+          : `${removedIds.length} candidate(s) removed successfully.`,
+        failed ? "error" : "success",
+      );
+      await loadData({ silent: true });
+    } catch (requestError) {
+      console.error("Bulk candidate removal failed", requestError);
+      setShowBulkRemoveConfirm(false);
+      showResultModal(
+        requestError?.response?.data?.detail ||
+          requestError?.message ||
+          "Failed to remove selected candidates.",
+        "error",
+      );
+    } finally {
+      setBulkRemoving(false);
+      window.setTimeout(() => {
+        bulkOperationRef.current = false;
+      }, 300);
+    }
+  };
+
+  const assignSelectedCandidates = async () => {
+    if (!examId || bulkAssigning || selectedCandidateIds.length === 0) return;
+    setBulkAssigning(true);
+    bulkOperationRef.current = true;
+    setError("");
+    try {
+      const response = await axios.post(
+        `${API}/api/exams/${examId}/assign-candidates`,
+        { candidate_ids: selectedCandidateIds },
+        { headers },
+      );
+      const assignedIds = response.data?.assigned_candidate_ids || [];
+      setAssigned((previous) => Array.from(new Set([...previous, ...assignedIds])));
+      setSelectedCandidateIds([]);
+      setShowBulkAssignConfirm(false);
+      const emailFailures = response.data?.email_failures?.length || 0;
+      showResultModal(
+        emailFailures
+          ? `${assignedIds.length} candidate(s) assigned. ${emailFailures} assignment email(s) could not be sent.`
+          : `${assignedIds.length} candidate(s) assigned successfully.`,
+        "success",
+      );
+      await loadData({ silent: true });
+    } catch (requestError) {
+      console.error("Bulk candidate assignment failed", requestError);
+      setShowBulkAssignConfirm(false);
+      showResultModal(
+        requestError?.response?.data?.detail ||
+          requestError?.message ||
+          "Failed to assign selected candidates.",
+        "error",
+      );
+    } finally {
+      setBulkAssigning(false);
+      window.setTimeout(() => {
+        bulkOperationRef.current = false;
+      }, 300);
+    }
+  };
+
   const assignCandidate = async (candidateId) => {
     if (!candidateId || !examId || savingCandidateId) {
+      return;
+    }
+    if (assignmentLimitReached) {
+      showResultModal(
+        `A maximum of ${MAX_CANDIDATES_PER_EXAM} candidates can be assigned to an exam.`,
+        "error",
+      );
       return;
     }
 
@@ -656,15 +831,13 @@ export default function AssignCandidates({ exam, onBack }) {
     assignCandidate(candidateId);
   };
 
+  const CANDIDATES_PER_PAGE = 10;
   const normalizedSearch = search.trim().toLowerCase();
 
   const filtered = allCandidates.filter((candidate) => {
-    if (!normalizedSearch) {
-      return true;
-    }
+    if (!normalizedSearch) return true;
 
     const candidateName = String(candidate.name || "").toLowerCase();
-
     const candidateEmail = String(candidate.email || "").toLowerCase();
 
     return (
@@ -672,6 +845,133 @@ export default function AssignCandidates({ exam, onBack }) {
       candidateEmail.includes(normalizedSearch)
     );
   });
+
+  const sortedCandidates = [...filtered].sort((left, right) => {
+    const leftName = String(left.name || left.email || "");
+    const rightName = String(right.name || right.email || "");
+    const comparison = leftName.localeCompare(rightName, undefined, {
+      sensitivity: "base",
+      numeric: true,
+    });
+    return nameSortOrder === "ASC" ? comparison : -comparison;
+  });
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(sortedCandidates.length / CANDIDATES_PER_PAGE),
+  );
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * CANDIDATES_PER_PAGE;
+  const pageCandidates = sortedCandidates.slice(
+    pageStartIndex,
+    pageStartIndex + CANDIDATES_PER_PAGE,
+  );
+  const shownFrom = sortedCandidates.length === 0 ? 0 : pageStartIndex + 1;
+  const shownTo = Math.min(
+    pageStartIndex + CANDIDATES_PER_PAGE,
+    sortedCandidates.length,
+  );
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const visibleUnassignedIds = pageCandidates
+    .map((candidate) => candidate.user_id)
+    .filter(
+      (candidateId) =>
+        candidateId &&
+        !assigned.some((id) => String(id) === String(candidateId)),
+    );
+  const selectedVisibleCount = visibleUnassignedIds.filter((candidateId) =>
+    selectedCandidateIds.some((id) => String(id) === String(candidateId)),
+  ).length;
+  const allVisibleSelected =
+    visibleUnassignedIds.length > 0 &&
+    selectedVisibleCount === visibleUnassignedIds.length;
+  const visibleAssignedIds = pageCandidates
+    .map((candidate) => candidate.user_id)
+    .filter(
+      (candidateId) =>
+        candidateId &&
+        assigned.some((id) => String(id) === String(candidateId)),
+    );
+  const allVisibleAssignedSelected =
+    visibleAssignedIds.length > 0 &&
+    visibleAssignedIds.every((candidateId) =>
+      selectedRemovalIds.some((id) => String(id) === String(candidateId)),
+    );
+  const selectionMode = selectedRemovalIds.length > 0 ? "REMOVE" : "ASSIGN";
+  const selectedActionCount =
+    selectionMode === "REMOVE"
+      ? selectedRemovalIds.length
+      : selectedCandidateIds.length;
+  const dynamicVisibleIds =
+    selectionMode === "REMOVE" ? visibleAssignedIds : visibleUnassignedIds;
+  const allDynamicVisibleSelected =
+    dynamicVisibleIds.length > 0 &&
+    dynamicVisibleIds.every((candidateId) =>
+      (selectionMode === "REMOVE" ? selectedRemovalIds : selectedCandidateIds).some(
+        (id) => String(id) === String(candidateId),
+      ),
+    );
+
+  const toggleSelectAllAssignedVisible = () => {
+    if (bulkRemoving || bulkAssigning || savingCandidateId || !visibleAssignedIds.length) return;
+    setSelectedRemovalIds((previous) => {
+      if (allVisibleAssignedSelected) {
+        return previous.filter(
+          (id) => !visibleAssignedIds.some((visibleId) => String(visibleId) === String(id)),
+        );
+      }
+      return Array.from(new Set([...previous, ...visibleAssignedIds]));
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    if (
+      bulkAssigning ||
+      bulkRemoving ||
+      savingCandidateId ||
+      dynamicVisibleIds.length === 0
+    ) {
+      return;
+    }
+
+    if (selectionMode === "REMOVE") {
+      setSelectedRemovalIds((previous) => {
+        if (allDynamicVisibleSelected) {
+          return previous.filter(
+            (id) =>
+              !dynamicVisibleIds.some(
+                (visibleId) => String(visibleId) === String(id),
+              ),
+          );
+        }
+        return Array.from(new Set([...previous, ...dynamicVisibleIds]));
+      });
+      return;
+    }
+
+    setSelectedCandidateIds((previous) => {
+      if (allDynamicVisibleSelected) {
+        return previous.filter(
+          (id) =>
+            !dynamicVisibleIds.some(
+              (visibleId) => String(visibleId) === String(id),
+            ),
+        );
+      }
+      const retained = previous.filter(
+        (id) =>
+          !dynamicVisibleIds.some(
+            (visibleId) => String(visibleId) === String(id),
+          ),
+      );
+      const room = Math.max(0, availableSlots - retained.length);
+      return [...retained, ...dynamicVisibleIds.slice(0, room)];
+    });
+  };
 
   return (
     <div
@@ -931,7 +1231,7 @@ export default function AssignCandidates({ exam, onBack }) {
               <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
-            {assigned.length} assigned
+            {assignedCount} / {MAX_CANDIDATES_PER_EXAM} assigned
           </div>
 
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
@@ -958,10 +1258,31 @@ export default function AssignCandidates({ exam, onBack }) {
         >
           <div
             style={{
-              position: "relative",
+              position: "sticky",
+              top: -28,
+              zIndex: 30,
+              margin: "-28px -8px 14px",
+              padding: "28px 8px 12px",
+              background: t.canvas,
+              backgroundImage: t.canvasTint,
+              borderBottom: `1px solid ${t.border}`,
+              boxShadow:
+                t.name === "light"
+                  ? "0 10px 26px rgba(20,28,60,0.08)"
+                  : "0 12px 28px rgba(0,0,0,0.34)",
+              backdropFilter: "blur(18px)",
+              WebkitBackdropFilter: "blur(18px)",
+            }}
+          >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) minmax(190px, 220px)",
+              gap: 10,
               marginBottom: 20,
             }}
           >
+            <div style={{ position: "relative" }}>
             <svg
               width="16"
               height="16"
@@ -987,7 +1308,10 @@ export default function AssignCandidates({ exam, onBack }) {
 
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setCurrentPage(1);
+              }}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
               placeholder="Search candidates by name or email..."
@@ -1005,6 +1329,184 @@ export default function AssignCandidates({ exam, onBack }) {
                 boxShadow: searchFocused ? `0 0 0 3px ${t.accentSoft}` : "none",
               }}
             />
+            </div>
+
+            <div
+              role="group"
+              aria-label="Sort candidates by name"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                alignItems: "center",
+                gap: 4,
+                padding: 4,
+                borderRadius: 12,
+                border: `1px solid ${t.border}`,
+                background: t.inputBg,
+                boxShadow:
+                  t.name === "light"
+                    ? "0 4px 14px rgba(20,28,60,0.05)"
+                    : "inset 0 1px 0 rgba(255,255,255,0.025)",
+              }}
+            >
+              {[
+                { value: "ASC", label: "A to Z", icon: "↑" },
+                { value: "DESC", label: "Z to A", icon: "↓" },
+              ].map((option) => {
+                const active = nameSortOrder === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={active}
+                    title={`Sort names ${option.label}`}
+                    onClick={() => {
+                      setNameSortOrder(option.value);
+                      setCurrentPage(1);
+                    }}
+                    style={{
+                      minHeight: 36,
+                      padding: "0 10px",
+                      borderRadius: 9,
+                      border: active
+                        ? `1px solid ${t.borderAccent}`
+                        : "1px solid transparent",
+                      background: active ? t.accentGradient : "transparent",
+                      color: active ? "#ffffff" : t.textMuted,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 11.5,
+                      fontWeight: 750,
+                      cursor: "pointer",
+                      boxShadow: active ? t.glowAccent : "none",
+                      transition:
+                        "background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{ fontSize: 13, lineHeight: 1 }}
+                    >
+                      {option.icon}
+                    </span>
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 0,
+              padding: "11px 12px",
+              borderRadius: 12,
+              background:
+                selectionMode === "REMOVE" ? t.dangerBg : t.surfaceGlass,
+              border: `1px solid ${
+                selectionMode === "REMOVE" ? `${t.danger}44` : t.border
+              }`,
+              transition: "background 0.2s ease, border-color 0.2s ease",
+            }}
+          >
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 9,
+                color: t.textSecondary,
+                fontSize: 12.5,
+                fontWeight: 650,
+                cursor: dynamicVisibleIds.length ? "pointer" : "not-allowed",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={allDynamicVisibleSelected}
+                disabled={
+                  dynamicVisibleIds.length === 0 ||
+                  bulkAssigning ||
+                  bulkRemoving ||
+                  Boolean(savingCandidateId) ||
+                  (selectionMode === "ASSIGN" && availableSlots === 0)
+                }
+                onChange={toggleSelectAllVisible}
+                style={{
+                  width: 17,
+                  height: 17,
+                  accentColor:
+                    selectionMode === "REMOVE" ? t.danger : t.accent,
+                  cursor: "pointer",
+                }}
+              />
+              {selectionMode === "REMOVE"
+                ? "Select assigned on this page"
+                : "Select unassigned on this page"}
+            </label>
+
+            <span style={{ color: t.textMuted, fontSize: 11.5 }}>
+              {selectionMode === "REMOVE"
+                ? `${selectedRemovalIds.length} selected for removal`
+                : `${selectedCandidateIds.length} selected · ${availableSlots} slot(s) available`}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (selectionMode === "REMOVE") {
+                  setShowBulkRemoveConfirm(true);
+                } else {
+                  setShowBulkAssignConfirm(true);
+                }
+              }}
+              disabled={
+                bulkAssigning ||
+                bulkRemoving ||
+                selectedActionCount === 0
+              }
+              style={{
+                marginLeft: "auto",
+                minWidth: 158,
+                padding: "9px 15px",
+                borderRadius: 10,
+                border:
+                  selectionMode === "REMOVE"
+                    ? `1px solid ${t.danger}55`
+                    : "1px solid transparent",
+                background:
+                  selectionMode === "REMOVE" ? t.dangerBg : t.accentGradient,
+                color:
+                  selectionMode === "REMOVE" ? t.danger : "#ffffff",
+                fontSize: 12.5,
+                fontWeight: 750,
+                cursor:
+                  bulkAssigning || bulkRemoving || selectedActionCount === 0
+                    ? "not-allowed"
+                    : "pointer",
+                opacity:
+                  bulkAssigning || bulkRemoving || selectedActionCount === 0
+                    ? 0.45
+                    : 1,
+                boxShadow:
+                  selectionMode === "ASSIGN" && selectedActionCount > 0
+                    ? t.glowAccent
+                    : "none",
+              }}
+            >
+              {selectionMode === "REMOVE"
+                ? `Remove Selected (${selectedRemovalIds.length})`
+                : bulkAssigning
+                  ? `Assigning ${selectedCandidateIds.length}...`
+                  : `Assign Selected (${selectedCandidateIds.length})`}
+            </button>
+          </div>
           </div>
 
           {loading ? (
@@ -1048,7 +1550,7 @@ export default function AssignCandidates({ exam, onBack }) {
             >
               <span>{error}</span>
             </div>
-          ) : filtered.length === 0 ? (
+          ) : sortedCandidates.length === 0 ? (
             <div
               style={{
                 textAlign: "center",
@@ -1073,6 +1575,7 @@ export default function AssignCandidates({ exam, onBack }) {
               <div>Try a different search term.</div>
             </div>
           ) : (
+            <>
             <div
               style={{
                 display: "flex",
@@ -1080,7 +1583,7 @@ export default function AssignCandidates({ exam, onBack }) {
                 gap: 10,
               }}
             >
-              {filtered.map((candidate, index) => {
+              {pageCandidates.map((candidate, index) => {
                 const candidateId = candidate.user_id;
 
                 const isAssigned = assigned.some(
@@ -1114,6 +1617,41 @@ export default function AssignCandidates({ exam, onBack }) {
                       }s both`,
                     }}
                   >
+                    <input
+                      type="checkbox"
+                      checked={
+                        isAssigned
+                          ? selectedRemovalIds.some(
+                              (id) => String(id) === String(candidateId),
+                            )
+                          : selectedCandidateIds.some(
+                              (id) => String(id) === String(candidateId),
+                            )
+                      }
+                      disabled={
+                        bulkAssigning ||
+                        bulkRemoving ||
+                        Boolean(savingCandidateId) ||
+                        (!isAssigned &&
+                          !selectedCandidateIds.some(
+                            (id) => String(id) === String(candidateId),
+                          ) &&
+                          selectedCandidateIds.length >= availableSlots)
+                      }
+                      onChange={() =>
+                        isAssigned
+                          ? toggleRemovalSelection(candidateId)
+                          : toggleCandidateSelection(candidateId)
+                      }
+                      title={isAssigned ? "Select for removal" : "Select for assignment"}
+                      style={{
+                        width: 18,
+                        height: 18,
+                        flexShrink: 0,
+                        accentColor: isAssigned ? t.success : t.accent,
+                        cursor: isAssigned ? "default" : "pointer",
+                      }}
+                    />
                     <div
                       style={{
                         width: 40,
@@ -1187,21 +1725,39 @@ export default function AssignCandidates({ exam, onBack }) {
                     <button
                       type="button"
                       onClick={() => handleCandidateAction(candidate)}
-                      disabled={Boolean(savingCandidateId)}
+                      disabled={
+                        Boolean(savingCandidateId) ||
+                        (!isAssigned && assignmentLimitReached)
+                      }
+                      title={
+                        !isAssigned && assignmentLimitReached
+                          ? `Maximum ${MAX_CANDIDATES_PER_EXAM} candidates already assigned`
+                          : undefined
+                      }
                       style={{
                         padding: "9px 18px",
                         fontSize: 13,
                         fontWeight: 700,
                         minWidth: 96,
                         borderRadius: 10,
-                        cursor: savingCandidateId ? "wait" : "pointer",
+                        cursor:
+                          savingCandidateId
+                            ? "wait"
+                            : !isAssigned && assignmentLimitReached
+                              ? "not-allowed"
+                              : "pointer",
                         fontFamily: "'Inter', sans-serif",
                         letterSpacing: 0.2,
                         border: isAssigned ? `1px solid ${t.danger}55` : "none",
                         background: isAssigned ? t.dangerBg : t.accentGradient,
                         color: isAssigned ? t.danger : "#ffffff",
                         boxShadow: isAssigned ? "none" : t.glowAccent,
-                        opacity: savingCandidateId && !isSaving ? 0.45 : 1,
+                        opacity:
+                          savingCandidateId && !isSaving
+                            ? 0.45
+                            : !isAssigned && assignmentLimitReached
+                              ? 0.5
+                              : 1,
                       }}
                     >
                       {isSaving
@@ -1210,15 +1766,306 @@ export default function AssignCandidates({ exam, onBack }) {
                           : "Assigning..."
                         : isAssigned
                           ? "Remove"
-                          : "Assign"}
+                          : assignmentLimitReached
+                            ? "Limit reached"
+                            : "Assign"}
                     </button>
                   </div>
                 );
               })}
             </div>
+
+            <div
+              style={{
+                position: "sticky",
+                bottom: -40,
+                zIndex: 28,
+                margin: "16px -8px -40px",
+                padding: "12px 12px 40px",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                borderRadius: "12px 12px 0 0",
+                border: `1px solid ${t.border}`,
+                borderBottom: "none",
+                background: t.surface,
+                backgroundImage: t.canvasTint,
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                boxShadow:
+                  t.name === "light"
+                    ? "0 -10px 26px rgba(20,28,60,0.08)"
+                    : "0 -12px 28px rgba(0,0,0,0.34)",
+              }}
+            >
+              <span
+                style={{
+                  marginRight: "auto",
+                  color: t.textMuted,
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                }}
+              >
+                Showing {shownFrom}-{shownTo} of {sortedCandidates.length} candidates
+              </span>
+
+              <button
+                type="button"
+                disabled={bulkAssigning || bulkRemoving || safeCurrentPage <= 1}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                style={{
+                  minWidth: 76,
+                  padding: "7px 10px",
+                  borderRadius: 9,
+                  border: `1px solid ${t.borderStrong}`,
+                  background: t.surfaceGlass,
+                  color: t.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: 650,
+                  cursor: safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                  opacity: safeCurrentPage <= 1 ? 0.4 : 1,
+                }}
+              >
+                Previous
+              </button>
+
+              {Array.from({ length: totalPages }, (_, index) => index + 1)
+                .filter(
+                  (page) =>
+                    totalPages <= 7 ||
+                    page === 1 ||
+                    page === totalPages ||
+                    Math.abs(page - safeCurrentPage) <= 1,
+                )
+                .map((page, index, pages) => (
+                  <React.Fragment key={page}>
+                    {index > 0 && page - pages[index - 1] > 1 ? (
+                      <span style={{ color: t.textMuted, fontSize: 12 }}>...</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={bulkAssigning || bulkRemoving}
+                      onClick={() => setCurrentPage(page)}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 9,
+                        border: `1px solid ${
+                          page === safeCurrentPage ? t.borderAccent : t.border
+                        }`,
+                        background:
+                          page === safeCurrentPage ? t.accentGradient : t.surfaceGlass,
+                        color: page === safeCurrentPage ? "#ffffff" : t.textSecondary,
+                        fontSize: 11.5,
+                        fontWeight: 750,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {page}
+                    </button>
+                  </React.Fragment>
+                ))}
+
+              <button
+                type="button"
+                disabled={bulkAssigning || bulkRemoving || safeCurrentPage >= totalPages}
+                onClick={() =>
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
+                }
+                style={{
+                  minWidth: 62,
+                  padding: "7px 10px",
+                  borderRadius: 9,
+                  border: `1px solid ${t.borderStrong}`,
+                  background: t.surfaceGlass,
+                  color: t.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: 650,
+                  cursor: safeCurrentPage >= totalPages ? "not-allowed" : "pointer",
+                  opacity: safeCurrentPage >= totalPages ? 0.4 : 1,
+                }}
+              >
+                Next
+              </button>
+            </div>
+            </>
           )}
         </div>
       </div>
+
+      {showBulkAssignConfirm ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bulk-assign-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !bulkAssigning) {
+              setShowBulkAssignConfirm(false);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            background: "rgba(2, 5, 12, 0.78)",
+            backdropFilter: "blur(5px)",
+            WebkitBackdropFilter: "blur(5px)",
+            animation: "overlayEnter 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 450,
+              background: t.surfaceElevated,
+              border: `1px solid ${t.borderAccent}`,
+              borderRadius: 16,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
+              overflow: "hidden",
+              animation: "modalEnter 0.22s ease",
+            }}
+          >
+            <div style={{ padding: "22px 22px 14px" }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 16,
+                  background: t.accentSoft,
+                  border: `1px solid ${t.borderAccent}`,
+                  color: t.accent,
+                }}
+              >
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" />
+                  <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+              </div>
+              <h3 id="bulk-assign-title" style={{ margin: 0, color: t.textPrimary, fontSize: 18, fontWeight: 700 }}>
+                Assign {selectedCandidateIds.length} candidate(s)?
+              </h3>
+              <p style={{ margin: "10px 0 0", color: t.textSecondary, fontSize: 13, lineHeight: 1.65 }}>
+                The selected candidates will receive access to <strong style={{ color: t.textPrimary }}>{exam?.name || "this exam"}</strong>. Assignment notification emails will also be sent.
+              </p>
+              <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 10, background: t.accentSoft, border: `1px solid ${t.borderAccent}`, color: t.textSecondary, fontSize: 11.5 }}>
+                {assignedCount} currently assigned · {selectedCandidateIds.length} selected · {availableSlots} slot(s) available
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 22px 22px" }}>
+              <button
+                type="button"
+                disabled={bulkAssigning}
+                onClick={() => setShowBulkAssignConfirm(false)}
+                style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${t.borderStrong}`, background: t.surfaceGlass, color: t.textSecondary, fontSize: 13, fontWeight: 600, cursor: bulkAssigning ? "not-allowed" : "pointer", opacity: bulkAssigning ? 0.5 : 1 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkAssigning}
+                onClick={assignSelectedCandidates}
+                style={{ minWidth: 155, border: "none", borderRadius: 9, padding: "9px 16px", background: t.accentGradient, color: "#ffffff", fontSize: 13, fontWeight: 700, cursor: bulkAssigning ? "wait" : "pointer", opacity: bulkAssigning ? 0.65 : 1, boxShadow: t.glowAccent }}
+              >
+                {bulkAssigning ? "Assigning..." : "Assign Candidates"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showBulkRemoveConfirm ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bulk-remove-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !bulkRemoving) {
+              setShowBulkRemoveConfirm(false);
+            }
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            background: "rgba(2, 5, 12, 0.78)",
+            backdropFilter: "blur(5px)",
+            WebkitBackdropFilter: "blur(5px)",
+            animation: "overlayEnter 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 450,
+              background: t.surfaceElevated,
+              border: `1px solid ${t.danger}55`,
+              borderRadius: 16,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
+              overflow: "hidden",
+              animation: "modalEnter 0.22s ease",
+            }}
+          >
+            <div style={{ padding: "22px 22px 14px" }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 16,
+                  background: t.dangerBg,
+                  border: `1px solid ${t.danger}44`,
+                  color: t.danger,
+                  fontSize: 22,
+                  fontWeight: 800,
+                }}
+              >
+                !
+              </div>
+              <h3 id="bulk-remove-title" style={{ margin: 0, color: t.textPrimary, fontSize: 18, fontWeight: 700 }}>
+                Remove {selectedRemovalIds.length} assigned candidate(s)?
+              </h3>
+              <p style={{ margin: "10px 0 0", color: t.textSecondary, fontSize: 13, lineHeight: 1.65 }}>
+                The selected candidates will lose access to <strong style={{ color: t.textPrimary }}>{exam?.name || "this exam"}</strong>. This action removes their assignment records.
+              </p>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 22px 22px" }}>
+              <button
+                type="button"
+                disabled={bulkRemoving}
+                onClick={() => setShowBulkRemoveConfirm(false)}
+                style={{ padding: "9px 16px", borderRadius: 9, border: `1px solid ${t.borderStrong}`, background: t.surfaceGlass, color: t.textSecondary, fontSize: 13, fontWeight: 600, cursor: bulkRemoving ? "not-allowed" : "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkRemoving}
+                onClick={removeSelectedCandidates}
+                style={{ minWidth: 150, border: `1px solid ${t.danger}88`, borderRadius: 9, padding: "9px 16px", background: t.dangerGradient, color: "#ffffff", fontSize: 13, fontWeight: 700, cursor: bulkRemoving ? "wait" : "pointer", opacity: bulkRemoving ? 0.65 : 1 }}
+              >
+                {bulkRemoving ? "Removing..." : "Remove Candidates"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {candidateToRemove ? (
         <div

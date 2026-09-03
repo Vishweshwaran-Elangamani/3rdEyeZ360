@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   useState,
   useEffect,
   useCallback,
@@ -268,7 +268,8 @@ function normalizeCandidate(c) {
     // Do not use c.name here. Assessment socket payloads use name for the exam name.
     candidatename: c.candidatename ?? c.candidate_name ?? null,
     candidateemail: c.candidateemail ?? c.candidate_email ?? "",
-    status: c.status ?? "ASSIGNED",
+    // Assessment-specific aliases take priority over a stale generic status field.
+    status: c.assessmentstatus ?? c.assessment_status ?? c.status ?? "ASSIGNED",
     violationcount: c.violationcount ?? c.violation_count ?? 0,
     warningcount: c.warningcount ?? c.warning_count ?? 0,
     riskscore: c.riskscore ?? c.risk_score ?? 0,

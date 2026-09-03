@@ -587,7 +587,8 @@ function normalizeExam(raw) {
 }
 function normalizeAssessment(raw) {
   if (!raw) return null;
-  const status = toUpper(pick(raw.status, raw.assessmentstatus, raw.assessment_status, ""));
+  // Assessment lifecycle aliases must win over a stale generic status field.
+  const status = toUpper(pick(raw.assessmentstatus, raw.assessment_status, raw.status, ""));
   const finalstatus = toUpper(pick(raw.finalstatus, raw.final_status, ""));
   const examstatus = toUpper(pick(raw.examstatus, raw.exam_status, raw.runtimestatus, raw.status_exam, ""));
   return {
@@ -1192,6 +1193,15 @@ clearWaitingSession();
     onReturnToDashboard,
     startAiMonitoring,
   ]);
+
+  // Establish the ACTIVE backend session as soon as the active workspace mounts.
+  // Previously this was only attempted while opening an allowed website, so the
+  // camera could be live while the persisted assessment remained READY.
+  useEffect(() => {
+    if (!isExamRunning || !assessmentId || !accessToken) return;
+    if (entryGrantedRef.current || entryRequestRef.current) return;
+    void obtainEntryPermission();
+  }, [isExamRunning, assessmentId, accessToken, obtainEntryPermission]);
 
   const resizeBrowserToArea = useCallback(async () => {
     if (

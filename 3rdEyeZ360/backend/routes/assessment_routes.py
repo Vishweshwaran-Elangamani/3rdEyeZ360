@@ -84,6 +84,17 @@ def _exam_query(exam_id: str) -> dict:
     return {"$or": [{"examid": exam_id}, {"exam_id": exam_id}]}
 
 
+def _assessment_status(document: dict, default="") -> str:
+    """Return lifecycle status, preferring assessment-specific compatibility fields."""
+    value = (
+        (document or {}).get("assessmentstatus")
+        or (document or {}).get("assessment_status")
+        or (document or {}).get("status")
+        or default
+    )
+    return _normalize_status(value, default)
+
+
 async def _get_assessment_doc(db, assessment_id: str):
     return await db.assessments.find_one(_assessment_query(assessment_id))
 
@@ -209,7 +220,7 @@ def _merge_exam_into_assessment(assessment: dict, exam: dict | None) -> dict:
     candidate_id = assessment.get("candidateid") or assessment.get("candidate_id")
     examiner_id = assessment.get("examinerid") or assessment.get("examiner_id")
 
-    status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    status = _assessment_status(assessment)
     final_status = _normalize_status(assessment.get("finalstatus") or assessment.get("final_status"))
 
     data.update(
@@ -562,7 +573,7 @@ async def detect_assessment_activity(body: DetectionBody, current_user=Depends(r
     if current_user["role"] == "Examiner" and str(user_id) != str(assessment_examiner_id):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    status = _assessment_status(assessment)
     if status not in {"ACTIVE", "PAUSED"}:
         return {
             "success": True,
@@ -1012,7 +1023,7 @@ async def get_assessment(assessment_id: str, current_user=Depends(requirerole("C
     if current_user["role"] == "Examiner" and examiner_id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    status = _assessment_status(assessment)
     if current_user["role"] == "Candidate" and _has_entered(assessment) and status in {"ACTIVE", "PAUSED"} and _session_id(assessment) and _heartbeat_expired(assessment):
         await _mark_reentry_required(db, assessment_id, "Previous assessment session stopped responding", "HEARTBEAT_TIMEOUT")
         assessment = await _get_assessment_doc(db, assessment_id)
@@ -1058,7 +1069,7 @@ async def enter_assessment(assessment_id: str, body: EnterAssessmentBody, curren
     if candidate_id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    current_status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    current_status = _assessment_status(assessment)
     if _terminal_status(current_status):
         raise HTTPException(status_code=400, detail=f"Assessment cannot be entered while status is {current_status}")
 
@@ -1177,7 +1188,7 @@ async def heartbeat(assessment_id: str, body: HeartbeatBody, current_user=Depend
     if _session_id(assessment) != body.sessionid:
         raise HTTPException(status_code=409, detail="Assessment session is no longer valid")
 
-    status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    status = _assessment_status(assessment)
     if status not in {"ACTIVE", "PAUSED"}:
         raise HTTPException(status_code=409, detail="Assessment session is not active")
 
@@ -1197,7 +1208,7 @@ async def interrupt(assessment_id: str, body: InterruptAssessmentBody, current_u
     if (assessment.get("candidateid") or assessment.get("candidate_id")) != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    status = _assessment_status(assessment)
     if _terminal_status(status) or not _has_entered(assessment):
         return {"success": True, "status": status}
     if body.sessionid and _session_id(assessment) and body.sessionid != _session_id(assessment):
@@ -1237,7 +1248,7 @@ async def update_assessment_status(assessment_id: str, body: dict, current_user=
         raise HTTPException(status_code=404, detail="Exam not found")
 
     exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
-    current_status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    current_status = _assessment_status(assessment)
 
     if current_user["role"] == "Candidate":
         if new_status != "READY":
@@ -1284,7 +1295,7 @@ async def assessment_action(assessment_id: str, body: dict, current_user=Depends
         raise HTTPException(status_code=404, detail="Exam not found")
 
     exam_status = _normalize_status(exam.get("status") or exam.get("examstatus"))
-    current_status = _normalize_status(assessment.get("status") or assessment.get("assessmentstatus"))
+    current_status = _assessment_status(assessment)
     now = datetime.utcnow()
     update = {"updatedat": now, "updated_at": now, "lastaction": action, "lastactionby": user_id}
     if reason:

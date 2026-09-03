@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useState,
   useEffect,
   useCallback,
@@ -247,6 +247,15 @@ function normalizeExam(exam) {
     timeframes: exam.timeframes ?? exam.flexibleintervals ?? exam.flexible_intervals ?? [],
     sessionnumber: Number(exam.sessionnumber ?? exam.session_number ?? 0),
     permanentlystopped: Boolean(exam.permanentlystopped ?? exam.permanently_stopped),
+    violationthreshold: Math.max(
+      1,
+      Number(
+        exam.violationthreshold ??
+          exam.violation_threshold ??
+          exam.threshold ??
+          10,
+      ) || 10,
+    ),
   };
 }
 
@@ -1390,6 +1399,247 @@ function RequestRejectionModal({
   );
 }
 
+/* ============= Violation evidence modal ============= */
+function EvidenceModal({ open, theme, evidence, loading, error, onClose }) {
+  const t = THEMES[theme];
+  if (!open) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10020,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        background: t.overlay,
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Violation evidence"
+        style={{
+          width: "min(920px, calc(100vw - 48px))",
+          maxHeight: "calc(100vh - 64px)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          borderRadius: 22,
+          background: t.surfaceElevated,
+          border: `1px solid ${t.borderStrong}`,
+          boxShadow: "0 32px 100px rgba(0,0,0,0.6)",
+        }}
+      >
+        <div
+          style={{
+            minHeight: 68,
+            padding: "14px 18px 14px 22px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            borderBottom: `1px solid ${t.border}`,
+            background: t.dangerBg,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                color: t.textPrimary,
+                fontSize: 18,
+                fontWeight: 800,
+                fontFamily: "'Space Grotesk', sans-serif",
+              }}
+            >
+              Violation Evidence
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                color: t.textMuted,
+                fontSize: 11.5,
+                textTransform: "capitalize",
+              }}
+            >
+              {String(evidence?.detail || "Monitoring violation").replaceAll("_", " ")}
+              {evidence?.timestamp
+                ? ` · ${new Date(evidence.timestamp).toLocaleString()}`
+                : ""}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close evidence modal"
+            style={{
+              width: 36,
+              height: 36,
+              flexShrink: 0,
+              borderRadius: 11,
+              border: `1px solid ${t.border}`,
+              background: t.surfaceGlass,
+              color: t.textPrimary,
+              cursor: "pointer",
+              fontSize: 21,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            padding: 22,
+          }}
+        >
+          {loading ? (
+            <div
+              style={{
+                minHeight: 360,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+                color: t.textMuted,
+              }}
+            >
+              <span
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: "50%",
+                  border: `3px solid ${t.border}`,
+                  borderTopColor: t.accent,
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+              Loading evidence...
+            </div>
+          ) : error ? (
+            <div
+              style={{
+                padding: 24,
+                borderRadius: 14,
+                color: t.danger,
+                background: t.dangerBg,
+                border: `1px solid ${t.danger}55`,
+              }}
+            >
+              {error}
+            </div>
+          ) : evidence?.imageurl || evidence?.image_url ? (
+            <div style={{ display: "grid", gap: 18 }}>
+              <div
+                style={{
+                  overflow: "auto",
+                  maxHeight: "65vh",
+                  borderRadius: 16,
+                  background: "#050608",
+                  border: `1px solid ${t.borderStrong}`,
+                  textAlign: "center",
+                }}
+              >
+                <img
+                  src={evidence.imageurl || evidence.image_url}
+                  alt="Captured violation evidence"
+                  style={{
+                    display: "block",
+                    maxWidth: "100%",
+                    height: "auto",
+                    margin: "0 auto",
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {[
+                  ["Violation", String(evidence.detail || "Unknown").replaceAll("_", " ")],
+                  ["Confidence", Number.isFinite(Number(evidence.confidence))
+                    ? `${Math.round(Number(evidence.confidence) <= 1 ? Number(evidence.confidence) * 100 : Number(evidence.confidence))}%`
+                    : "Unavailable"],
+                  ["Captured", evidence.timestamp
+                    ? new Date(evidence.timestamp).toLocaleString()
+                    : "Unavailable"],
+                  ["Violation ID", evidence.violationid || evidence.violation_id || "Unavailable"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      background: t.surfaceGlass,
+                      border: `1px solid ${t.border}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: t.textMuted,
+                        fontSize: 9,
+                        fontWeight: 800,
+                        letterSpacing: 0.6,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {label}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 5,
+                        color: t.textPrimary,
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        textTransform: label === "Violation" ? "capitalize" : "none",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {evidence.message ? (
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 12,
+                    color: t.textSecondary,
+                    background: t.surfaceGlass,
+                    border: `1px solid ${t.border}`,
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  {evidence.message}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ color: t.textMuted, textAlign: "center", padding: 50 }}>
+              Evidence is unavailable for this violation.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ============= Transition overlay (start / end) ============= */
 
 function TransitionOverlay({ open, theme, variant, title, subtitle }) {
@@ -2169,6 +2419,14 @@ export default function ExaminerDashboard() {
   const [liveData, setLiveData] = useState({});
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [violations, setViolations] = useState([]);
+  const [warningEvents, setWarningEvents] = useState([]);
+  const [violationEvents, setViolationEvents] = useState([]);
+  const [candidateEventTab, setCandidateEventTab] = useState("warnings");
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [evidenceModalOpen, setEvidenceModalOpen] = useState(false);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState("");
+  const [selectedEvidence, setSelectedEvidence] = useState(null);
   const [broadcastMsg, setBroadcastMsg] = useState("");
   const [loadingExams, setLoadingExams] = useState(false);
   const [startingExam, setStartingExam] = useState(false);
@@ -2194,6 +2452,10 @@ export default function ExaminerDashboard() {
   const [reasonWorking, setReasonWorking] = useState(false);
   const [requestRejectionModal, setRequestRejectionModal] = useState(null);
   const [requestRejectionReason, setRequestRejectionReason] = useState("");
+  const [thresholdEditing, setThresholdEditing] = useState(false);
+  const [thresholdInput, setThresholdInput] = useState("10");
+  const [thresholdSaving, setThresholdSaving] = useState(false);
+  const [thresholdError, setThresholdError] = useState("");
 
   const headers = useMemo(
     () => ({ Authorization: `Bearer ${accessToken}` }),
@@ -2207,6 +2469,20 @@ export default function ExaminerDashboard() {
 
   const selectedExamId = selectedExam?.examid ?? selectedExam?.exam_id ?? null;
   const examinerId = user?.userid || user?.user_id;
+  useEffect(() => {
+    const value = Math.max(
+      1,
+      Number(
+        selectedExam?.violationthreshold ??
+          selectedExam?.violation_threshold ??
+          selectedExam?.threshold ??
+          10,
+      ) || 10,
+    );
+    setThresholdInput(String(value));
+    setThresholdEditing(false);
+    setThresholdError("");
+  }, [selectedExamId, selectedExam?.violationthreshold]);
   const {
     streams: candidateCameraStreams,
     states: candidateCameraStates,
@@ -2291,18 +2567,107 @@ export default function ExaminerDashboard() {
     [headers],
   );
 
-  const loadViolations = useCallback(
+  const loadMonitoringEvents = useCallback(
     async (candidateId, examId) => {
-      if (!candidateId || !examId) return;
+      if (!candidateId || !examId) return null;
+      setEventsLoading(true);
       try {
         const res = await axios.get(
-          `${API}/api/violations/${examId}/${candidateId}`,
+          `${API}/api/violations/${examId}/${candidateId}/events`,
           { headers },
         );
-        setViolations(Array.isArray(res.data) ? res.data : []);
-      } catch (e) {
-        console.error("loadViolations:", e.message);
+        const data = res.data || {};
+        const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+        const violationsList = Array.isArray(data.violations)
+          ? data.violations
+          : [];
+
+        setWarningEvents(warnings);
+        setViolationEvents(violationsList);
+        setViolations(violationsList);
+
+        setCandidates((previous) =>
+          previous.map((candidate) =>
+            String(candidate.candidateid) === String(candidateId)
+              ? {
+                  ...candidate,
+                  warningcount:
+                    data.warningcount ?? data.warning_count ?? warnings.length,
+                  violationcount:
+                    data.violationcount ??
+                    data.violation_count ??
+                    violationsList.length,
+                  credibilityscore:
+                    data.credibilityscore ??
+                    data.credibility_score ??
+                    candidate.credibilityscore,
+                }
+              : candidate,
+          ),
+        );
+
+        setSelectedCandidate((previous) =>
+          previous && String(previous.candidateid) === String(candidateId)
+            ? {
+                ...previous,
+                warningcount:
+                  data.warningcount ?? data.warning_count ?? warnings.length,
+                violationcount:
+                  data.violationcount ??
+                  data.violation_count ??
+                  violationsList.length,
+                credibilityscore:
+                  data.credibilityscore ??
+                  data.credibility_score ??
+                  previous.credibilityscore,
+              }
+            : previous,
+        );
+
+        return data;
+      } catch (error) {
+        console.error("loadMonitoringEvents:", error.message);
+        setWarningEvents([]);
+        setViolationEvents([]);
         setViolations([]);
+        return null;
+      } finally {
+        setEventsLoading(false);
+      }
+    },
+    [headers],
+  );
+
+  const loadViolations = useCallback(
+    async (candidateId, examId) =>
+      loadMonitoringEvents(candidateId, examId),
+    [loadMonitoringEvents],
+  );
+
+  const openViolationEvidence = useCallback(
+    async (event) => {
+      const violationId = event?.violationid ?? event?.violation_id;
+      if (!violationId) return;
+
+      setEvidenceModalOpen(true);
+      setEvidenceLoading(true);
+      setEvidenceError("");
+      setSelectedEvidence({ ...event });
+
+      try {
+        const response = await axios.get(
+          `${API}/api/violations/${violationId}/evidence`,
+          { headers },
+        );
+        setSelectedEvidence({ ...event, ...(response.data || {}) });
+      } catch (error) {
+        setEvidenceError(
+          error?.response?.data?.detail ||
+            error?.message ||
+            "Evidence could not be loaded.",
+        );
+      } finally {
+        setEvidenceLoading(false);
       }
     },
     [headers],
@@ -2484,14 +2849,29 @@ export default function ExaminerDashboard() {
 
     const onViolationAlert = ({ candidate_id, candidateid, violation }) => {
       const candidateId = candidate_id ?? candidateid;
-      if (!candidateId) return;
-      setLiveData((previous) => ({
-        ...previous,
-        [candidateId]: {
-          ...(previous[candidateId] || {}),
-          latestViolation: violation,
-        },
-      }));
+      if (!candidateId || !violation) return;
+
+      setLiveData((previous) => {
+        const current = previous[candidateId] || {};
+        const recentEvents = [
+          violation,
+          ...(Array.isArray(current.recentEvents) ? current.recentEvents : []),
+        ].slice(0, 100);
+
+        return {
+          ...previous,
+          [candidateId]: {
+            ...current,
+            latestViolation: violation,
+            recentEvents,
+          },
+        };
+      });
+
+      if (selectedExamId) void loadCandidates(selectedExamId);
+      if (String(selectedCandidate?.candidateid || "") === String(candidateId)) {
+        void loadMonitoringEvents(candidateId, selectedExamId);
+      }
     };
 
     const joinSelectedExamRoom = () => {
@@ -2545,6 +2925,9 @@ export default function ExaminerDashboard() {
     loadExamById,
     loadReentryRequests,
     loadExams,
+    loadViolations,
+    loadMonitoringEvents,
+    selectedCandidate?.candidateid,
   ]);
 
   useEffect(() => {
@@ -2637,6 +3020,11 @@ export default function ExaminerDashboard() {
     setSelectedExam(normalized);
     setSelectedCandidate(null);
     setViolations([]);
+    setWarningEvents([]);
+    setViolationEvents([]);
+    setCandidateEventTab("warnings");
+    setSelectedEvidence(null);
+    setEvidenceModalOpen(false);
     setLiveData({});
     setReentryRequests([]);
     setCandidateSearch("");
@@ -2717,6 +3105,47 @@ export default function ExaminerDashboard() {
     candidateCameraStates,
     requestCandidateCamera,
   ]);
+  const saveViolationThreshold = async () => {
+    if (!selectedExamId || thresholdSaving) return;
+    const value = Number(thresholdInput);
+    if (!Number.isInteger(value) || value < 1) {
+      setThresholdError("Violation threshold must be a whole number of at least 1.");
+      return;
+    }
+    setThresholdSaving(true);
+    setThresholdError("");
+    try {
+      const response = await axios.patch(
+        `${API}/api/exams/${selectedExamId}/violation-threshold`,
+        { violationthreshold: value },
+        { headers },
+      );
+      const updatedExam = normalizeExam(response.data?.exam ?? response.data);
+      if (updatedExam?.examid) {
+        setSelectedExam((previous) => ({ ...(previous || {}), ...updatedExam }));
+        setExams((previous) =>
+          previous.map((item) =>
+            item.examid === updatedExam.examid ? { ...item, ...updatedExam } : item,
+          ),
+        );
+      } else {
+        await loadExamById(selectedExamId);
+      }
+      setThresholdInput(String(value));
+      setThresholdEditing(false);
+      setActionMsg(`Violation threshold updated to ${value}`);
+      setTimeout(() => setActionMsg(""), 3000);
+    } catch (error) {
+      const message = error?.response?.data?.detail || error?.message || "Threshold update failed.";
+      setThresholdError(message);
+      setActionMsg(`Threshold update failed: ${message}`);
+      setTimeout(() => setActionMsg(""), 4000);
+    } finally {
+      setThresholdSaving(false);
+    }
+  };
+
+
 
   const startExam = async () => {
     if (!selectedExamId || startingExam || !canStartExam) return;
@@ -2900,6 +3329,11 @@ export default function ExaminerDashboard() {
     setCandidates([]);
     setLiveData({});
     setViolations([]);
+    setWarningEvents([]);
+    setViolationEvents([]);
+    setCandidateEventTab("warnings");
+    setSelectedEvidence(null);
+    setEvidenceModalOpen(false);
     setReentryRequests([]);
     setMonitorTab("grid");
     setUnreadPrivateMessages({});
@@ -3978,6 +4412,12 @@ export default function ExaminerDashboard() {
         )
       : candidates;
 
+    const selectedCandidateEvents =
+      candidateEventTab === "warnings" ? warningEvents : violationEvents;
+    const selectedCandidateEventCount =
+      candidateEventTab === "warnings"
+        ? Number(selectedCandidate?.warningcount || warningEvents.length || 0)
+        : Number(selectedCandidate?.violationcount || violationEvents.length || 0);
     const reasonMeta =
       reasonModal?.action === "terminate"
         ? {
@@ -4102,6 +4542,60 @@ export default function ExaminerDashboard() {
             }}
           >
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
+            <div
+              style={{
+                minHeight: 40,
+                padding: thresholdEditing ? "4px 6px 4px 12px" : "0 6px 0 14px",
+                borderRadius: 12,
+                border: `1px solid ${thresholdEditing ? t.borderAccent : t.border}`,
+                background: thresholdEditing ? t.accentSoft : t.surfaceGlass,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                flexShrink: 0,
+              }}
+              title="Confirmed violation limit before automatic candidate exit"
+            >
+              <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.05 }}>
+                <span style={{ color: t.textMuted, fontSize: 8, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                  Violation Limit
+                </span>
+                {!thresholdEditing ? (
+                  <span style={{ marginTop: 3, color: t.danger, fontSize: 16, fontWeight: 900, fontFamily: "'Space Grotesk', sans-serif" }}>
+                    {selectedExam?.violationthreshold ?? 10}
+                  </span>
+                ) : null}
+              </div>
+              {thresholdEditing ? (
+                <>
+                  <input
+                    autoFocus type="number" min="1" step="1" value={thresholdInput}
+                    disabled={thresholdSaving}
+                    onChange={(event) => { setThresholdInput(event.target.value); setThresholdError(""); }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") { event.preventDefault(); void saveViolationThreshold(); }
+                      if (event.key === "Escape") {
+                        setThresholdInput(String(selectedExam?.violationthreshold ?? 10));
+                        setThresholdEditing(false); setThresholdError("");
+                      }
+                    }}
+                    aria-label="Violation threshold"
+                    style={{ width: 62, height: 30, boxSizing: "border-box", borderRadius: 8, border: `1px solid ${thresholdError ? t.danger : t.borderStrong}`, background: t.inputBg, color: t.textPrimary, padding: "0 8px", outline: "none", fontSize: 14, fontWeight: 800, textAlign: "center" }}
+                  />
+                  <button type="button" disabled={thresholdSaving} onClick={() => void saveViolationThreshold()} title="Save violation threshold" style={{ width: 30, height: 30, padding: 0, border: "none", borderRadius: 8, background: thresholdSaving ? t.borderStrong : t.successGradient, color: "#fff", cursor: thresholdSaving ? "wait" : "pointer" }}>
+                    {thresholdSaving ? "…" : "✓"}
+                  </button>
+                  <button type="button" disabled={thresholdSaving} onClick={() => { setThresholdInput(String(selectedExam?.violationthreshold ?? 10)); setThresholdEditing(false); setThresholdError(""); }} title="Cancel threshold edit" style={{ width: 30, height: 30, padding: 0, borderRadius: 8, border: `1px solid ${t.border}`, background: t.surfaceGlass, color: t.textSecondary, cursor: "pointer" }}>
+                    ×
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={() => { setThresholdInput(String(selectedExam?.violationthreshold ?? 10)); setThresholdEditing(true); setThresholdError(""); }} title="Edit violation threshold" style={{ width: 30, height: 30, padding: 0, borderRadius: 8, border: `1px solid ${t.border}`, background: t.surfaceGlass, color: t.textSecondary, cursor: "pointer" }}>
+                  ✎
+                </button>
+              )}
+            </div>
+
 
             {canStartExam ? (
               <GradientButton theme={theme} onClick={startExam} disabled={startingExam} gradient={t.successGradient} glow={t.glowSuccess}>
@@ -4156,6 +4650,12 @@ export default function ExaminerDashboard() {
             <LogoutButton theme={theme} />
           </div>
         </div>
+        {thresholdError ? (
+          <div style={{ flexShrink: 0, padding: "8px 20px", background: t.dangerBg, borderBottom: `1px solid ${t.danger}55`, color: t.danger, fontSize: 11.5, fontWeight: 700 }}>
+            {thresholdError}
+          </div>
+        ) : null}
+
 
         {/* Tabs + broadcast */}
         <div
@@ -4347,8 +4847,67 @@ export default function ExaminerDashboard() {
                           Review reason: {req.reviewreason}
                         </div>
                       )}
+                      {req.type === "REENTRY" ? (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                            gap: 8,
+                            marginBottom: 12,
+                          }}
+                        >
+                          {[
+                            ["Warnings", req.warningcount ?? req.warning_count ?? 0, t.warning],
+                            ["Violations", req.violationcount ?? req.violation_count ?? 0, t.danger],
+                            ["Limit", req.violationthreshold ?? req.violation_threshold ?? "-", t.danger],
+                            ["Credibility", `${req.credibilityscore ?? req.credibility_score ?? 100}%`, t.accent],
+                          ].map(([label, value, color]) => (
+                            <div
+                              key={label}
+                              style={{
+                                padding: "9px 6px",
+                                borderRadius: 10,
+                                textAlign: "center",
+                                background: t.surfaceGlass,
+                                border: `1px solid ${t.border}`,
+                              }}
+                            >
+                              <div style={{ color: t.textMuted, fontSize: 8.5, fontWeight: 800, textTransform: "uppercase" }}>
+                                {label}
+                              </div>
+                              <div style={{ marginTop: 4, color, fontSize: 16, fontWeight: 900 }}>
+                                {value}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       {req.status === "PENDING" ? (
-                        <div style={{ display: "flex", gap: 8 }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {req.type === "REENTRY" ? (
+                            <GhostButton
+                              theme={theme}
+                              onClick={() => {
+                                const candidate = candidates.find(
+                                  (item) =>
+                                    String(item.candidateid) ===
+                                    String(req.candidateid),
+                                );
+                                if (candidate) {
+                                  setSelectedCandidate(candidate);
+                                  setCandidateEventTab("violations");
+                                  setMonitorTab("grid");
+                                  void loadMonitoringEvents(
+                                    candidate.candidateid,
+                                    selectedExamId,
+                                  );
+                                }
+                              }}
+                              style={{ padding: "8px 16px" }}
+                            >
+                              Review evidence
+                            </GhostButton>
+                          ) : null}
                           <GradientButton
                             theme={theme}
                             onClick={() => handleReentryReview(req, true)}
@@ -4514,7 +5073,7 @@ export default function ExaminerDashboard() {
                       }
                       onClick={() => {
                         setSelectedCandidate(c);
-                        loadViolations(c.candidateid, selectedExamId);
+                        loadMonitoringEvents(c.candidateid, selectedExamId);
                         requestCandidateCamera(c.candidateid, c.assessmentid);
                       }}
                       theme={theme}
@@ -4826,7 +5385,7 @@ export default function ExaminerDashboard() {
                     </div>
                   </div>
 
-                  {/* SCROLLABLE MIDDLE: live data + violations. */}
+                  {/* SCROLLABLE MIDDLE: recent warnings and violations only. */}
                   <div
                     style={{
                       flex: "1 1 auto",
@@ -4836,6 +5395,7 @@ export default function ExaminerDashboard() {
                       overflowX: "hidden",
                       padding: "16px 20px 20px",
                       boxSizing: "border-box",
+                      scrollbarGutter: "stable",
                     }}
                   >
                     <div
@@ -4843,227 +5403,274 @@ export default function ExaminerDashboard() {
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        marginBottom: 12,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 800,
-                          color: t.textPrimary,
-                          textTransform: "uppercase",
-                          letterSpacing: 0.7,
-                        }}
-                      >
-                        Latest Live Data
-                      </div>
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          fontSize: 9,
-                          fontWeight: 700,
-                          color: liveData[selectedCandidate.candidateid]
-                            ? t.success
-                            : t.textMuted,
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 7,
-                            height: 7,
-                            borderRadius: "50%",
-                            background: liveData[selectedCandidate.candidateid]
-                              ? t.success
-                              : t.textFaint,
-                            boxShadow: liveData[selectedCandidate.candidateid]
-                              ? `0 0 7px ${t.success}`
-                              : "none",
-                            animation: liveData[selectedCandidate.candidateid]
-                              ? "pulseDot 1.5s ease-in-out infinite"
-                              : "none",
-                          }}
-                        />
-                        {liveData[selectedCandidate.candidateid]
-                          ? "Streaming"
-                          : "No signal"}
-                      </span>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
                         gap: 10,
-                        marginBottom: 22,
+                        marginBottom: 12,
+                        position: "sticky",
+                        top: -16,
+                        zIndex: 2,
+                        padding: "16px 0 10px",
+                        background: t.panelBg,
                       }}
                     >
-                      {[
-                        [
-                          "Status",
-                          liveData[selectedCandidate.candidateid]?.status
-                            ? formatStatus(
-                                liveData[selectedCandidate.candidateid].status,
-                              )
-                            : "—",
-                        ],
-                        [
-                          "Focus",
-                          liveData[selectedCandidate.candidateid]?.focus ?? "—",
-                        ],
-                        [
-                          "Noise",
-                          liveData[selectedCandidate.candidateid]
-                            ?.noise_level ?? "—",
-                        ],
-                        [
-                          "Face Count",
-                          liveData[selectedCandidate.candidateid]?.face_count ??
-                            "—",
-                        ],
-                      ].map(([label, value]) => (
-                        <div
-                          key={label}
+                      <div style={{ display: "flex", gap: 8, minWidth: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => setCandidateEventTab("warnings")}
                           style={{
-                            minWidth: 0,
-                            padding: "12px 13px",
-                            background: t.surfaceGlass,
-                            border: `1px solid ${t.border}`,
-                            borderRadius: 12,
+                            padding: "7px 11px",
+                            borderRadius: 9,
+                            border: `1px solid ${
+                              candidateEventTab === "warnings"
+                                ? t.warning + "88"
+                                : t.border
+                            }`,
+                            background:
+                              candidateEventTab === "warnings"
+                                ? t.warningBg
+                                : t.surfaceGlass,
+                            color:
+                              candidateEventTab === "warnings"
+                                ? t.warning
+                                : t.textSecondary,
+                            cursor: "pointer",
+                            fontSize: 10.5,
+                            fontWeight: 800,
                           }}
                         >
-                          <div
-                            style={{
-                              fontSize: 9,
-                              color: t.textMuted,
-                              fontWeight: 800,
-                              letterSpacing: 0.5,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {label}
-                          </div>
-                          <div
-                            title={String(value)}
-                            style={{
-                              marginTop: 6,
-                              color: t.textPrimary,
-                              fontSize: 15,
-                              fontWeight: 700,
-                              fontFamily: "'Space Grotesk', sans-serif",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {value}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        marginBottom: 12,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 800,
-                          color: t.textPrimary,
-                          textTransform: "uppercase",
-                          letterSpacing: 0.7,
-                        }}
-                      >
-                        Violations
+                          Warnings {selectedCandidate?.warningcount ?? warningEvents.length}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCandidateEventTab("violations")}
+                          style={{
+                            padding: "7px 11px",
+                            borderRadius: 9,
+                            border: `1px solid ${
+                              candidateEventTab === "violations"
+                                ? t.danger + "88"
+                                : t.border
+                            }`,
+                            background:
+                              candidateEventTab === "violations"
+                                ? t.dangerBg
+                                : t.surfaceGlass,
+                            color:
+                              candidateEventTab === "violations"
+                                ? t.danger
+                                : t.textSecondary,
+                            cursor: "pointer",
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                          }}
+                        >
+                          Violations {selectedCandidate?.violationcount ?? violationEvents.length}
+                        </button>
                       </div>
                       <span
                         style={{
-                          fontSize: 11,
-                          fontWeight: 800,
-                          color: t.danger,
-                          background: t.dangerBg,
+                          minWidth: 24,
+                          height: 24,
+                          padding: "0 8px",
                           borderRadius: 999,
-                          padding: "2px 9px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: t.textSecondary,
+                          background: t.surfaceGlass,
+                          border: `1px solid ${t.border}`,
+                          fontSize: 10.5,
+                          fontWeight: 800,
                         }}
                       >
-                        {violations.length}
+                        {selectedCandidateEventCount}
                       </span>
                     </div>
-                    {violations.length === 0 ? (
+
+                    {eventsLoading ? (
                       <div
                         style={{
                           color: t.textMuted,
                           fontSize: 12.5,
-                          padding: "18px 0",
+                          padding: "26px 14px",
                           textAlign: "center",
                           background: t.surfaceGlass,
                           borderRadius: 12,
                           border: `1px dashed ${t.border}`,
                         }}
                       >
-                        No violations recorded.
+                        Loading monitoring events...
+                      </div>
+                    ) : selectedCandidateEvents.length === 0 ? (
+                      <div
+                        style={{
+                          color: t.textMuted,
+                          fontSize: 12.5,
+                          padding: "26px 14px",
+                          textAlign: "center",
+                          background: t.surfaceGlass,
+                          borderRadius: 12,
+                          border: `1px dashed ${t.border}`,
+                        }}
+                      >
+                        No {candidateEventTab === "warnings" ? "warnings" : "violations"} recorded.
                       </div>
                     ) : (
                       <div style={{ display: "grid", gap: 10 }}>
-                        {violations.map((v, idx) => (
-                          <div
-                            key={v.violation_id ?? v.id ?? idx}
-                            style={{
-                              background: t.surfaceGlass,
-                              border: `1px solid ${t.border}`,
-                              borderRadius: 12,
-                              padding: 13,
-                              position: "relative",
-                              overflow: "hidden",
-                            }}
-                          >
+                        {selectedCandidateEvents.map((event, index) => {
+                          const isWarning = candidateEventTab === "warnings";
+                          const color = isWarning ? t.warning : t.danger;
+                          const label = isWarning ? "Warning" : "Violation";
+                          const detail = String(
+                            event.detail ??
+                              event.type ??
+                              event.violation_type ??
+                              "Monitoring event",
+                          ).replaceAll("_", " ");
+                          const message =
+                            event.message ??
+                            event.description ??
+                            event.candidateaction ??
+                            event.candidate_action ??
+                            "No description";
+                          const confidenceValue = Number(event.confidence);
+                          const hasConfidence = Number.isFinite(confidenceValue);
+                          const confidence = hasConfidence
+                            ? confidenceValue <= 1
+                              ? Math.round(confidenceValue * 100)
+                              : Math.round(confidenceValue)
+                            : null;
+
+                          return (
                             <div
+                              key={
+                                event.violationid ??
+                                event.violation_id ??
+                                event.eventid ??
+                                event.event_id ??
+                                `${event.eventType}-${event.timestamp}-${index}`
+                              }
                               style={{
-                                position: "absolute",
-                                top: 0,
-                                left: 0,
-                                bottom: 0,
-                                width: 3,
-                                background: t.warning,
-                              }}
-                            />
-                            <div
-                              style={{
-                                fontSize: 12.5,
-                                fontWeight: 700,
-                                color: t.warning,
-                                marginBottom: 6,
+                                background: t.surfaceGlass,
+                                border: `1px solid ${color}55`,
+                                borderLeft: `4px solid ${color}`,
+                                borderRadius: 12,
+                                padding: "12px 13px",
                               }}
                             >
-                              {v.type ?? v.violation_type ?? "Violation"}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: 10,
+                                  marginBottom: 7,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color,
+                                    background: `${color}18`,
+                                    border: `1px solid ${color}44`,
+                                    borderRadius: 999,
+                                    padding: "3px 8px",
+                                    fontSize: 9.5,
+                                    fontWeight: 900,
+                                    textTransform: "uppercase",
+                                    letterSpacing: 0.5,
+                                  }}
+                                >
+                                  {label}
+                                </span>
+                                <span style={{ color: t.textMuted, fontSize: 10.5 }}>
+                                  {event.timestamp
+                                    ? new Date(event.timestamp).toLocaleString()
+                                    : "Time unavailable"}
+                                </span>
+                              </div>
+                              <div
+                                style={{
+                                  color,
+                                  fontSize: 12.5,
+                                  fontWeight: 800,
+                                  textTransform: "capitalize",
+                                  marginBottom: 5,
+                                }}
+                              >
+                                {detail}
+                              </div>
+                              <div
+                                style={{
+                                  color: t.textSecondary,
+                                  fontSize: 12.5,
+                                  lineHeight: 1.5,
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {message}
+                              </div>
+                              {confidence !== null ? (
+                                <div
+                                  style={{
+                                    marginTop: 7,
+                                    color: t.textMuted,
+                                    fontSize: 10.5,
+                                  }}
+                                >
+                                  Confidence: {confidence}%
+                                </div>
+                              ) : null}
+                              {!isWarning &&
+                              Boolean(
+                                event.evidenceavailable ??
+                                  event.evidence_available ??
+                                  event.evidenceobject ??
+                                  event.evidence_object ??
+                                  event.screenshotpath ??
+                                  event.screenshot_path,
+                              ) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openViolationEvidence(event)}
+                                  style={{
+                                    marginTop: 10,
+                                    width: "100%",
+                                    minHeight: 36,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 8,
+                                    borderRadius: 9,
+                                    border: `1px solid ${t.danger}66`,
+                                    background: t.dangerBg,
+                                    color: t.danger,
+                                    cursor: "pointer",
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  <svg
+                                    width="15"
+                                    height="15"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <polyline points="21 15 16 10 5 21" />
+                                  </svg>
+                                  View captured evidence
+                                </button>
+                              ) : null}
                             </div>
-                            <div
-                              style={{
-                                fontSize: 12.5,
-                                color: t.textSecondary,
-                                marginBottom: 6,
-                                lineHeight: 1.5,
-                              }}
-                            >
-                              {v.message ?? v.description ?? "No description"}
-                            </div>
-                            <div style={{ fontSize: 11, color: t.textMuted }}>
-                              {v.timestamp
-                                ? new Date(v.timestamp).toLocaleString()
-                                : "Time unavailable"}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
-
                   {/* Expand chat into the complete right-side panel. */}
                   <button
                     type="button"
@@ -5200,6 +5807,19 @@ export default function ExaminerDashboard() {
           }
         />
 
+        <EvidenceModal
+          open={evidenceModalOpen}
+          theme={theme}
+          evidence={selectedEvidence}
+          loading={evidenceLoading}
+          error={evidenceError}
+          onClose={() => {
+            setEvidenceModalOpen(false);
+            setEvidenceLoading(false);
+            setEvidenceError("");
+            setSelectedEvidence(null);
+          }}
+        />
         {/* Start / End transition overlay */}
         <TransitionOverlay
           open={!!transition}

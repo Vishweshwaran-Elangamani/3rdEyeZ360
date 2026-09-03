@@ -64,6 +64,7 @@ function escapeHtml(value) {
 function monitoringMessageFor(detail, fallback) {
   const messages = {
     face_missing: "Please remain visible in the camera frame.",
+    camera_unavailable: "Camera is switched off or unavailable.",
     multiple_faces:
       "Another person appears to be visible. Only the candidate should be in view.",
 
@@ -109,6 +110,7 @@ function monitoringMessageFor(detail, fallback) {
 function candidateActionFor(detail, fallback) {
   const actions = {
     face_missing: "Sit in front of the camera and keep your face visible.",
+    camera_unavailable: "Turn on the camera and keep the candidate visible.",
     multiple_faces: "Ensure only you are visible in the camera frame.",
 
     looking_left: "Face the exam screen.",
@@ -141,6 +143,7 @@ function candidateActionFor(detail, fallback) {
 function categoryFor(detail, fallback) {
   const categories = {
     face_missing: "face",
+    camera_unavailable: "camera",
     multiple_faces: "face",
 
     looking_left: "head_pose",
@@ -493,6 +496,19 @@ function normaliseFramePayload(data = {}) {
     candidateId: pickField(data, "candidateId", "candidateid", "candidate_id"),
     examId: pickField(data, "examId", "examid", "exam_id"),
     token: pickField(data, "token", "accessToken", "access_token"),
+    sessionId: pickField(data, "sessionId", "sessionid", "session_id"),
+    monitoringMode:
+      String(
+        pickField(data, "monitoringMode", "monitoring_mode") || "full",
+      ).toLowerCase() === "basic"
+        ? "basic"
+        : "full",
+    captureHealthOnly: Boolean(
+      pickField(data, "captureHealthOnly", "capture_health_only"),
+    ),
+    detail: pickField(data, "detail", "issue", "detectionType", "detection_type"),
+    message: pickField(data, "message"),
+    candidateAction: pickField(data, "candidateAction", "candidate_action"),
     timestamp: pickField(data, "timestamp") || new Date().toISOString(),
   };
 }
@@ -507,6 +523,12 @@ function normaliseAudioPayload(data = {}) {
     examId: pickField(data, "examId", "examid", "exam_id"),
     token: pickField(data, "token", "accessToken", "access_token"),
     sessionId: pickField(data, "sessionId", "sessionid", "session_id"),
+    monitoringMode:
+      String(
+        pickField(data, "monitoringMode", "monitoring_mode") || "full",
+      ).toLowerCase() === "basic"
+        ? "basic"
+        : "full",
     mimeType: pickField(data, "mimeType", "mimetype", "mime_type"),
     size: pickField(data, "size", "byteLength", "byte_length"),
     timestamp: pickField(data, "timestamp") || new Date().toISOString(),
@@ -614,6 +636,21 @@ function shouldSkipForRecentTyping(result) {
   }
 
   return recentlyTyped;
+}
+
+function buildCaptureHealthResult(payload) {
+  const detail = String(payload.detail || "camera_unavailable").toLowerCase();
+  return {
+    type: detail === "mic_silent" ? "audio" : "camera",
+    detected: true,
+    detail,
+    confidence: 1,
+    category: categoryFor(detail),
+    issue: issueFor(detail),
+    message: monitoringMessageFor(detail, payload.message),
+    candidate_action: candidateActionFor(detail, payload.candidateAction),
+    typing_sensitive: false,
+  };
 }
 
 function buildBackendDetectionPayload(payload, result) {
@@ -1139,11 +1176,67 @@ function registerIpcHandlers(mainWindow) {
     console.log("Candidate :", payload.candidateId);
     console.log("Exam      :", payload.examId);
     console.log("Timestamp :", payload.timestamp);
+    console.log("Mode      :", payload.monitoringMode);
     console.log(
       "Frame     :",
       payload.frame ? `${String(payload.frame).length} chars` : "missing",
     );
     console.log("================================");
+
+    if (payload.captureHealthOnly) {
+      const result = buildCaptureHealthResult(payload);
+      safeSend(mainWindow, "detection-result", {
+        source: "renderer-capture-health",
+        persisted: false,
+        assessmentId: payload.assessmentId,
+        candidateId: payload.candidateId,
+        examId: payload.examId,
+        timestamp: payload.timestamp,
+        results: [result],
+        result,
+      });
+
+      if (!payload.assessmentId || !payload.candidateId || !payload.examId) {
+        console.warn("[IPC] Capture-health event ignored because identifiers are missing.");
+        return;
+      }
+      if (!payload.token) {
+        console.warn("[IPC] Capture-health event logged locally because token is missing.");
+        return;
+      }
+
+      try {
+        const response = await axios.post(
+          `${BACKEND_URL}/api/assessments/detect`,
+          buildBackendDetectionPayload(payload, result),
+          { headers: { Authorization: `Bearer ${payload.token}` } },
+        );
+        showNativeMonitoringToast(mainWindow, {
+          ...response.data,
+          category: response.data?.category || result.category,
+          issue: response.data?.issue || result.issue,
+          message: response.data?.message || result.message,
+          candidate_action:
+            response.data?.candidate_action || result.candidate_action,
+        });
+        safeSend(mainWindow, "detection-result", {
+          source: "backend-capture-health",
+          persisted: true,
+          assessmentId: payload.assessmentId,
+          candidateId: payload.candidateId,
+          examId: payload.examId,
+          timestamp: payload.timestamp,
+          result,
+          backend: response.data,
+        });
+      } catch (error) {
+        console.log(
+          "[IPC] Capture-health detection post error",
+          error?.response?.data || error.message,
+        );
+      }
+      return;
+    }
 
     if (!payload.frame) {
       console.warn("[IPC] Ignoring webcam-frame because frame is missing.");
@@ -1186,6 +1279,7 @@ function registerIpcHandlers(mainWindow) {
         payload.assessmentId,
         payload.candidateId,
         payload.examId,
+        payload.monitoringMode,
       );
 
       console.log("[IPC] Python detection results", {
@@ -1373,6 +1467,10 @@ function registerIpcHandlers(mainWindow) {
     );
     console.log("================================");
 
+    if (payload.monitoringMode !== "full") {
+      console.log("[IPC] Ignoring webcam-audio because monitoring mode is basic.");
+      return;
+    }
     if (!payload.audioChunk) {
       console.warn("[IPC] Ignoring webcam-audio because audio chunk is missing.");
       safeSend(mainWindow, "detection-result", {

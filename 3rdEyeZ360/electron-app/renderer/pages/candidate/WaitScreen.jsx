@@ -727,6 +727,8 @@ export default function WaitScreen({
   const launchedRef = useRef(false);
   const finishedRef = useRef(false);
   const returningRef = useRef(false);
+  const monitoringStartedRef = useRef(false);
+  const [monitoringReady, setMonitoringReady] = useState(false);
 
   useEffect(() => {
     const candidateId = user?.userid || user?.user_id;
@@ -783,6 +785,71 @@ export default function WaitScreen({
     user?.user_id
   );
 
+  useEffect(() => {
+    if (
+      monitoringStartedRef.current ||
+      !assessmentId ||
+      !candidateId ||
+      !examId ||
+      !accessToken
+    ) {
+      return;
+    }
+
+    if (!window.electronAPI?.startCapture) {
+      setMonitoringReady(false);
+      setActionMsg("Basic waiting-room monitoring is unavailable in this application session.");
+      return;
+    }
+
+    monitoringStartedRef.current = true;
+    window.electronAPI
+      .startCapture({
+        assessmentId,
+        candidateId,
+        examId,
+        token: accessToken,
+        sessionId: waitingSessionId,
+        monitoringMode: "basic",
+        reason: "waiting-screen",
+      })
+      .then(() => {
+        setMonitoringReady(true);
+        setActionMsg(
+          "Camera and microphone monitoring are active while you wait for the exam.",
+        );
+      })
+      .catch((error) => {
+        monitoringStartedRef.current = false;
+        setMonitoringReady(false);
+        setActionMsg(
+          error?.message || "Basic waiting-room monitoring could not be started.",
+        );
+      });
+  }, [accessToken, assessmentId, candidateId, examId, waitingSessionId]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.onDetectionResult) return undefined;
+
+    const unsubscribe = window.electronAPI.onDetectionResult((payload) => {
+      const results = Array.isArray(payload?.results)
+        ? payload.results
+        : payload?.result
+          ? [payload.result]
+          : [];
+      const active = results.find((item) => item?.detected === true);
+      if (!active) return;
+
+      const detail = String(active.detail || "").toLowerCase();
+      if (detail === "camera_unavailable") {
+        setActionMsg("Camera is switched off or unavailable. Turn on the camera while waiting.");
+      } else if (detail === "mic_silent") {
+        setActionMsg("Microphone is switched off or unavailable. Check the microphone.");
+      }
+    });
+
+    return typeof unsubscribe === "function" ? unsubscribe : undefined;
+  }, []);
   const allowedSites = useMemo(
     () =>
       normalizeSites(
@@ -809,6 +876,8 @@ export default function WaitScreen({
     if (finishedRef.current) return;
     finishedRef.current = true;
 
+    try { await window.electronAPI?.stopCapture?.(); } catch (error) { console.log("stopCapture failed", error); }
+    monitoringStartedRef.current = false;
     try { await window.electronAPI?.closeBrowser?.(); } catch (error) { console.log("closeBrowser failed", error); }
     try { await window.electronAPI?.disableLockdown?.(); } catch (error) { console.log("disableLockdown failed", error); }
     try { await window.electronAPI?.setClosable?.(true); } catch (error) { console.log("setClosable failed", error); }
@@ -941,7 +1010,7 @@ export default function WaitScreen({
         setActionMsg("Permission approved. The assessment has not started yet.");
         return;
       }
-      setActionMsg("Stay visible on camera and wait for the exam to go live.");
+      setActionMsg("Keep the camera and microphone enabled while waiting for the exam to go live.");
     } catch (error) {
       console.log("Wait screen status check failed", error);
       setActionMsg(error?.response?.data?.detail || error?.message || "Failed to check exam status.");
@@ -1085,7 +1154,7 @@ export default function WaitScreen({
       return {
         label: "Awaiting review",
         headline: "Your request is awaiting examiner review.",
-        sub: "Please stay visible on camera while we wait for approval.",
+        sub: "Please keep the camera and microphone enabled while waiting for approval.",
         color: t.warning,
         gradient: t.warningGradient,
         icon: (
@@ -1126,7 +1195,7 @@ export default function WaitScreen({
     return {
       label: "Assessment Waiting Window",
       headline: "Sit tight — you're in the waiting window.",
-      sub: "Stay visible on camera. We're checking your status every few seconds.",
+      sub: "Keep the camera and microphone enabled. We're checking your status every few seconds.",
       color: t.accent,
       gradient: t.accentGradient,
       icon: (
@@ -1418,6 +1487,11 @@ export default function WaitScreen({
             <StatusCard theme={theme} label="Assessment status" status={currentAssessmentStatus} />
             <StatusCard theme={theme} label="Exam status" status={currentExamStatus} />
             <StatusCard theme={theme} label="Final status" status={currentFinalStatus} />
+            <StatusCard
+              theme={theme}
+              label="Basic device monitoring"
+              status={monitoringReady ? "ACTIVE" : "PENDING"}
+            />
           </div>
 
           {/* ALLOWED WEBSITES */}

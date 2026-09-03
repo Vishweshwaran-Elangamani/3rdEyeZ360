@@ -513,11 +513,11 @@ function CheckItem({ label, status, iconKey, theme, index }) {
   const t = THEMES[theme];
   const hint =
     status === false
-      ? label === "Camera & Microphone"
-        ? "Allow camera and microphone access in your browser"
-        : label === "Internet Connection"
-          ? "Check your network or backend service"
-          : "Keep your face centered and visible in the frame"
+      ? label === "Camera"
+        ? "Camera is unavailable, disabled, or no live video is received"
+        : label === "Microphone"
+          ? "Microphone is unavailable or disabled"
+          : "Check your network or backend service"
       : status === true
         ? "Ready"
         : "Checking...";
@@ -772,14 +772,17 @@ function InfoRow({ label, value, mono, t }) {
 export default function PreCheck({ exam, onPass, onLogout, onBack }) {
   const { theme, toggleTheme } = useTheme();
   const t = THEMES[theme];
-
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const hasAutoStartedRef = useRef(false);
+  const healthTimerRef = useRef(null);
+  const mountedRef = useRef(true);
+  const runningRef = useRef(false);
+  const cameraCanvasRef = useRef(null);
 
   const [checks, setChecks] = useState({
     camera: null,
-    face: null,
+    microphone: null,
     internet: null,
   });
   const [running, setRunning] = useState(false);
@@ -787,8 +790,9 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
   const examView = useMemo(
     () => ({
       name: exam?.name || "Upcoming Exam",
-      assessmentid: exam?.assessmentid || "—",
-      examid: exam?.examid || "—",
+      assessmentid:
+        exam?.assessmentid || exam?.assessmentId || exam?.assessment_id || "—",
+      examid: exam?.examid || exam?.examId || exam?.exam_id || "—",
       durationminutes: exam?.durationminutes || "—",
       date: exam?.date || "—",
       starttime: exam?.starttime || "—",
@@ -805,127 +809,265 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
     [exam],
   );
 
-  const stopMedia = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((tr) => tr.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      try {
-        videoRef.current.srcObject = null;
-      } catch (e) {}
+  const clearTimers = useCallback(() => {
+    if (healthTimerRef.current) {
+      clearInterval(healthTimerRef.current);
+      healthTimerRef.current = null;
     }
   }, []);
 
-  // Back handler: release the camera/mic first, then navigate to the previous
-  // screen. This app routes by state (not browser history), so we prefer the
-  // parent-provided onBack. When it's missing we fall back to the app's
-  // localStorage "app-screen" convention so the user still lands on the
-  // candidate dashboard instead of doing nothing.
-  const handleBack = useCallback(() => {
-    try {
-      stopMedia();
-    } catch (e) {
-      console.log("stopMedia failed during back", e);
+  const stopMedia = useCallback(() => {
+    clearTimers();
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    cameraCanvasRef.current = null;
+    if (videoRef.current) {
+      try {
+        videoRef.current.srcObject = null;
+      } catch (error) {
+        console.log("Unable to clear precheck video source", error);
+      }
+    }
+  }, [clearTimers]);
+
+  const hasVisibleCameraFrame = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) return false;
+
+    if (!cameraCanvasRef.current) {
+      cameraCanvasRef.current = document.createElement("canvas");
     }
 
-    // 1) Preferred: parent controls navigation.
+    const canvas = cameraCanvasRef.current;
+    canvas.width = 64;
+    canvas.height = 36;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return false;
+
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let luminanceTotal = 0;
+      let luminanceSquaredTotal = 0;
+      let visiblePixels = 0;
+      const pixelCount = pixels.length / 4;
+
+      for (let index = 0; index < pixels.length; index += 4) {
+        const luminance =
+          0.2126 * pixels[index] +
+          0.7152 * pixels[index + 1] +
+          0.0722 * pixels[index + 2];
+        luminanceTotal += luminance;
+        luminanceSquaredTotal += luminance * luminance;
+        if (luminance > 8) visiblePixels += 1;
+      }
+
+      const average = luminanceTotal / pixelCount;
+      const variance = Math.max(
+        0,
+        luminanceSquaredTotal / pixelCount - average * average,
+      );
+      const visibleRatio = visiblePixels / pixelCount;
+
+      // A privacy shutter, disabled camera, or blocked camera commonly returns
+      // a fully black/near-black frame even though the MediaStreamTrack remains live.
+      return average >= 6 && visibleRatio >= 0.08 && variance >= 2;
+    } catch (error) {
+      console.log("Unable to inspect camera frame", error);
+      return false;
+    }
+  }, []);
+
+  const getTrackState = useCallback(() => {
+    const mediaStream = streamRef.current;
+    const videoTrack = mediaStream?.getVideoTracks?.()[0];
+    const audioTrack = mediaStream?.getAudioTracks?.()[0];
+    const video = videoRef.current;
+
+    const camera = Boolean(
+      videoTrack &&
+        videoTrack.readyState === "live" &&
+        videoTrack.enabled &&
+        !videoTrack.muted &&
+        video &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0 &&
+        hasVisibleCameraFrame(),
+    );
+
+    const microphone = Boolean(
+      audioTrack &&
+        audioTrack.readyState === "live" &&
+        audioTrack.enabled &&
+        !audioTrack.muted,
+    );
+
+    return { camera, microphone };
+  }, [hasVisibleCameraFrame]);
+
+  const checkInternet = useCallback(async () => {
+    let online = false;
+    try {
+      const response = await fetch("http://localhost:3000/health", {
+        cache: "no-store",
+      });
+      online = response.ok;
+    } catch (error) {
+      online = false;
+    }
+
+    if (mountedRef.current) {
+      setChecks((previous) => ({ ...previous, internet: online }));
+    }
+    return online;
+  }, []);
+
+  const attachTrackListeners = useCallback((mediaStream) => {
+    const videoTrack = mediaStream.getVideoTracks()[0];
+    const audioTrack = mediaStream.getAudioTracks()[0];
+
+    const updateTrackState = () => {
+      if (!mountedRef.current) return;
+      const video = videoRef.current;
+      setChecks((previous) => ({
+        ...previous,
+        camera: Boolean(
+          videoTrack &&
+            videoTrack.readyState === "live" &&
+            videoTrack.enabled &&
+            !videoTrack.muted &&
+            video &&
+            video.videoWidth > 0 &&
+            video.videoHeight > 0 &&
+            hasVisibleCameraFrame(),
+        ),
+        microphone: Boolean(
+          audioTrack &&
+            audioTrack.readyState === "live" &&
+            audioTrack.enabled &&
+            !audioTrack.muted,
+        ),
+      }));
+    };
+
+    videoTrack?.addEventListener("ended", updateTrackState);
+    videoTrack?.addEventListener("mute", updateTrackState);
+    videoTrack?.addEventListener("unmute", updateTrackState);
+    audioTrack?.addEventListener("ended", updateTrackState);
+    audioTrack?.addEventListener("mute", updateTrackState);
+    audioTrack?.addEventListener("unmute", updateTrackState);
+  }, [hasVisibleCameraFrame]);
+
+  const startContinuousMonitoring = useCallback(() => {
+    clearTimers();
+    healthTimerRef.current = setInterval(() => {
+      const state = getTrackState();
+      setChecks((previous) => ({
+        ...previous,
+        camera: state.camera,
+        microphone: state.microphone,
+      }));
+      checkInternet();
+    }, 1500);
+  }, [checkInternet, clearTimers, getTrackState]);
+
+  const handleBack = useCallback(() => {
+    stopMedia();
     if (typeof onBack === "function") {
       onBack();
       return;
     }
-
-    // 2) Fallback for this Electron/SPA app: set the screen and reload so the
-    //    root App re-reads it and shows the candidate dashboard.
     try {
       localStorage.setItem("app-screen", "dashboard");
-      // Broadcast in case the App listens for screen changes without a reload.
       window.dispatchEvent(
         new CustomEvent("app-navigate", { detail: { screen: "dashboard" } }),
       );
       window.location.reload();
       return;
-    } catch (e) {
-      console.log("app-screen fallback failed", e);
+    } catch (error) {
+      console.log("app-screen fallback failed", error);
     }
-
-    // 3) Last resort: browser history.
-    if (
-      typeof window !== "undefined" &&
-      window.history &&
-      window.history.length > 1
-    ) {
-      window.history.back();
-    } else {
-      console.warn(
-        "Back pressed but no onBack handler was provided by the parent. " +
-          "Pass an onBack prop to <PreCheck /> that returns to the dashboard.",
-      );
-    }
+    if (window.history?.length > 1) window.history.back();
   }, [onBack, stopMedia]);
 
   const startChecks = useCallback(async () => {
-    if (running) return;
+    if (runningRef.current) return;
+    runningRef.current = true;
     setRunning(true);
-    setChecks({ camera: null, face: null, internet: null });
+    clearTimers();
+    setChecks({ camera: null, microphone: null, internet: null });
 
-    const next = { camera: false, face: false, internet: false };
-
-    try {
-      const res = await fetch("http://localhost:3000/health");
-      next.internet = !!res.ok;
-    } catch {
-      next.internet = false;
-    }
-    setChecks((prev) => ({ ...prev, internet: next.internet }));
+    await checkInternet();
 
     try {
-      stopMedia();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user",
+        },
         audio: true,
       });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-      next.camera = true;
-      setChecks((prev) => ({ ...prev, camera: true }));
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      streamRef.current = mediaStream;
+      attachTrackListeners(mediaStream);
 
-      const video = videoRef.current;
-      const canSeeVideo =
-        video &&
-        typeof video.videoWidth === "number" &&
-        typeof video.videoHeight === "number" &&
-        video.videoWidth > 0 &&
-        video.videoHeight > 0;
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        await videoRef.current.play().catch(() => {});
+      }
 
-      next.face = !!canSeeVideo;
-      setChecks((prev) => ({ ...prev, face: next.face }));
-    } catch {
-      next.camera = false;
-      next.face = false;
-      setChecks((prev) => ({ ...prev, camera: false, face: false }));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const trackState = getTrackState();
+      setChecks((previous) => ({
+        ...previous,
+        camera: trackState.camera,
+        microphone: trackState.microphone,
+      }));
+      startContinuousMonitoring();
+    } catch (error) {
+      setChecks((previous) => ({
+        ...previous,
+        camera: false,
+        microphone: false,
+      }));
     } finally {
-      setRunning(false);
+      runningRef.current = false;
+      if (mountedRef.current) setRunning(false);
     }
-  }, [running, stopMedia]);
+  }, [
+    attachTrackListeners,
+    checkInternet,
+    clearTimers,
+    getTrackState,
+    startContinuousMonitoring,
+  ]);
 
   useEffect(() => {
-    if (hasAutoStartedRef.current) return;
-    hasAutoStartedRef.current = true;
-    startChecks();
-    return () => stopMedia();
+    mountedRef.current = true;
+    if (!hasAutoStartedRef.current) {
+      hasAutoStartedRef.current = true;
+      startChecks();
+    }
+    return () => {
+      mountedRef.current = false;
+      stopMedia();
+    };
   }, [startChecks, stopMedia]);
 
-  const allPassed = Object.values(checks).every((v) => v === true);
-  const hasAnyFailure = Object.values(checks).some((v) => v === false);
+  const allPassed = Object.values(checks).every((value) => value === true);
+  const hasAnyFailure = Object.values(checks).some((value) => value === false);
   const completedChecks = Object.values(checks).filter(
-    (v) => v !== null,
+    (value) => value !== null,
   ).length;
   const totalChecks = 3;
   const progressPct = (completedChecks / totalChecks) * 100;
-
   const overallLabel = running
     ? "Running system checks"
     : allPassed
@@ -933,7 +1075,6 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
       : hasAnyFailure
         ? "Some checks need attention"
         : "Ready to verify";
-
   const overallColor = running
     ? t.warning
     : allPassed
@@ -941,7 +1082,6 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
       : hasAnyFailure
         ? t.danger
         : t.accent;
-
   return (
     <div
       style={{
@@ -1393,7 +1533,6 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                   </div>
                 )}
               </div>
-
               <div>
                 <div
                   style={{
@@ -1451,16 +1590,16 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                 style={{ display: "flex", flexDirection: "column", gap: 10 }}
               >
                 <CheckItem
-                  label="Camera & Microphone"
+                  label="Camera"
                   status={checks.camera}
                   iconKey="camera"
                   theme={theme}
                   index={0}
                 />
                 <CheckItem
-                  label="Face Visible"
-                  status={checks.face}
-                  iconKey="face"
+                  label="Microphone"
+                  status={checks.microphone}
+                  iconKey="camera"
                   theme={theme}
                   index={1}
                 />
@@ -1502,8 +1641,7 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     <line x1="12" y1="17" x2="12.01" y2="17" />
                   </svg>
                   <span>
-                    Some checks did not pass. You can retry, or continue if this
-                    is for review purposes only.
+                    Some checks did not pass. You can retry.
                   </span>
                 </div>
               )}
@@ -1548,7 +1686,8 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                 )}
 
                 <button
-                  onClick={onPass}
+                  onClick={allPassed ? onPass : undefined}
+                  disabled={!allPassed || running}
                   className="cta-shine"
                   style={{
                     flex: 1,
@@ -1559,7 +1698,8 @@ export default function PreCheck({ exam, onPass, onLogout, onBack }) {
                     background: t.accentGradient,
                     border: "none",
                     borderRadius: 12,
-                    cursor: "pointer",
+                    cursor: allPassed && !running ? "pointer" : "not-allowed",
+                    opacity: allPassed && !running ? 1 : 0.5,
                     fontFamily: "'Inter', sans-serif",
                     letterSpacing: 0.4,
                     boxShadow: t.glowAccent,

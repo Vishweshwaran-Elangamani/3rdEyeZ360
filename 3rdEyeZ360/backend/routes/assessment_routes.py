@@ -2,12 +2,15 @@ from datetime import datetime, timedelta
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from config.database import getdb
 from middleware.auth import requirerole
 from sockets.monitoring_socket import emit_assessment_event
 from services.exam_session_service import is_assessment_finalized, is_multi_session_exam
+from services.evidence_service import upload_screenshot
+from config.minio_client import get_minio_bucket
 
 router = APIRouter(prefix="/api/assessments", tags=["Assessments"])
 
@@ -102,6 +105,28 @@ def _field_value(document: dict, *keys, default=None):
         if value is not None:
             return value
     return default
+
+
+def _positive_int_value(document: dict | None, *keys, default=0) -> int:
+    document = document or {}
+    for key in keys:
+        value = document.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return int(default or 0)
+
+
+def _calculate_credibility(warning_count: int, violation_count: int) -> int:
+    """Calculate assessment credibility from persisted monitoring events."""
+    warning_penalty = max(0, int(warning_count or 0)) * 1
+    violation_penalty = max(0, int(violation_count or 0)) * 10
+    return max(0, min(100, 100 - warning_penalty - violation_penalty))
 
 
 def _terminal_status(status: str) -> bool:
@@ -672,10 +697,40 @@ async def detect_assessment_activity(body: DetectionBody, current_user=Depends(r
         update_assessment.setdefault("$inc", {})["warningcount"] = 1
         update_assessment.setdefault("$inc", {})["warning_count"] = 1
 
+    violation_doc = None
+    evidence_object = None
+    evidence_status = "not_available"
+    evidence_error = None
+
     if policy["violation"]:
-        evidence_status = "pending_minio" if screenshot_b64 else "not_available"
+        violation_id = f"VIO-{uuid.uuid4().hex.upper()}"
+
+        if screenshot_b64:
+            try:
+                evidence_object = await run_in_threadpool(
+                    upload_screenshot,
+                    exam_id,
+                    candidate_id,
+                    detail,
+                    screenshot_b64,
+                    assessment_id,
+                    violation_id,
+                )
+                evidence_status = "available"
+            except Exception as error:
+                # Evidence storage must never prevent the violation, credibility
+                # update, threshold lock, or candidate logout.
+                evidence_status = "upload_failed"
+                evidence_error = str(error)
+                print(
+                    "[Evidence] Violation screenshot upload failed:",
+                    violation_id,
+                    error,
+                )
+
         violation_doc = {
-            "violationid": f"VIO-{uuid.uuid4().hex.upper()}",
+            "violationid": violation_id,
+            "violation_id": violation_id,
             "assessmentid": assessment_id,
             "assessment_id": assessment_id,
             "candidateid": candidate_id,
@@ -697,12 +752,23 @@ async def detect_assessment_activity(body: DetectionBody, current_user=Depends(r
             "typing_sensitive": typing_sensitive,
             "evidencestatus": evidence_status,
             "evidence_status": evidence_status,
+            "evidenceavailable": evidence_status == "available",
+            "evidence_available": evidence_status == "available",
+            "evidencebucket": get_minio_bucket() if evidence_object else None,
+            "evidence_bucket": get_minio_bucket() if evidence_object else None,
+            "evidenceobject": evidence_object,
+            "evidence_object": evidence_object,
+            "screenshotpath": evidence_object,
+            "screenshot_path": evidence_object,
+            "evidencemimetype": "image/jpeg" if evidence_object else None,
+            "evidence_mime_type": "image/jpeg" if evidence_object else None,
+            "evidenceerror": evidence_error,
+            "evidence_error": evidence_error,
             "createdat": now,
             "created_at": now,
             "sessionid": session_id,
             "session_id": session_id,
         }
-        violation_doc["violation_id"] = violation_doc["violationid"]
         await db.violations.insert_one(violation_doc)
         update_assessment.setdefault("$inc", {})["violationcount"] = 1
         update_assessment.setdefault("$inc", {})["violation_count"] = 1
@@ -711,7 +777,119 @@ async def detect_assessment_activity(body: DetectionBody, current_user=Depends(r
 
     updated = await _get_assessment_doc(db, assessment_id)
     exam = await _get_exam_doc(db, exam_id)
+
+    warning_count = _positive_int_value(
+        updated,
+        "warningcount",
+        "warning_count",
+        default=0,
+    )
+    violation_count = _positive_int_value(
+        updated,
+        "violationcount",
+        "violation_count",
+        default=0,
+    )
+    credibility_score = _calculate_credibility(
+        warning_count,
+        violation_count,
+    )
+    await db.assessments.update_one(
+        _assessment_query(assessment_id),
+        {
+            "$set": {
+                "credibilityscore": credibility_score,
+                "credibility_score": credibility_score,
+                "updatedat": now,
+                "updated_at": now,
+            }
+        },
+    )
+    updated = await _get_assessment_doc(db, assessment_id)
+
+    violation_count = _positive_int_value(
+        updated,
+        "violationcount",
+        "violation_count",
+        default=0,
+    )
+    violation_threshold = _positive_int_value(
+        exam,
+        "violationthreshold",
+        "violation_threshold",
+        "threshold",
+        default=10,
+    )
+    threshold_reached = False
+
+    # The threshold belongs to the selected exam. Only a newly persisted
+    # violation can trigger the automatic lock. Warnings never count toward it.
+    if policy["violation"] and violation_count >= violation_threshold:
+        current_status = _normalize_status(
+            updated.get("status") or updated.get("assessmentstatus")
+        )
+        already_threshold_locked = _bool_value(
+            updated,
+            "thresholdreached",
+            "threshold_reached",
+            default=False,
+        )
+
+        if current_status not in {"COMPLETED", "TERMINATED"}:
+            threshold_update = {
+                "status": "LOCKED",
+                "assessmentstatus": "LOCKED",
+                "assessment_status": "LOCKED",
+                "thresholdreached": True,
+                "threshold_reached": True,
+                "thresholdreachedat": now,
+                "threshold_reached_at": now,
+                "thresholdviolationcount": violation_count,
+                "threshold_violation_count": violation_count,
+                "violationthreshold": violation_threshold,
+                "violation_threshold": violation_threshold,
+                "requiresreentryapproval": True,
+                "requires_reentry_approval": True,
+                "reentryapprovalconsumed": False,
+                "reentry_approval_consumed": False,
+                "activesessionid": None,
+                "active_session_id": None,
+                "lastheartbeatat": None,
+                "last_heartbeat_at": None,
+                "interruptedat": now,
+                "interrupted_at": now,
+                "interruptionreason": "Violation threshold reached",
+                "interruption_reason": "Violation threshold reached",
+                "interruptionsource": "VIOLATION_THRESHOLD",
+                "interruption_source": "VIOLATION_THRESHOLD",
+                "exittime": now,
+                "exit_time": now,
+                "updatedat": now,
+                "updated_at": now,
+            }
+            await db.assessments.update_one(
+                _assessment_query(assessment_id),
+                {"$set": threshold_update},
+            )
+            updated = await _get_assessment_doc(db, assessment_id)
+            threshold_reached = not already_threshold_locked
+
     payload = _merge_exam_into_assessment(updated, exam)
+    payload["warningcount"] = warning_count
+    payload["warning_count"] = warning_count
+    payload["violationcount"] = violation_count
+    payload["violation_count"] = violation_count
+    payload["credibilityscore"] = credibility_score
+    payload["credibility_score"] = credibility_score
+    payload["violationthreshold"] = violation_threshold
+    payload["violation_threshold"] = violation_threshold
+    payload["thresholdreached"] = _bool_value(
+        updated,
+        "thresholdreached",
+        "threshold_reached",
+        default=False,
+    )
+    payload["threshold_reached"] = payload["thresholdreached"]
 
     socket_payload = {
         "assessmentid": assessment_id,
@@ -737,6 +915,25 @@ async def detect_assessment_activity(body: DetectionBody, current_user=Depends(r
         "toast": policy["toast"],
         "warning": policy["warning"],
         "violation": policy["violation"],
+        "warningcount": warning_count,
+        "warning_count": warning_count,
+        "violationcount": violation_count,
+        "violation_count": violation_count,
+        "violationthreshold": violation_threshold,
+        "violation_threshold": violation_threshold,
+        "credibilityscore": credibility_score,
+        "credibility_score": credibility_score,
+        "evidenceavailable": evidence_status == "available",
+        "evidence_available": evidence_status == "available",
+        "evidencestatus": evidence_status,
+        "evidence_status": evidence_status,
+        "evidenceobject": evidence_object,
+        "evidence_object": evidence_object,
+        "violationrecord": _serialize(violation_doc) if violation_doc else None,
+        "violation_record": _serialize(violation_doc) if violation_doc else None,
+        "thresholdreached": payload["thresholdreached"],
+        "threshold_reached": payload["threshold_reached"],
+        "status": payload.get("status"),
         "assessment": payload,
     }
 
@@ -745,7 +942,16 @@ async def detect_assessment_activity(body: DetectionBody, current_user=Depends(r
         await emit_assessment_event("warning_created", socket_payload)
     if policy["violation"]:
         await emit_assessment_event("violation_created", socket_payload)
-
+    if threshold_reached:
+        threshold_payload = {
+            **socket_payload,
+            "action": "THRESHOLD_REACHED",
+            "status": "LOCKED",
+            "reason": "Violation threshold reached",
+        }
+        await emit_assessment_event("threshold_reached", threshold_payload)
+        await emit_assessment_event("assessment_locked", threshold_payload)
+        await emit_assessment_event("assessment_updated", payload)
     return {
         "success": True,
         "assessmentid": assessment_id,
@@ -760,6 +966,25 @@ async def detect_assessment_activity(body: DetectionBody, current_user=Depends(r
         "toast": policy["toast"],
         "warning": policy["warning"],
         "violation": policy["violation"],
+        "warningcount": warning_count,
+        "warning_count": warning_count,
+        "violationcount": violation_count,
+        "violation_count": violation_count,
+        "violationthreshold": violation_threshold,
+        "violation_threshold": violation_threshold,
+        "credibilityscore": credibility_score,
+        "credibility_score": credibility_score,
+        "evidenceavailable": evidence_status == "available",
+        "evidence_available": evidence_status == "available",
+        "evidencestatus": evidence_status,
+        "evidence_status": evidence_status,
+        "evidenceobject": evidence_object,
+        "evidence_object": evidence_object,
+        "violationrecord": _serialize(violation_doc) if violation_doc else None,
+        "violation_record": _serialize(violation_doc) if violation_doc else None,
+        "thresholdreached": payload["thresholdreached"],
+        "threshold_reached": payload["threshold_reached"],
+        "status": payload.get("status"),
         "message": message,
         "category": category,
         "issue": issue,

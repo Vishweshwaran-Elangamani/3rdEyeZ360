@@ -5,6 +5,9 @@ let monitoringVideo = null;
 let monitoringCanvas = null;
 let monitoringSession = null;
 let listenersRegistered = false;
+let streamHealthInterval = null;
+let lastCameraUnavailableSentAt = 0;
+let lastMicrophoneUnavailableSentAt = 0;
 
 let audioRecorder = null;
 let audioRecorderMimeType = "";
@@ -13,6 +16,7 @@ let audioCaptureSupported = false;
 const MONITORING_INTERVAL_MS = 2000;
 const FRAME_JPEG_QUALITY = 0.72;
 const AUDIO_CHUNK_MS = 2500;
+const HEALTH_EVENT_COOLDOWN_MS = 5000;
 
 const AUDIO_MIME_TYPE_CANDIDATES = [
   "audio/webm;codecs=opus",
@@ -31,8 +35,18 @@ function normaliseSessionValue(session, ...keys) {
 
 function getSessionIdentifiers(session) {
   return {
-    assessmentId: normaliseSessionValue(session, "assessmentId", "assessmentid", "assessment_id"),
-    candidateId: normaliseSessionValue(session, "candidateId", "candidateid", "candidate_id"),
+    assessmentId: normaliseSessionValue(
+      session,
+      "assessmentId",
+      "assessmentid",
+      "assessment_id",
+    ),
+    candidateId: normaliseSessionValue(
+      session,
+      "candidateId",
+      "candidateid",
+      "candidate_id",
+    ),
     examId: normaliseSessionValue(session, "examId", "examid", "exam_id"),
   };
 }
@@ -45,9 +59,31 @@ function getSessionId(session) {
   return normaliseSessionValue(session, "sessionId", "sessionid", "session_id");
 }
 
+function getMonitoringMode(session) {
+  const mode = String(
+    normaliseSessionValue(session, "monitoringMode", "monitoring_mode") ||
+      "full",
+  ).toLowerCase();
+
+  return mode === "basic" ? "basic" : "full";
+}
+
+function isTrackLive(track) {
+  return Boolean(
+    track &&
+      track.readyState === "live" &&
+      track.enabled === true &&
+      track.muted !== true,
+  );
+}
+
 function waitForVideoReady(video) {
   return new Promise((resolve, reject) => {
-    if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+    if (
+      video.readyState >= 2 &&
+      video.videoWidth > 0 &&
+      video.videoHeight > 0
+    ) {
       resolve();
       return;
     }
@@ -89,7 +125,7 @@ function getSupportedAudioMimeType() {
     try {
       if (MediaRecorder.isTypeSupported(mimeType)) return mimeType;
     } catch {
-      // Ignore unsupported checks.
+      // Ignore unsupported MIME type checks.
     }
   }
 
@@ -105,7 +141,8 @@ function blobToBase64(blob) {
       resolve(value.includes(",") ? value.split(",").pop() : value);
     };
 
-    reader.onerror = () => reject(reader.error || new Error("Failed to read audio blob."));
+    reader.onerror = () =>
+      reject(reader.error || new Error("Failed to read audio blob."));
     reader.readAsDataURL(blob);
   });
 }
@@ -113,6 +150,7 @@ function blobToBase64(blob) {
 function buildMonitoringPayload(session, extra = {}) {
   const ids = getSessionIdentifiers(session);
   const timestamp = new Date().toISOString();
+  const monitoringMode = getMonitoringMode(session);
 
   return {
     ...extra,
@@ -125,8 +163,102 @@ function buildMonitoringPayload(session, extra = {}) {
     token: getSessionToken(session),
     sessionId: getSessionId(session),
     sessionid: getSessionId(session),
+    monitoringMode,
+    monitoring_mode: monitoringMode,
     timestamp,
   };
+}
+
+function sendCaptureHealthEvent(detail, message, candidateAction) {
+  if (!window.electronAPI?.sendFrame || !monitoringSession) return;
+
+  const now = Date.now();
+
+  if (detail === "camera_unavailable") {
+    if (now - lastCameraUnavailableSentAt < HEALTH_EVENT_COOLDOWN_MS) return;
+    lastCameraUnavailableSentAt = now;
+  } else if (detail === "mic_silent") {
+    if (now - lastMicrophoneUnavailableSentAt < HEALTH_EVENT_COOLDOWN_MS) return;
+    lastMicrophoneUnavailableSentAt = now;
+  }
+
+  window.electronAPI.sendFrame(
+    buildMonitoringPayload(monitoringSession, {
+      frame: null,
+      captureHealthOnly: true,
+      capture_health_only: true,
+      detected: true,
+      detectionType: detail,
+      detection_type: detail,
+      detail,
+      message,
+      candidateAction,
+      candidate_action: candidateAction,
+    }),
+  );
+}
+
+function checkMediaTrackHealth() {
+  const videoTrack = stream?.getVideoTracks?.()[0];
+  const audioTrack = stream?.getAudioTracks?.()[0];
+
+  if (!isTrackLive(videoTrack)) {
+    sendCaptureHealthEvent(
+      "camera_unavailable",
+      "Camera is switched off or unavailable.",
+      "Turn on the camera and keep it enabled.",
+    );
+  }
+
+  if (!isTrackLive(audioTrack)) {
+    sendCaptureHealthEvent(
+      "mic_silent",
+      "Microphone is switched off or unavailable.",
+      "Enable the microphone and verify microphone permission.",
+    );
+  }
+}
+
+function startStreamHealthMonitoring(activeStream) {
+  stopStreamHealthMonitoring();
+
+  const videoTrack = activeStream?.getVideoTracks?.()[0];
+  const audioTrack = activeStream?.getAudioTracks?.()[0];
+
+  const onCameraUnavailable = () => {
+    sendCaptureHealthEvent(
+      "camera_unavailable",
+      "Camera is switched off or unavailable.",
+      "Turn on the camera and keep it enabled.",
+    );
+  };
+
+  const onMicrophoneUnavailable = () => {
+    sendCaptureHealthEvent(
+      "mic_silent",
+      "Microphone is switched off or unavailable.",
+      "Enable the microphone and verify microphone permission.",
+    );
+  };
+
+  videoTrack?.addEventListener("ended", onCameraUnavailable);
+  videoTrack?.addEventListener("mute", onCameraUnavailable);
+  audioTrack?.addEventListener("ended", onMicrophoneUnavailable);
+  audioTrack?.addEventListener("mute", onMicrophoneUnavailable);
+
+  streamHealthInterval = setInterval(
+    checkMediaTrackHealth,
+    MONITORING_INTERVAL_MS,
+  );
+
+  checkMediaTrackHealth();
+}
+
+function stopStreamHealthMonitoring() {
+  if (streamHealthInterval) {
+    clearInterval(streamHealthInterval);
+    streamHealthInterval = null;
+  }
 }
 
 export async function getCameraStream() {
@@ -152,17 +284,18 @@ export async function getCameraStream() {
         channelCount: 1,
       },
     })
-    .then((s) => {
-      stream = s;
+    .then((openedStream) => {
+      stream = openedStream;
       console.log("[CAMERA] Stream opened", {
-        tracks: s.getTracks().map((track) => ({
+        tracks: openedStream.getTracks().map((track) => ({
           kind: track.kind,
           label: track.label,
           enabled: track.enabled,
+          muted: track.muted,
           readyState: track.readyState,
         })),
       });
-      return s;
+      return openedStream;
     })
     .finally(() => {
       promise = null;
@@ -174,18 +307,36 @@ export async function getCameraStream() {
 function captureCurrentFrame(session) {
   if (!monitoringVideo || !monitoringCanvas) return;
 
+  const videoTrack = stream?.getVideoTracks?.()[0];
+  if (!isTrackLive(videoTrack)) {
+    console.warn("[MONITOR] Skipping frame because camera track is not live.");
+    sendCaptureHealthEvent(
+      "camera_unavailable",
+      "Camera is switched off or unavailable.",
+      "Turn on the camera and keep it enabled.",
+    );
+    return;
+  }
+
   if (!monitoringVideo.videoWidth || !monitoringVideo.videoHeight) {
-    console.warn("[MONITOR] Skipping frame because camera video size is not ready.");
+    console.warn(
+      "[MONITOR] Skipping frame because camera video size is not ready.",
+    );
+    sendCaptureHealthEvent(
+      "camera_unavailable",
+      "No live camera image is available.",
+      "Check the camera and keep camera permission enabled.",
+    );
     return;
   }
 
   const ids = getSessionIdentifiers(session);
 
   if (!ids.assessmentId || !ids.candidateId || !ids.examId) {
-    console.warn("[MONITOR] Skipping frame because session identifiers are missing.", {
-      session,
-      ids,
-    });
+    console.warn(
+      "[MONITOR] Skipping frame because session identifiers are missing.",
+      { session, ids },
+    );
     return;
   }
 
@@ -193,51 +344,60 @@ function captureCurrentFrame(session) {
   monitoringCanvas.height = monitoringVideo.videoHeight;
 
   const context = monitoringCanvas.getContext("2d");
-  context.drawImage(monitoringVideo, 0, 0, monitoringCanvas.width, monitoringCanvas.height);
+  if (!context) {
+    console.warn("[MONITOR] Canvas context is unavailable.");
+    return;
+  }
 
-  const dataUrl = monitoringCanvas.toDataURL("image/jpeg", FRAME_JPEG_QUALITY);
+  context.drawImage(
+    monitoringVideo,
+    0,
+    0,
+    monitoringCanvas.width,
+    monitoringCanvas.height,
+  );
+
+  const dataUrl = monitoringCanvas.toDataURL(
+    "image/jpeg",
+    FRAME_JPEG_QUALITY,
+  );
   const frame = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
-  const timestamp = new Date().toISOString();
+  const payload = buildMonitoringPayload(session, { frame });
 
   console.log("[MONITOR] Frame captured and sent", {
     assessmentId: ids.assessmentId,
     candidateId: ids.candidateId,
     examId: ids.examId,
+    monitoringMode: payload.monitoringMode,
     width: monitoringCanvas.width,
     height: monitoringCanvas.height,
-    timestamp,
+    timestamp: payload.timestamp,
   });
 
-  window.electronAPI?.sendFrame?.({
-    frame,
-    assessmentId: ids.assessmentId,
-    candidateId: ids.candidateId,
-    examId: ids.examId,
-    assessmentid: ids.assessmentId,
-    candidateid: ids.candidateId,
-    examid: ids.examId,
-    token: getSessionToken(session),
-    sessionId: getSessionId(session),
-    sessionid: getSessionId(session),
-    timestamp,
-  });
+  window.electronAPI?.sendFrame?.(payload);
 }
 
 async function sendAudioChunk(blob, session) {
   if (!blob || blob.size <= 0) return;
 
+  // Waiting Screen uses basic monitoring. Audio-content detection starts only
+  // after ActiveExam changes the shared monitoring session to full mode.
+  if (getMonitoringMode(session) !== "full") return;
+
   if (!window.electronAPI?.sendAudio) {
-    console.warn("[AUDIO MONITOR] electronAPI.sendAudio is not available. Audio chunk was not sent.");
+    console.warn(
+      "[AUDIO MONITOR] electronAPI.sendAudio is not available. Audio chunk was not sent.",
+    );
     return;
   }
 
   const ids = getSessionIdentifiers(session);
 
   if (!ids.assessmentId || !ids.candidateId || !ids.examId) {
-    console.warn("[AUDIO MONITOR] Skipping audio because session identifiers are missing.", {
-      session,
-      ids,
-    });
+    console.warn(
+      "[AUDIO MONITOR] Skipping audio because session identifiers are missing.",
+      { session, ids },
+    );
     return;
   }
 
@@ -254,6 +414,7 @@ async function sendAudioChunk(blob, session) {
       assessmentId: ids.assessmentId,
       candidateId: ids.candidateId,
       examId: ids.examId,
+      monitoringMode: payload.monitoringMode,
       mimeType: payload.mimeType,
       size: blob.size,
       timestamp: payload.timestamp,
@@ -266,13 +427,23 @@ async function sendAudioChunk(blob, session) {
 }
 
 function startAudioMonitoringCapture(activeStream, session) {
+  if (getMonitoringMode(session) !== "full") {
+    stopAudioMonitoringCapture();
+    console.log(
+      "[AUDIO MONITOR] Audio-content detection disabled in basic monitoring mode.",
+    );
+    return;
+  }
+
   if (audioRecorder && audioRecorder.state !== "inactive") {
     console.log("[AUDIO MONITOR] Audio monitoring already running.");
     return;
   }
 
   if (typeof MediaRecorder === "undefined") {
-    console.warn("[AUDIO MONITOR] MediaRecorder is not available in this renderer.");
+    console.warn(
+      "[AUDIO MONITOR] MediaRecorder is not available in this renderer.",
+    );
     audioCaptureSupported = false;
     return;
   }
@@ -282,11 +453,18 @@ function startAudioMonitoringCapture(activeStream, session) {
   if (!audioTracks.length) {
     console.warn("[AUDIO MONITOR] No microphone track found in media stream.");
     audioCaptureSupported = false;
+    sendCaptureHealthEvent(
+      "mic_silent",
+      "No microphone track is available.",
+      "Enable the microphone and verify microphone permission.",
+    );
     return;
   }
 
   if (!window.electronAPI?.sendAudio) {
-    console.warn("[AUDIO MONITOR] sendAudio IPC is not available yet. Audio recorder will not start.");
+    console.warn(
+      "[AUDIO MONITOR] sendAudio IPC is not available yet. Audio recorder will not start.",
+    );
     audioCaptureSupported = false;
     return;
   }
@@ -294,7 +472,10 @@ function startAudioMonitoringCapture(activeStream, session) {
   audioRecorderMimeType = getSupportedAudioMimeType();
 
   try {
-    const options = audioRecorderMimeType ? { mimeType: audioRecorderMimeType } : undefined;
+    const options = audioRecorderMimeType
+      ? { mimeType: audioRecorderMimeType }
+      : undefined;
+
     audioRecorder = new MediaRecorder(new MediaStream(audioTracks), options);
     audioCaptureSupported = true;
 
@@ -304,7 +485,10 @@ function startAudioMonitoringCapture(activeStream, session) {
     };
 
     audioRecorder.onerror = (event) => {
-      console.error("[AUDIO MONITOR] MediaRecorder error", event?.error || event);
+      console.error(
+        "[AUDIO MONITOR] MediaRecorder error",
+        event?.error || event,
+      );
     };
 
     audioRecorder.onstart = () => {
@@ -314,6 +498,7 @@ function startAudioMonitoringCapture(activeStream, session) {
         tracks: audioTracks.map((track) => ({
           label: track.label,
           enabled: track.enabled,
+          muted: track.muted,
           readyState: track.readyState,
         })),
       });
@@ -347,40 +532,68 @@ function stopAudioMonitoringCapture() {
   audioCaptureSupported = false;
 }
 
+function syncAudioMonitoringForMode() {
+  if (!stream || !monitoringSession) return;
+
+  if (getMonitoringMode(monitoringSession) === "full") {
+    startAudioMonitoringCapture(stream, monitoringSession);
+  } else {
+    stopAudioMonitoringCapture();
+  }
+}
+
 export async function startMonitoringCapture(session) {
   if (!window.electronAPI?.sendFrame) {
-    console.warn("[MONITOR] electronAPI.sendFrame is not available. Monitoring cannot start.");
+    console.warn(
+      "[MONITOR] electronAPI.sendFrame is not available. Monitoring cannot start.",
+    );
     return;
   }
 
   const ids = getSessionIdentifiers(session);
 
   if (!ids.assessmentId || !ids.candidateId || !ids.examId) {
-    console.warn("[MONITOR] Monitoring start ignored because identifiers are missing.", {
-      session,
-      ids,
-    });
+    console.warn(
+      "[MONITOR] Monitoring start ignored because identifiers are missing.",
+      { session, ids },
+    );
     return;
   }
 
   if (monitoringInterval) {
-    console.log("[MONITOR] Monitoring already running. Updating session only.", ids);
-    monitoringSession = { ...session, ...ids };
+    monitoringSession = {
+      ...(monitoringSession || {}),
+      ...session,
+      ...ids,
+      monitoringMode: getMonitoringMode(session),
+    };
+
+    console.log("[MONITOR] Monitoring session updated.", {
+      ...ids,
+      monitoringMode: getMonitoringMode(monitoringSession),
+    });
+
+    syncAudioMonitoringForMode();
     return;
   }
 
-  monitoringSession = { ...session, ...ids };
+  monitoringSession = {
+    ...session,
+    ...ids,
+    monitoringMode: getMonitoringMode(session),
+  };
 
   console.log("================================");
   console.log("[MONITOR] Renderer webcam capture starting");
   console.log("Assessment:", ids.assessmentId);
   console.log("Candidate :", ids.candidateId);
   console.log("Exam      :", ids.examId);
+  console.log("Mode      :", getMonitoringMode(monitoringSession));
   console.log("Interval  :", `${MONITORING_INTERVAL_MS}ms`);
-  console.log("Audio     :", window.electronAPI?.sendAudio ? "enabled" : "waiting for sendAudio IPC");
   console.log("================================");
 
   const activeStream = await getCameraStream();
+  startStreamHealthMonitoring(activeStream);
 
   monitoringVideo = document.createElement("video");
   monitoringVideo.autoplay = true;
@@ -404,7 +617,7 @@ export async function startMonitoringCapture(session) {
 
   await waitForVideoReady(monitoringVideo);
 
-  startAudioMonitoringCapture(activeStream, monitoringSession);
+  syncAudioMonitoringForMode();
   captureCurrentFrame(monitoringSession);
 
   monitoringInterval = setInterval(() => {
@@ -427,6 +640,7 @@ export function stopMonitoringCapture(options = {}) {
   }
 
   stopAudioMonitoringCapture();
+  stopStreamHealthMonitoring();
 
   if (monitoringVideo) {
     try {
@@ -441,6 +655,8 @@ export function stopMonitoringCapture(options = {}) {
 
   monitoringCanvas = null;
   monitoringSession = null;
+  lastCameraUnavailableSentAt = 0;
+  lastMicrophoneUnavailableSentAt = 0;
 
   console.log("[MONITOR] Renderer webcam capture stopped.");
 
@@ -473,7 +689,13 @@ export function registerWebcamCaptureListeners() {
   listenersRegistered = true;
 
   window.electronAPI.startWebcamCapture?.((session) => {
-    console.log("[MONITOR] start-webcam-capture event received", session);
+    console.log("[MONITOR] start-webcam-capture event received", {
+      assessmentId: getSessionIdentifiers(session).assessmentId,
+      candidateId: getSessionIdentifiers(session).candidateId,
+      examId: getSessionIdentifiers(session).examId,
+      monitoringMode: getMonitoringMode(session),
+    });
+
     startMonitoringCapture(session).catch((error) => {
       console.error("[MONITOR] Failed to start renderer webcam capture", error);
     });
@@ -491,9 +713,14 @@ export function getMonitoringCaptureState() {
   return {
     hasStream: Boolean(stream?.active),
     frameCaptureRunning: Boolean(monitoringInterval),
-    audioCaptureRunning: Boolean(audioRecorder && audioRecorder.state !== "inactive"),
+    audioCaptureRunning: Boolean(
+      audioRecorder && audioRecorder.state !== "inactive",
+    ),
     audioCaptureSupported,
     audioMimeType: audioRecorder?.mimeType || audioRecorderMimeType || "",
+    cameraTrackLive: isTrackLive(stream?.getVideoTracks?.()[0]),
+    microphoneTrackLive: isTrackLive(stream?.getAudioTracks?.()[0]),
+    monitoringMode: getMonitoringMode(monitoringSession),
     session: monitoringSession,
   };
 }

@@ -10,7 +10,7 @@ import { stopCameraStream } from "../../services/cameraStream";
 const API = "http://localhost:3000";
 const THEME_STORAGE_KEY = "3rdeyez360.theme";
 
-const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "LOCKED", "COMPLETED"]);
+const TERMINAL_ASSESSMENT_STATUSES = new Set(["TERMINATED", "COMPLETED"]);
 const TERMINAL_EXAM_STATUSES = new Set(["COMPLETED", "TERMINATED", "STOPPED"]);
 
 function getAssessmentTimerStorageKey(assessmentId) {
@@ -709,6 +709,7 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const heartbeatFailureRef = useRef(false);
   const waitingRegistrationRef = useRef(null);
   const monitoringStartedRef = useRef(false);
+  const thresholdExitRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -792,40 +793,29 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
   const startAiMonitoring = useCallback(async (reason = "EXAM_ENTRY") => {
     if (!window.electronAPI?.startCapture) {
       console.warn("[MONITORING] startCapture API is not available.");
+      setStatusMsg("Continuous AI monitoring is unavailable.");
       return false;
     }
-
     if (!assessmentId || !candidateId || !examId) {
-      console.warn("[MONITORING] Cannot start AI monitoring because identifiers are missing.", {
-        assessmentId,
-        candidateId,
-        examId,
-        reason,
-      });
+      console.warn(
+        "[MONITORING] Cannot start AI monitoring because identifiers are missing.",
+        { assessmentId, candidateId, examId, reason },
+      );
       return false;
     }
 
     if (monitoringStartedRef.current) {
-      console.log("[MONITORING] AI monitoring already started. Skipping duplicate start.", {
+      // WaitScreen may already own the shared capture. Calling startCapture again
+      // updates the existing renderer session from basic to full monitoring.
+      console.log("[MONITORING] Updating active monitoring to full exam mode.", {
         assessmentId,
         candidateId,
         examId,
         reason,
       });
-      return true;
     }
 
     monitoringStartedRef.current = true;
-
-    console.log("================================");
-    console.log("AI MONITORING STARTED");
-    console.log("Assessment:", assessmentId);
-    console.log("Candidate :", candidateId);
-    console.log("Exam      :", examId);
-    console.log("Session   :", sessionIdRef.current);
-    console.log("Reason    :", reason);
-    console.log("================================");
-
     try {
       await window.electronAPI.startCapture({
         assessmentId,
@@ -833,34 +823,19 @@ export default function ActiveExam({ exam, assessment, onComplete, onLogout, onR
         examId,
         token: accessToken,
         sessionId: sessionIdRef.current,
+        monitoringMode: "full",
         reason,
       });
       return true;
     } catch (error) {
       monitoringStartedRef.current = false;
       console.error("[MONITORING] Failed to start capture", error);
+      setStatusMsg(
+        error?.message || "Continuous AI monitoring could not be started.",
+      );
       return false;
     }
   }, [assessmentId, candidateId, examId, accessToken]);
-
-  useEffect(() => {
-    if (!window.electronAPI?.onDetectionResult) return undefined;
-
-    const unsubscribe = window.electronAPI.onDetectionResult((result) => {
-      console.log("[DETECTION RESULT]", result);
-    });
-
-    return () => {
-      try {
-        if (typeof unsubscribe === "function") {
-          unsubscribe();
-        }
-        window.electronAPI.removeDetectionListener?.();
-      } catch (error) {
-        console.error(error);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     // Restore the original candidate entry time after refresh or remount.
@@ -928,6 +903,113 @@ try {
     browserOpenedRef.current = false;
     lastNavigatedUrlRef.current = null;
   }, []);
+
+  const exitForViolationThreshold = useCallback(
+    async (payload = {}) => {
+      if (thresholdExitRef.current || completedRef.current) return;
+
+      thresholdExitRef.current = true;
+      intentionalExitRef.current = true;
+      entryGrantedRef.current = false;
+      monitoringStartedRef.current = false;
+      sessionIdRef.current = null;
+      setPauseLocked(false);
+
+      const violationCount = Number(
+        pick(
+          payload?.violationcount,
+          payload?.violation_count,
+          payload?.count,
+          payload?.assessment?.violationcount,
+          payload?.assessment?.violation_count,
+          0,
+        ) || 0,
+      );
+      const violationThreshold = Number(
+        pick(
+          payload?.violationthreshold,
+          payload?.violation_threshold,
+          payload?.threshold,
+          payload?.assessment?.violationthreshold,
+          payload?.assessment?.violation_threshold,
+          payload?.assessment?.threshold,
+          0,
+        ) || 0,
+      );
+
+      setLiveAssessment((previous) => ({
+        ...(previous || {}),
+        ...(payload?.assessment || {}),
+        status: "LOCKED",
+        assessmentstatus: "LOCKED",
+        assessment_status: "LOCKED",
+        thresholdreached: true,
+        threshold_reached: true,
+        requiresreentryapproval: true,
+        requires_reentry_approval: true,
+        activesessionid: null,
+        active_session_id: null,
+      }));
+
+      setStatusMsg(
+        violationThreshold > 0
+          ? `Violation threshold reached (${violationCount}/${violationThreshold}). Re-entry approval is required.`
+          : "Violation threshold reached. Re-entry approval is required.",
+      );
+      setBrowserError("");
+
+      try {
+        await cleanupExamShell();
+      } finally {
+        clearWaitingSession();
+        await onReturnToDashboard?.();
+      }
+    },
+    [cleanupExamShell, clearWaitingSession, onReturnToDashboard],
+  );
+
+  useEffect(() => {
+    if (!window.electronAPI?.onDetectionResult) return undefined;
+
+    const unsubscribe = window.electronAPI.onDetectionResult((payload) => {
+      console.log("[DETECTION RESULT]", payload);
+
+      const candidates = [
+        payload,
+        payload?.result,
+        payload?.response,
+        payload?.assessment,
+        ...(Array.isArray(payload?.results) ? payload.results : []),
+      ].filter(Boolean);
+
+      const thresholdPayload = candidates.find((item) => {
+        const action = canonicalStatus(item?.action);
+        const status = canonicalStatus(
+          pick(item?.status, item?.assessmentstatus, item?.assessment_status),
+        );
+        return (
+          action === "THRESHOLDREACHED" ||
+          action === "LOCK" ||
+          status === "LOCKED" ||
+          item?.thresholdreached === true ||
+          item?.threshold_reached === true
+        );
+      });
+
+      if (thresholdPayload) {
+        void exitForViolationThreshold(thresholdPayload);
+      }
+    });
+
+    return () => {
+      try {
+        if (typeof unsubscribe === "function") unsubscribe();
+        window.electronAPI.removeDetectionListener?.();
+      } catch (error) {
+        console.error(error);
+      }
+    };
+  }, [exitForViolationThreshold]);
 
   const reportInterruption = useCallback(async (reason, source) => {
     if (!entryGrantedRef.current || completedRef.current || intentionalExitRef.current || !assessmentId || !accessToken) {
@@ -1399,7 +1481,23 @@ clearWaitingSession();
       if (!examMatch || !assessmentMatch || !candidateMatch) return;
 
       const action = toUpper(payload?.action ?? payload);
-      const status = canonicalStatus(payload?.status);
+      const status = canonicalStatus(
+        pick(payload?.status, payload?.assessment?.status),
+      );
+      const thresholdReached =
+        action === "THRESHOLD_REACHED" ||
+        action === "THRESHOLDREACHED" ||
+        action === "LOCK" ||
+        status === "LOCKED" ||
+        payload?.thresholdreached === true ||
+        payload?.threshold_reached === true ||
+        payload?.assessment?.thresholdreached === true ||
+        payload?.assessment?.threshold_reached === true;
+
+      if (thresholdReached) {
+        await exitForViolationThreshold(payload);
+        return;
+      }
 
       if (action === "TERMINATE" || status === "TERMINATED") {
         setStatusMsg("Your assessment has been terminated by the examiner.");
@@ -1425,11 +1523,24 @@ setPauseLocked(false);
 
     socket.on("connect", handleReconnect);
     socket.on("control_command", onControlCommand);
+    socket.on("threshold_reached", onControlCommand);
+    socket.on("assessment_locked", onControlCommand);
     return () => {
       socket.off("connect", handleReconnect);
       socket.off("control_command", onControlCommand);
+      socket.off("threshold_reached", onControlCommand);
+      socket.off("assessment_locked", onControlCommand);
     };
-  }, [socket, examId, assessmentId, candidateId, finishExam, hideBrowserForPause, showBrowserForActiveState]);
+  }, [
+    socket,
+    examId,
+    assessmentId,
+    candidateId,
+    finishExam,
+    hideBrowserForPause,
+    showBrowserForActiveState,
+    exitForViolationThreshold,
+  ]);
 
   const checkLiveStatus = useCallback(async () => {
     if (completedRef.current) { setChecking(false); return; }
@@ -1449,6 +1560,10 @@ setPauseLocked(false);
       const assessmentStatusValue = getAssessmentStatus(latestAssessment);
       const finalStatus = getFinalStatus(latestAssessment);
 
+      if (assessmentStatusValue === "LOCKED" || finalStatus === "LOCKED") {
+        await exitForViolationThreshold(latestAssessment || {});
+        return;
+      }
       const shouldEnd =
         TERMINAL_EXAM_STATUSES.has(examStatusValue) ||
         TERMINAL_ASSESSMENT_STATUSES.has(assessmentStatusValue) ||
@@ -1479,11 +1594,23 @@ setPauseLocked(false);
     } finally {
       setChecking(false);
     }
-  }, [examId, assessmentId, accessToken, finishExam, hideBrowserForPause, showBrowserForActiveState]);
+  }, [examId, assessmentId, accessToken, finishExam, hideBrowserForPause, showBrowserForActiveState, exitForViolationThreshold]);
 
   useEffect(() => {
-    // Initial recovery snapshot only. Heartbeat remains separate below.
-    checkLiveStatus();
+    let cancelled = false;
+
+    const pollLiveStatus = async () => {
+      if (cancelled || completedRef.current || thresholdExitRef.current) return;
+      await checkLiveStatus();
+    };
+
+    void pollLiveStatus();
+    const timer = setInterval(pollLiveStatus, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [checkLiveStatus]);
 
   useEffect(() => {
@@ -1502,7 +1629,9 @@ setPauseLocked(false);
       setLiveAssessment((previous) => ({ ...(previous || {}), ...next }));
       const status = getAssessmentStatus(next);
       const finalStatus = getFinalStatus(next);
-      if (TERMINAL_ASSESSMENT_STATUSES.has(status) || TERMINAL_ASSESSMENT_STATUSES.has(finalStatus)) {
+      if (status === "LOCKED" || finalStatus === "LOCKED") {
+        await exitForViolationThreshold(payload?.assessment || payload);
+      } else if (TERMINAL_ASSESSMENT_STATUSES.has(status) || TERMINAL_ASSESSMENT_STATUSES.has(finalStatus)) {
         await finishExam();
       } else if (status === "PAUSED") {
         setPauseLocked(true);
@@ -1521,7 +1650,7 @@ setPauseLocked(false);
       socket.off("assessment_updated", onAssessmentUpdated);
       socket.off("request_reviewed", onAssessmentUpdated);
     };
-  }, [socket, examId, assessmentId, finishExam, hideBrowserForPause, showBrowserForActiveState]);
+  }, [socket, examId, assessmentId, finishExam, hideBrowserForPause, showBrowserForActiveState, exitForViolationThreshold]);
   const durationMinutes = Number(
     merged.durationminutes || normalizedExam?.durationminutes || 0
   );

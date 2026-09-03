@@ -97,6 +97,27 @@ def _clean_list(value):
     ]
 
 
+def _validate_violation_threshold(value) -> int:
+    if isinstance(value, bool):
+        raise HTTPException(
+            status_code=400,
+            detail="Violation threshold must be a positive integer",
+        )
+    try:
+        threshold = int(value)
+    except (TypeError, ValueError) as error:
+        raise HTTPException(
+            status_code=400,
+            detail="Violation threshold must be a positive integer",
+        ) from error
+    if threshold < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Violation threshold must be at least 1",
+        )
+    return threshold
+
+
 def _exam_payload(exam: dict) -> dict:
     exam = exam or {}
     exam_data = _serialize(exam)
@@ -186,10 +207,15 @@ def _exam_payload(exam: dict) -> dict:
         exam.get("duration_minutes", 0),
     )
 
-    exam_data["violationthreshold"] = exam.get(
-        "violationthreshold",
-        exam.get("violation_threshold", 10),
+    violation_threshold = _validate_violation_threshold(
+        exam.get(
+            "violationthreshold",
+            exam.get("violation_threshold", exam.get("threshold", 10)),
+        )
     )
+    exam_data["violationthreshold"] = violation_threshold
+    exam_data["violation_threshold"] = violation_threshold
+    exam_data["threshold"] = violation_threshold
 
     exam_data["instructions"] = (
         exam.get("instructions")
@@ -514,9 +540,11 @@ async def create_exam(
         body.get("durationminutes"),
     )
 
-    violation_threshold = body.get(
-        "violation_threshold",
-        body.get("violationthreshold", 10),
+    violation_threshold = _validate_violation_threshold(
+        body.get(
+            "violation_threshold",
+            body.get("violationthreshold", body.get("threshold", 10)),
+        )
     )
 
     allowed_websites = _clean_list(
@@ -582,12 +610,9 @@ async def create_exam(
         "durationminutes": int(
             duration_minutes
         ),
-        "violation_threshold": int(
-            violation_threshold
-        ),
-        "violationthreshold": int(
-            violation_threshold
-        ),
+        "violation_threshold": violation_threshold,
+        "violationthreshold": violation_threshold,
+        "threshold": violation_threshold,
         "allowed_websites": allowed_websites,
         "allowedwebsites": allowed_websites,
         "allowed_applications": (
@@ -825,6 +850,99 @@ async def get_exam(
             )
 
     return _exam_payload(exam)
+
+
+@router.patch("/{exam_id}/violation-threshold")
+async def update_violation_threshold(
+    exam_id: str,
+    body: dict,
+    current_user=Depends(require_role("Examiner", "Admin")),
+):
+    db = get_db()
+    exam = await _ensure_exam_access(db, exam_id, current_user)
+    current_user_id = (
+        current_user.get("user_id")
+        or current_user.get("userid")
+    )
+
+    raw_threshold = body.get(
+        "violation_threshold",
+        body.get("violationthreshold", body.get("threshold")),
+    )
+    if raw_threshold is None:
+        raise HTTPException(
+            status_code=400,
+            detail="violation_threshold is required",
+        )
+
+    violation_threshold = _validate_violation_threshold(raw_threshold)
+    previous_threshold = _validate_violation_threshold(
+        exam.get(
+            "violationthreshold",
+            exam.get("violation_threshold", exam.get("threshold", 10)),
+        )
+    )
+    now = datetime.utcnow()
+
+    await db.exams.update_one(
+        _get_exam_query(exam_id),
+        {
+            "$set": {
+                "violation_threshold": violation_threshold,
+                "violationthreshold": violation_threshold,
+                "threshold": violation_threshold,
+                "updated_at": now,
+                "updatedat": now,
+            }
+        },
+    )
+
+    # Keep the threshold aliases on assessment records synchronized for any
+    # screens that read the assessment directly. Existing counts are untouched.
+    await db.assessments.update_many(
+        {
+            "$or": [
+                {"exam_id": exam_id},
+                {"examid": exam_id},
+            ]
+        },
+        {
+            "$set": {
+                "violation_threshold": violation_threshold,
+                "violationthreshold": violation_threshold,
+                "updated_at": now,
+                "updatedat": now,
+            }
+        },
+    )
+
+    await db.audit_logs.insert_one(
+        {
+            "log_id": f"AUD-{uuid.uuid4().hex[:8].upper()}",
+            "user_id": current_user_id,
+            "userid": current_user_id,
+            "exam_id": exam_id,
+            "examid": exam_id,
+            "action": "UpdateViolationThreshold",
+            "reason": (
+                f"Changed violation threshold from "
+                f"{previous_threshold} to {violation_threshold}"
+            ),
+            "previous_value": previous_threshold,
+            "new_value": violation_threshold,
+            "timestamp": now,
+        }
+    )
+
+    updated_exam = await db.exams.find_one(_get_exam_query(exam_id))
+    payload = _exam_payload(updated_exam)
+    await emit_exam_event("exam_updated", payload)
+
+    return {
+        "message": "Violation threshold updated",
+        "exam": payload,
+        **payload,
+    }
 
 
 @router.patch("/{exam_id}/start")

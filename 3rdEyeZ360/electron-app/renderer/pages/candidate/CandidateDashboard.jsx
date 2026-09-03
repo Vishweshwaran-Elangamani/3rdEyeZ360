@@ -174,6 +174,34 @@ function normalizeItem(raw) {
       raw.latest_request?.review_reason,
       ""
     ),
+    hasenteredexam: Boolean(
+      firstValue(raw.hasenteredexam, raw.has_entered_exam, false)
+    ),
+    requiresreentryapproval: Boolean(
+      firstValue(
+        raw.requiresreentryapproval,
+        raw.requires_reentry_approval,
+        false
+      )
+    ),
+    thresholdreached: Boolean(
+      firstValue(raw.thresholdreached, raw.threshold_reached, false)
+    ),
+    warningcount:
+      Number(firstValue(raw.warningcount, raw.warning_count, 0)) || 0,
+    violationcount:
+      Number(firstValue(raw.violationcount, raw.violation_count, 0)) || 0,
+    violationthreshold:
+      Number(
+        firstValue(
+          raw.violationthreshold,
+          raw.violation_threshold,
+          raw.threshold,
+          10
+        )
+      ) || 10,
+    credibilityscore:
+      Number(firstValue(raw.credibilityscore, raw.credibility_score, 100)),
     allowedwebsites: normalizeList(raw.allowedwebsites, raw.allowed_websites),
     allowedapplications: normalizeList(raw.allowedapplications, raw.allowed_applications),
   };
@@ -206,6 +234,13 @@ function mergeAssessmentUpdate(current, incoming) {
     "sessionnumber",
     "permanentlystopped",
     "isfinalized",
+    "hasenteredexam",
+    "requiresreentryapproval",
+    "thresholdreached",
+    "warningcount",
+    "violationcount",
+    "violationthreshold",
+    "credibilityscore",
   ];
   for (const key of preserve) {
     const value = incoming[key];
@@ -311,7 +346,21 @@ function getRejectionReason(exam, request) {
 }
 function getRequestType(exam) {
   const s = toUpper(exam?.status);
-  if (s.includes("REENTRY")) return "REENTRY";
+  const hasEntered = Boolean(exam?.hasenteredexam);
+  const requiresReentry = Boolean(exam?.requiresreentryapproval);
+  const thresholdReached = Boolean(exam?.thresholdreached);
+
+  if (
+    s.includes("REENTRY") ||
+    s === "LOCKED" ||
+    s === "INTERRUPTED" ||
+    hasEntered ||
+    requiresReentry ||
+    thresholdReached
+  ) {
+    return "REENTRY";
+  }
+
   return "LATEENTRY";
 }
 function getCardState(exam, pendingRequest) {
@@ -325,7 +374,7 @@ function getCardState(exam, pendingRequest) {
   const isLateEntryApproved = ["LATEENTRYAPPROVED", "LATEENTRY_APPROVED"].includes(assessmentStatus);
   const isMultiSession = exam?.examtype === "MULTI_SESSION";
   const permanentlyCompleted = Boolean(exam?.permanentlystopped) || examStatus === "STOPPED";
-  const finalized = Boolean(exam?.isfinalized) || ["COMPLETED", "TERMINATED", "LOCKED"].includes(assessmentStatus);
+  const finalized = Boolean(exam?.isfinalized) || ["COMPLETED", "TERMINATED"].includes(assessmentStatus);
   if (isMultiSession && permanentlyCompleted) {
     return { mode: "completed", cta: "Exam Completed", disabled: true, helper: "The examiner permanently completed this multi-session exam." };
   }
@@ -346,6 +395,8 @@ function getCardState(exam, pendingRequest) {
     !isReentryApproved &&
     (
       exam?.requiresreentryapproval ||
+      exam?.thresholdreached ||
+      assessmentStatus === "LOCKED" ||
       [
         "ACTIVE",
         "PAUSED",
@@ -366,7 +417,13 @@ function getCardState(exam, pendingRequest) {
     return { mode: "terminated", cta: "Terminated", disabled: true };
   }
   if (assessmentStatus === "LOCKED") {
-    return { mode: "locked", cta: "Locked", disabled: true };
+    return {
+      mode: "request",
+      cta: "Request Re-entry",
+      disabled: false,
+      helper:
+        "The violation limit was reached and this secured session was closed. Submit a reason for examiner review before re-entry.",
+    };
   }
 
   if (
@@ -540,10 +597,10 @@ function getStatusMeta(status, examStatus, pendingRequest, t, exam = null) {
 
   if (s === "LOCKED") {
     return {
-      label: "Locked",
+      label: "Re-entry Required",
       color: t.danger,
       gradient: t.dangerGradient,
-      bucket: "other",
+      bucket: "reentry-required",
     };
   }
 
@@ -1710,10 +1767,20 @@ function RequestModal({ open, exam, reason, onChangeReason, onClose, onSubmit, s
                 letterSpacing: -0.3,
               }}
             >
-              Request Permission
+              {getRequestType(exam) === "REENTRY"
+                ? "Request Re-entry"
+                : "Request Permission"}
             </div>
             <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6 }}>
-              The exam has already started for <span style={{ color: t.textSecondary, fontWeight: 600 }}>{exam.name}</span>. Enter your reason to request permission from the examiner.
+              {getRequestType(exam) === "REENTRY" ? (
+                <>
+                  The previous secured session for <span style={{ color: t.textSecondary, fontWeight: 600 }}>{exam.name}</span> was locked. Enter an explanation for examiner review before requesting re-entry.
+                </>
+              ) : (
+                <>
+                  The exam has already started for <span style={{ color: t.textSecondary, fontWeight: 600 }}>{exam.name}</span>. Enter your reason to request permission from the examiner.
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1734,7 +1801,11 @@ function RequestModal({ open, exam, reason, onChangeReason, onClose, onSubmit, s
           <textarea
             value={reason}
             onChange={(e) => onChangeReason(e.target.value)}
-            placeholder="Example: I joined late due to a network issue."
+            placeholder={
+              getRequestType(exam) === "REENTRY"
+                ? "Example: The captured event was accidental. Please review the evidence and allow re-entry."
+                : "Example: I joined late due to a network issue."
+            }
             rows={5}
             style={{
               width: "100%",
